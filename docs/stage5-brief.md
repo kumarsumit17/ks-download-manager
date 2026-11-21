@@ -253,13 +253,13 @@ Then, in this order:
    - any `Claude-Session:` line;
    - any "Generated with Claude Code" line.
 
-   Keep subjects, bodies, authors and dates unchanged. Use built-in git only (no tool installs). Keep the tags (`v0.1.0`, `v0.2.0` and any others) on the matching rewritten commits.
+   Every branch includes `dev` and `release-setup` (and `main`) in ks-download-manager, local and on `origin`; check each branch's commit count before and after. Keep subjects, bodies, authors and dates unchanged. Use built-in git only (no tool installs). Keep the tags (`v0.1.0`, `v0.2.0` and any others) on the matching rewritten commits.
 3. Verify ks-utility:
    - the commit count per branch is unchanged;
    - the tree hash at each tag is identical to before;
    - a search of every commit message finds none of the three kinds of line;
    - its tests pass.
-4. ks-download-manager: the same rewrite and the same verification.
+4. ks-download-manager: the same rewrite and the same verification, on `main`, `dev` **and `release-setup`** (the release work, added 2026-11-21). If `release-setup` has already been merged into `dev`, the rewrite of both must map the shared commits to the same new IDs (one `git filter-branch`/`fast-export` run over all branches at once, not one run per branch), and the merge must still be a merge afterwards.
 4b. The KS-Suite workspace repo, last: the same rewrite and the same verification (commit count per branch, tree hash at each tag if any, message search). It has no build of its own; check that its specs and `CLAUDE.md` are unchanged by comparing tree hashes.
 5. Re-pin: the tag names are unchanged but the commit IDs behind them are new. Refresh both lock files to the new commit for the pinned tag, and update any commit ID written in `docs/THIRD_PARTY.md`, `CLAUDE.md` or the specs. This depends on ks-utility being pushed, so **stop here and wait for the owner**.
 6. Record in ks-utility's `specs/usage.md` that tags were moved once, on that date, to remove tool attribution from history: the single exception to the rule that tags never move.
