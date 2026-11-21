@@ -610,9 +610,10 @@ mod tests {
             assert!(a.contains(&flag.to_string()), "{flag}");
         }
         let after = |f: &str| a.iter().position(|x| x == f).map(|i| a[i + 1].clone());
-        assert_eq!(after("--js-runtimes").unwrap(), format!("deno:/app/MacOS/{DENO_EXE}"));
+        // Built with the same join as the code, so it is exact on every system.
+        assert_eq!(after("--js-runtimes").unwrap(), format!("deno:{}", Path::new("/app/MacOS").join(DENO_EXE).display()));
         assert_eq!(after("--ffmpeg-location").unwrap(), "/app/MacOS");
-        assert_eq!(after("--cache-dir").unwrap(), "/data/yt-dlp-cache");
+        assert_eq!(after("--cache-dir").unwrap(), Path::new("/data").join("yt-dlp-cache").to_string_lossy());
         assert_eq!(after("--ies").unwrap(), "default,-generic", "the generic extractor is off");
         assert!(!a.iter().any(|x| x.contains("cookies") && x != "--no-cookies-from-browser"));
     }
