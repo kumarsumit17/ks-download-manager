@@ -790,3 +790,155 @@ async fn more_connections_are_faster_against_a_per_connection_limit() {
     let eight = time(8).await;
     assert!(one >= eight * 4, "1 connection {one:?}, 8 connections {eight:?}");
 }
+
+// ---- adaptive connections, shared budget, speed limit ----
+
+/// Fast controller timings so the tests run in about a second.
+fn adaptive(initial: usize) -> engine::Adaptive {
+    engine::Adaptive {
+        initial,
+        hosts: engine::HostLimits::default(),
+        tick: Duration::from_millis(100),
+        calm: Duration::from_millis(300),
+    }
+}
+
+fn adaptive_opts(connections: usize, a: &engine::Adaptive) -> DownloadOptions {
+    DownloadOptions { adaptive: Some(a.clone()), ..opts(connections) }
+}
+
+const HOST: &str = "127.0.0.1";
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn adaptive_starts_small_and_adds_connections_while_speed_rises() {
+    // Each connection is throttled, so every added connection adds speed.
+    let size = 8 * 1024 * 1024;
+    let server = start(ServerOptions { rate: Some(1024 * 1024), ..ServerOptions::new(size) }).await;
+    let a = adaptive(2);
+    let progress = Progress::new();
+    let out = TempFile::new();
+    let task = tokio::spawn({
+        let (url, path, o) = (server.url.clone(), out.0.clone(), DownloadOptions { progress: progress.clone(), ..adaptive_opts(16, &a) });
+        async move { download(&url, &path, o).await }
+    });
+    // Early on, only the initial two are at work.
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    let early = progress.snapshot().connections.iter().flatten().count();
+    assert!(early <= 2, "starts with 2, saw {early}");
+    task.await.unwrap().expect("download");
+    assert_same(&out.0, &server.data());
+    let learned = a.hosts.get(HOST).expect("the host's count is remembered");
+    assert!(learned > 2, "more connections were added: {learned}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn adaptive_backs_off_when_the_server_refuses_connections() {
+    let size = 4 * 1024 * 1024;
+    let server = start(ServerOptions { rate: Some(2 * 1024 * 1024), max_connections: Some(3), ..ServerOptions::new(size) }).await;
+    let a = adaptive(6);
+    let out = TempFile::new();
+    download(&server.url, &out.0, adaptive_opts(8, &a)).await.expect("download");
+    assert_same(&out.0, &server.data());
+    assert!(server.range_requests().iter().any(|r| r.status == 503), "the server did refuse some");
+    let learned = a.hosts.get(HOST).unwrap();
+    assert!(learned <= 3, "remembered at most what the server allows: {learned}");
+
+    // The next download from that host starts at the remembered count.
+    server.clear_log();
+    let out2 = TempFile::new();
+    let progress = Progress::new();
+    let task = tokio::spawn({
+        let (url, path, o) = (server.url.clone(), out2.0.clone(), DownloadOptions { progress: progress.clone(), ..adaptive_opts(8, &a) });
+        async move { download(&url, &path, o).await }
+    });
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    assert!(progress.snapshot().connections.iter().flatten().count() <= learned, "starts at the remembered count");
+    task.await.unwrap().expect("second download");
+    assert_same(&out2.0, &server.data());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn adaptive_adds_connections_back_after_a_brief_problem() {
+    // The first three range requests are refused: three of the four connections retire.
+    let size = 6 * 1024 * 1024;
+    let server = start(ServerOptions {
+        rate: Some(1024 * 1024),
+        fail_first: Some((3, 503, None)),
+        ..ServerOptions::new(size)
+    })
+    .await;
+    let a = adaptive(4);
+    let progress = Progress::new();
+    let out = TempFile::new();
+    let task = tokio::spawn({
+        let (url, path, o) = (server.url.clone(), out.0.clone(), DownloadOptions { progress: progress.clone(), ..adaptive_opts(8, &a) });
+        async move { download(&url, &path, o).await }
+    });
+    let mut low = usize::MAX;
+    let mut later = 0;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !task.is_finished() && Instant::now() < deadline {
+        let n = progress.snapshot().connections.iter().flatten().count();
+        if n > 0 {
+            low = low.min(n);
+        }
+        if low <= 2 {
+            later = later.max(n);
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    task.await.unwrap().expect("download");
+    assert_same(&out.0, &server.data());
+    assert!(low <= 2, "connections were lost: lowest {low}");
+    assert!(later >= 3, "and came back: {later}");
+}
+
+#[tokio::test]
+async fn a_tiny_file_gets_one_connection() {
+    let server = start(ServerOptions::new(9_000)).await;
+    let a = adaptive(4);
+    let out = TempFile::new();
+    let outcome = download(&server.url, &out.0, adaptive_opts(16, &a)).await.expect("download");
+    assert_same(&out.0, &server.data());
+    assert_eq!(outcome.segments.len(), 1);
+    assert_eq!(server.range_requests().len(), 1, "one range request");
+}
+
+#[tokio::test]
+async fn the_speed_limit_paces_segmented_and_single_downloads() {
+    let size = 512 * 1024;
+    for ranges in [true, false] {
+        let server = start(ServerOptions { ranges, ..ServerOptions::new(size) }).await;
+        let out = TempFile::new();
+        let limit = engine::SpeedLimit::new(Some(1024 * 1024));
+        let started = Instant::now();
+        let o = DownloadOptions { speed_limit: Some(limit), ..opts(4) };
+        download(&server.url, &out.0, o).await.expect("download");
+        assert_same(&out.0, &server.data());
+        let took = started.elapsed();
+        assert!(took >= Duration::from_millis(400), "512 KiB at 1 MiB/s took {took:?} (ranges {ranges})");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_budget_of_one_means_one_connection() {
+    let size = 2 * 1024 * 1024;
+    let server = start(ServerOptions { rate: Some(8 * 1024 * 1024), ..ServerOptions::new(size) }).await;
+    let budget = engine::ConnectionBudget::new(1);
+    let progress = Progress::new();
+    let out = TempFile::new();
+    let o = DownloadOptions { budget: Some(budget.clone()), progress: progress.clone(), ..adaptive_opts(8, &adaptive(4)) };
+    let task = tokio::spawn({
+        let (url, path) = (server.url.clone(), out.0.clone());
+        async move { download(&url, &path, o).await }
+    });
+    let mut most = 0;
+    while !task.is_finished() {
+        most = most.max(progress.snapshot().connections.iter().flatten().count());
+        tokio::time::sleep(Duration::from_millis(2)).await;
+    }
+    task.await.unwrap().expect("download");
+    assert_same(&out.0, &server.data());
+    assert_eq!(most, 1, "never more than one connection");
+    assert!(server.range_requests().len() >= 2, "the planned ranges were fetched one after another");
+}

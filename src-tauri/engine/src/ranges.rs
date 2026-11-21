@@ -70,6 +70,28 @@ impl Table {
         }
     }
 
+    /// A table with room for `slots` workers of which none has started yet; each worker
+    /// that starts calls [`Table::join`]. Used when connections are added while running.
+    pub fn with_slots(slots: usize, pending: Vec<Range>, written: Vec<Range>) -> Self {
+        Self { active: 0, ..Self::new(slots, pending, written) }
+    }
+
+    /// A worker starts (or starts again in a slot whose worker exited).
+    pub fn join(&mut self) {
+        self.active += 1;
+    }
+
+    #[cfg(test)]
+    pub fn active(&self) -> usize {
+        self.active
+    }
+
+    /// True when a new connection would find something to do: a pending range, or a slot
+    /// large enough to split.
+    pub fn has_work_for_another(&self) -> bool {
+        !self.pending.is_empty() || self.slots.iter().flatten().any(|s| s.end - s.pos >= 2 * MIN_STEAL)
+    }
+
     /// Ends worker `id`'s current assignment and gives it the next range: a pending one if
     /// any, else half of the slot with the most time left. `None`: nothing worth taking, and
     /// the worker exits (it no longer counts as active).
@@ -294,6 +316,23 @@ mod tests {
         t.claim(1, 100);
         assert_eq!(t.next(1, now), Some(Range { start: 40, end: 100 }));
         assert!(!t.retire(1, now), "the last active worker cannot retire");
+    }
+
+    #[test]
+    fn workers_can_join_a_running_table() {
+        let now = Instant::now();
+        let mut t = Table::with_slots(3, vec![Range { start: 0, end: 4 * MB }], vec![]);
+        assert_eq!(t.active(), 0);
+        t.join();
+        assert_eq!(t.next(0, now), Some(Range { start: 0, end: 4 * MB }));
+        assert!(t.has_work_for_another(), "a big slot can be split");
+        t.join();
+        let stolen = t.next(1, now).unwrap();
+        assert_eq!(stolen, Range { start: 2 * MB, end: 4 * MB });
+        assert_eq!(t.active(), 2);
+        let mut tiny = Table::with_slots(2, vec![], vec![]);
+        tiny.join();
+        assert!(!tiny.has_work_for_another());
     }
 
     #[test]

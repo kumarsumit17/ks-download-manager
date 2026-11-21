@@ -12,6 +12,7 @@ mod control;
 mod download;
 mod error;
 mod http;
+mod limits;
 mod probe;
 mod rangemap;
 mod ranges;
@@ -23,5 +24,6 @@ pub use download::{
     saved_state,
 };
 pub use error::EngineError;
+pub use limits::{Adaptive, ConnectionBudget, HostLimits, MIN_PER_CONNECTION, SpeedLimit};
 pub use probe::{ProbeInfo, Validator, fetch_text, probe};
 pub use retry::RetryPolicy;

@@ -13,6 +13,7 @@ use tokio::task::JoinSet;
 use crate::control::{CancelToken, ConnectionRange, Progress, RangeSource};
 use crate::error::EngineError;
 use crate::http::{ContentRange, client, get, parse_content_range, parse_url};
+use crate::limits::{Adaptive, ConnectionBudget, MIN_PER_CONNECTION, Permit, SpeedLimit};
 use crate::probe::{self, ProbeInfo, Validator, probe};
 use crate::rangemap::{self, RangeMap};
 use crate::ranges::{Range, Table, gaps};
@@ -39,6 +40,13 @@ pub struct DownloadOptions {
     /// How often the range map is saved while the download runs (it is also saved when the
     /// download stops). Bytes fetched since the last save are fetched again after a crash.
     pub checkpoint_interval: Duration,
+    /// Adapt the number of connections (up to `connections`) to what the server and the
+    /// network handle. `None`: always `connections` (fewer only when fewer bytes are left).
+    pub adaptive: Option<Adaptive>,
+    /// Connections shared with other downloads: each connection holds one while it runs.
+    pub budget: Option<ConnectionBudget>,
+    /// A speed limit shared with other downloads.
+    pub speed_limit: Option<SpeedLimit>,
 }
 
 impl Default for DownloadOptions {
@@ -49,6 +57,9 @@ impl Default for DownloadOptions {
             cancel: CancelToken::new(),
             retry: RetryPolicy::default(),
             checkpoint_interval: Duration::from_secs(2),
+            adaptive: None,
+            budget: None,
+            speed_limit: None,
         }
     }
 }
@@ -232,13 +243,14 @@ async fn segmented(
 
     let todo = gaps(&done, size);
     let remaining: u64 = todo.iter().map(|r| r.len()).sum();
-    let workers = (options.connections as u64).min(remaining.max(1)) as usize;
+    let host = url.host_str().unwrap_or_default().to_owned();
+    let (slots, start) = plan(options, remaining, &host);
     let pending = if done.is_empty() {
-        split(size, workers).into_iter().map(|s| Range { start: s.start, end: s.end + 1 }).collect()
+        split(size, start).into_iter().map(|s| Range { start: s.start, end: s.end + 1 }).collect()
     } else {
         todo
     };
-    options.progress.reset(Some(size), workers);
+    options.progress.reset(Some(size), slots);
     options.progress.set_base(resumed);
 
     let ctx = Arc::new(Ctx {
@@ -248,10 +260,14 @@ async fn segmented(
         if_range: Mutex::new(validator.as_ref().and_then(Validator::if_range).map(str::to_owned)),
         validator,
         destination: destination.to_path_buf(),
-        table: Mutex::new(Table::new(workers, pending, done)),
+        table: Mutex::new(Table::with_slots(slots, pending, done)),
         counters: options.progress.counters(),
         retry: options.retry.clone(),
         flush_every: options.checkpoint_interval,
+        adaptive: options.adaptive.clone(),
+        budget: options.budget.clone(),
+        speed_limit: options.speed_limit.clone(),
+        trouble: AtomicU64::new(0),
     });
     // Snapshots read the table only while this download runs (also if the caller drops it).
     let weak = Arc::downgrade(&ctx);
@@ -261,7 +277,7 @@ async fn segmented(
     );
 
     let mut result = match ctx.checkpoint().await {
-        Ok(()) => run_workers(&ctx, workers, &options.cancel, options.checkpoint_interval).await,
+        Ok(()) => run_workers(&ctx, &host, start, &options.cancel, options.checkpoint_interval).await,
         Err(e) => Err(e.into()),
     };
     if result.is_ok() && ctx.table().written() != [Range { start: 0, end: size }] {
@@ -299,6 +315,30 @@ async fn check_size(destination: &Path, expected: u64, written: u64) -> Result<(
     Ok(())
 }
 
+/// How many connections a download may have (`slots`) and starts with. Without
+/// `adaptive`: `connections`, fewer only when fewer bytes are left. With it: at most one
+/// connection per 512 KiB left, starting at what the host worked with before, else
+/// `initial`.
+fn plan(options: &DownloadOptions, remaining: u64, host: &str) -> (usize, usize) {
+    let bytes_cap = |per: u64| usize::try_from(remaining / per).unwrap_or(usize::MAX).max(1);
+    match &options.adaptive {
+        None => {
+            let n = options.connections.min(bytes_cap(1));
+            (n, n)
+        }
+        Some(a) => {
+            let cap = options.connections.min(bytes_cap(MIN_PER_CONNECTION));
+            let start = a.hosts.get(host).unwrap_or(a.initial).clamp(1, cap);
+            (cap, start)
+        }
+    }
+}
+
+/// Failures that mean "fewer connections" or "the network had a problem".
+fn is_trouble(e: &EngineError) -> bool {
+    matches!(e, EngineError::HttpStatus(429 | 503) | EngineError::Network(_) | EngineError::Incomplete { .. })
+}
+
 /// Shared by the workers of one segmented download.
 struct Ctx {
     source: String,
@@ -315,6 +355,12 @@ struct Ctx {
     retry: RetryPolicy,
     /// Buffered bytes older than this are written out, so checkpoints stay current.
     flush_every: Duration,
+    adaptive: Option<Adaptive>,
+    budget: Option<ConnectionBudget>,
+    speed_limit: Option<SpeedLimit>,
+    /// Failures that suggest too many connections or a network problem (429, 503, resets,
+    /// timeouts) since the controller last looked.
+    trouble: AtomicU64,
 }
 
 impl Ctx {
@@ -372,17 +418,47 @@ impl Ctx {
     }
 }
 
-async fn run_workers(ctx: &Arc<Ctx>, workers: usize, cancel: &CancelToken, every: Duration) -> Result<(), EngineError> {
+async fn run_workers(ctx: &Arc<Ctx>, host: &str, start: usize, cancel: &CancelToken, every: Duration) -> Result<(), EngineError> {
     // Stops the other connections as soon as one fails for good.
     let abort = CancelToken::new();
     let mut tasks = JoinSet::new();
-    for id in 0..workers {
+    let mut live = vec![false; ctx.counters.len()];
+    let spawn = |id: usize, permit: Option<Permit>, tasks: &mut JoinSet<(usize, Result<(), EngineError>)>, live: &mut [bool]| {
+        ctx.table().join();
+        live[id] = true;
         let (ctx, cancel, abort) = (ctx.clone(), cancel.clone(), abort.clone());
-        tasks.spawn(async move { worker(&ctx, id, &cancel, &abort).await });
+        tasks.spawn(async move {
+            let _permit = permit; // returned to the budget when this connection ends
+            (id, worker(&ctx, id, &cancel, &abort).await)
+        });
+    };
+    // The first connection waits for the budget; the others start only if it has room.
+    let first = match &ctx.budget {
+        None => None,
+        Some(b) => tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return Err(EngineError::Cancelled),
+            p = b.acquire() => Some(p),
+        },
+    };
+    spawn(0, first, &mut tasks, &mut live);
+    for id in 1..start {
+        let permit = match &ctx.budget {
+            None => None,
+            Some(b) => match b.try_acquire() {
+                Some(p) => Some(p),
+                None => break,
+            },
+        };
+        spawn(id, permit, &mut tasks, &mut live);
     }
 
     let mut ticker = tokio::time::interval_at(tokio::time::Instant::now() + every, every);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let tick = ctx.adaptive.as_ref().map_or(Duration::from_secs(3600), |a| a.tick);
+    let mut control = tokio::time::interval_at(tokio::time::Instant::now() + tick, tick);
+    control.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut grow = ctx.adaptive.as_ref().map(|a| Grow::new(a, start));
     let mut failure: Option<EngineError> = None;
     let fail = |e: EngineError, failure: &mut Option<EngineError>| {
         abort.cancel();
@@ -396,8 +472,12 @@ async fn run_workers(ctx: &Arc<Ctx>, workers: usize, cancel: &CancelToken, every
         tokio::select! {
             joined = tasks.join_next() => match joined {
                 None => break,
-                Some(Ok(Ok(()))) => {}
-                Some(Ok(Err(e))) => fail(e, &mut failure),
+                Some(Ok((id, r))) => {
+                    live[id] = false;
+                    if let Err(e) = r {
+                        fail(e, &mut failure);
+                    }
+                }
                 Some(Err(e)) => fail(EngineError::Internal(e.to_string()), &mut failure),
             },
             _ = ticker.tick(), if failure.is_none() => {
@@ -405,9 +485,124 @@ async fn run_workers(ctx: &Arc<Ctx>, workers: usize, cancel: &CancelToken, every
                     fail(e.into(), &mut failure);
                 }
             }
+            _ = control.tick(), if failure.is_none() && grow.is_some() => {
+                let Some(g) = grow.as_mut() else { continue };
+                let received = ctx.counters.iter().map(|c| c.load(Ordering::Relaxed)).sum();
+                let running = live.iter().filter(|l| **l).count();
+                let trouble = ctx.trouble.swap(0, Ordering::Relaxed) > 0;
+                if !g.wants_another(Instant::now(), received, running, trouble) || !ctx.table().has_work_for_another() {
+                    continue;
+                }
+                let Some(id) = live.iter().position(|l| !*l) else { continue };
+                let permit = match &ctx.budget {
+                    None => None,
+                    Some(b) => match b.try_acquire() {
+                        Some(p) => Some(p),
+                        None => continue,
+                    },
+                };
+                g.added(running + 1);
+                spawn(id, permit, &mut tasks, &mut live);
+            }
         }
     }
+    if let (Some(a), Some(g)) = (&ctx.adaptive, &grow)
+        && failure.is_none()
+        && !host.is_empty()
+    {
+        a.hosts.set(host, g.good);
+    }
     failure.map_or(Ok(()), Err)
+}
+
+/// The adaptive controller's state for one download (specs/engine.md, "Adaptive
+/// connections").
+struct Grow {
+    calm: Duration,
+    /// The connection count that has worked so far.
+    good: usize,
+    /// Trouble or the start: connections are added only after `calm` (longer after
+    /// additions that were followed by trouble) without any.
+    quiet_since: Instant,
+    /// How many additions in a row were followed by trouble; each doubles the wait.
+    strikes: u32,
+    /// The speed when the last connection was added, while waiting to see if it helped.
+    speed_at_add: Option<f64>,
+    added_at: Option<Instant>,
+    /// The count after the last addition: it becomes `good` once a tick passes without
+    /// trouble.
+    trying: Option<usize>,
+    /// More connections stopped helping: grow only back to `good`, not past it.
+    plateau: bool,
+    last: (Instant, u64),
+}
+
+impl Grow {
+    fn new(a: &Adaptive, start: usize) -> Self {
+        let now = Instant::now();
+        Self {
+            calm: a.calm,
+            good: start,
+            quiet_since: now,
+            strikes: 0,
+            speed_at_add: None,
+            added_at: None,
+            trying: None,
+            plateau: false,
+            last: (now, 0),
+        }
+    }
+
+    /// Called every tick: should one more connection start now?
+    fn wants_another(&mut self, now: Instant, received: u64, running: usize, trouble: bool) -> bool {
+        let secs = now.duration_since(self.last.0).as_secs_f64().max(0.001);
+        let speed = received.saturating_sub(self.last.1) as f64 / secs;
+        self.last = (now, received);
+        if trouble {
+            // Fewer connections, or the network had a problem: what runs now is what works.
+            self.good = self.good.min(running).max(1);
+            if self.added_at.is_some_and(|t| now.duration_since(t) <= self.calm) {
+                self.strikes = (self.strikes + 1).min(3); // the addition probably caused it
+            }
+            self.quiet_since = now;
+            self.speed_at_add = None;
+            self.added_at = None;
+            self.trying = None;
+            self.plateau = false;
+            return false;
+        }
+        if let Some(n) = self.trying.take() {
+            self.good = self.good.max(n);
+        }
+        if now.duration_since(self.quiet_since) < self.calm * 2u32.pow(self.strikes) {
+            return false;
+        }
+        if running < self.good {
+            return true; // back to what worked before the trouble
+        }
+        let grow = match self.speed_at_add.take() {
+            Some(before) if speed < before * 1.05 => {
+                // The last connection did not help: stop growing.
+                self.plateau = true;
+                self.good = running.saturating_sub(1).max(1);
+                false
+            }
+            Some(_) => {
+                self.strikes = 0;
+                !self.plateau
+            }
+            None => !self.plateau,
+        };
+        if grow {
+            self.speed_at_add = Some(speed);
+        }
+        grow
+    }
+
+    fn added(&mut self, now_running: usize) {
+        self.trying = Some(now_running);
+        self.added_at = Some(Instant::now());
+    }
 }
 
 /// One attempt's failure: try again (after at least `after`), or give up.
@@ -506,7 +701,20 @@ async fn worker(ctx: &Ctx, id: usize, cancel: &CancelToken, abort: &CancelToken)
             let (error, after) = match result {
                 Ok(()) => break,
                 Err(Failure::Fatal(e)) => return Err(e),
-                Err(Failure::Retry { error, after }) => (error, after),
+                Err(Failure::Retry { error, after }) => {
+                    if is_trouble(&error) {
+                        ctx.trouble.fetch_add(1, Ordering::Relaxed);
+                    }
+                    // The server wants fewer connections: give the range back at once while
+                    // others work; the controller adds connections again later.
+                    if ctx.adaptive.is_some()
+                        && matches!(error, EngineError::HttpStatus(429 | 503))
+                        && ctx.table().retire(id, Instant::now())
+                    {
+                        return Ok(());
+                    }
+                    (error, after)
+                }
             };
             let progressed = ctx.table().current(id).is_some_and(|r| r.start > range.start);
             failures = if progressed { 1 } else { failures + 1 };
@@ -573,6 +781,9 @@ async fn fetch(
         buf.push(ctx, file, claim.offset, &chunk[..claim.len as usize]).await?;
         counter.fetch_add(claim.len, Ordering::Relaxed);
         received += claim.len;
+        if let Some(limit) = &ctx.speed_limit {
+            limit.take(claim.len).await;
+        }
         if claim.finished {
             // Done, or the rest was stolen: dropping the response closes this connection
             // when it still has unread bytes; a fully read one is kept for the next range.
@@ -603,11 +814,16 @@ async fn single(info: ProbeInfo, destination: &Path, options: &DownloadOptions) 
     });
 
     let attempts = async {
+        // Counts toward the connections shared with other downloads.
+        let _permit = match &options.budget {
+            Some(b) => Some(b.acquire().await),
+            None => None,
+        };
         let client = client()?;
         let mut failures = 0;
         loop {
             counter.store(0, Ordering::Relaxed);
-            let wait = match single_attempt(&client, &url, info.size, destination, counter).await {
+            let wait = match single_attempt(&client, &url, info.size, destination, counter, options.speed_limit.as_ref()).await {
                 Ok(n) => return Ok(n),
                 Err(Failure::Fatal(e)) => return Err(e),
                 Err(Failure::Retry { error, after }) => {
@@ -653,6 +869,7 @@ async fn single_attempt(
     size: Option<u64>,
     destination: &Path,
     counter: &AtomicU64,
+    limit: Option<&SpeedLimit>,
 ) -> Result<u64, Failure> {
     let file = File::create(destination).await?;
     if let Some(size) = size {
@@ -670,7 +887,7 @@ async fn single_attempt(
     if !status.is_success() {
         return Err(status_failure(status, response.headers()));
     }
-    Ok(stream_to(response, BufWriter::with_capacity(WRITE_BUFFER, file), size, counter).await?)
+    Ok(stream_to(response, BufWriter::with_capacity(WRITE_BUFFER, file), size, counter, limit).await?)
 }
 
 /// Copies the body into `out`, counting bytes. `expected` (when known) is enforced both ways.
@@ -679,6 +896,7 @@ async fn stream_to(
     mut out: BufWriter<File>,
     expected: Option<u64>,
     counter: &AtomicU64,
+    limit: Option<&SpeedLimit>,
 ) -> Result<u64, EngineError> {
     let mut received: u64 = 0;
     loop {
@@ -701,6 +919,9 @@ async fn stream_to(
         out.write_all(&chunk).await?;
         received += len;
         counter.fetch_add(len, Ordering::Relaxed);
+        if let Some(limit) = limit {
+            limit.take(len).await;
+        }
     }
     if let Some(expected) = expected
         && received != expected
