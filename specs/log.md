@@ -1,3 +1,7 @@
+# 2026-11-22
+
+* **Update**: [Video and playlists](video-playlists.md), LGPL obligations: releases attach only the four install files; the notes name the ffmpeg source by its official URL and pinned SHA-256 instead of attaching the tarball.
+
 # 2026-11-21
 
 * **Update**: [Build stages](stages.md), Release: phase B (Windows beta) built and green on `windows-2025`; the release workflow now builds the Windows installer.

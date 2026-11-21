@@ -72,16 +72,16 @@ Actions tab → **Release** → the run for the tag:
 1. `version`: checks the tag, that it is on `main`, and the changelog section.
 2. `mac (aarch64)` and `mac (x86_64)`: build the app, check the licence files are inside, run the bundled programs, sign (and with the secrets, notarise and staple), make the disk image after signing.
 3. `extension`: builds the zip and checks the extension ID `ikplfdbdfikcokpegkapjdedlgifmkbe` and the version in the zipped manifest.
-4. `attest`: adds the ffmpeg source tarball (hash-checked against `src-tauri/sidecars.json`), writes `SHA256SUMS`, and records a build-provenance attestation for every file.
-5. `release`: checks the sums and each attestation again, writes the notes from `CHANGELOG.md` plus how the files were signed, and creates the **draft**.
+4. `attest`: takes exactly the release files by name (two disk images, the Windows installer, the extension zip; nothing else is ever attached) and records a build-provenance attestation for each. A `SHA256SUMS` is written for the next job only, not attached.
+5. `release`: checks the files arrived unchanged, that there are only those files, and each attestation again; writes the notes from `CHANGELOG.md` plus how the files were signed, and creates the **draft**.
 
 ## 4. Checking the draft
 
 Releases page → the draft → download every file into an empty folder, then:
 
 ```bash
-shasum -a 256 -c SHA256SUMS
-for f in *.dmg *.zip *.tar.xz SHA256SUMS; do gh attestation verify "$f" -R kumarsumit17/ks-download-manager; done
+ls                       # the two .dmg, the -setup-beta.exe and the extension .zip, nothing else
+for f in *.dmg *.exe *.zip; do gh attestation verify "$f" -R kumarsumit17/ks-download-manager; done
 ```
 
 Read the notes: they must say "signed with a Developer ID and notarised" only if the secrets were set, and otherwise give the "Open Anyway" steps. Then do every hand check in `docs/release-plan.md` section 9 on these files.

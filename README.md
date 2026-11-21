@@ -46,7 +46,7 @@ To remove it: **Settings → Apps → Installed apps → KS Download Manager →
 
 ### Checking a download
 
-Each release has `SHA256SUMS`, the SHA-256 of every file. On macOS, in the folder with the files: `shasum -a 256 -c SHA256SUMS --ignore-missing`. On Windows: `Get-FileHash <file>` and compare. Every file also has a build-provenance attestation showing it was built by this repository's GitHub Actions from the release tag; with the [GitHub CLI](https://cli.github.com): `gh attestation verify <file> -R kumarsumit17/ks-download-manager`.
+Every file of a release has a build-provenance attestation showing it was built by this repository's GitHub Actions from the release tag; with the [GitHub CLI](https://cli.github.com): `gh attestation verify <file> -R kumarsumit17/ks-download-manager`.
 
 ## Building
 

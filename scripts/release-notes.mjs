@@ -7,6 +7,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO = "kumarsumit17/ks-download-manager";
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+/** The pinned ffmpeg source: version, official URL and SHA-256 (src-tauri/sidecars.json). */
+export const FFMPEG = JSON.parse(readFileSync(join(ROOT, "src-tauri/sidecars.json"), "utf8")).ffmpeg;
 
 /** The body of "## <version> …" in a Keep a Changelog file, or throws. */
 export function changelogSection(text, version) {
@@ -42,14 +45,13 @@ export function notes(changelog, version, mac, windows = "none") {
   out += `### Chrome extension\n\n`;
   out += `- \`ks-download-manager-extension-v${version}.zip\`: unzip it to a folder you keep, open \`chrome://extensions\`, turn on **Developer mode**, choose **Load unpacked** and pick that folder. See the README.\n\n`;
   out += `### Checking the files\n\n`;
-  out += `\`SHA256SUMS\` lists the SHA-256 of every file (\`shasum -a 256 -c SHA256SUMS\` on macOS). Each file also has a build-provenance attestation: \`gh attestation verify <file> -R ${REPO}\`.\n\n`;
-  out += `\`ffmpeg-*.tar.xz\` is the exact ffmpeg source the bundled ffmpeg and ffprobe are built from (LGPL-2.1-or-later).\n\n`;
+  out += `Each file has a build-provenance attestation: \`gh attestation verify <file> -R ${REPO}\`.\n\n`;
+  out += `The bundled ffmpeg and ffprobe are LGPL-2.1-or-later, built from ffmpeg ${FFMPEG.version}: source ${FFMPEG.source}, SHA-256 \`${FFMPEG.sha256}\`. The build details are in the app's \`licenses\` folder (\`ffmpeg-SOURCE.txt\`).\n\n`;
   out += `The app does not check for updates. New versions are published at https://github.com/${REPO}/releases.\n`;
   return out;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const [version, mac, windows] = process.argv.slice(2);
-  const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-  process.stdout.write(notes(readFileSync(join(root, "CHANGELOG.md"), "utf8"), version, mac, windows));
+  process.stdout.write(notes(readFileSync(join(ROOT, "CHANGELOG.md"), "utf8"), version, mac, windows));
 }

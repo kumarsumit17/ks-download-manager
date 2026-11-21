@@ -41,7 +41,7 @@ One setting, **Always get the best available quality** (Settings → Downloads),
 
 - **Why the unpacked yt-dlp:** the single-file build unpacks Python and its libraries to a temp folder on every run, which is slow and whose libraries cannot be signed with the app. The unpacked build is signed once with the app.
 - **ffmpeg network:** network protocols stay enabled, with TLS through the system's Secure Transport, so sites where yt-dlp hands an HLS stream to ffmpeg keep working. zlib is enabled explicitly (`--disable-autodetect` would otherwise drop it).
-- **LGPL obligations:** the licence texts and the exact source reference and configure line are shipped in `licenses/` (`ffmpeg-SOURCE.txt`); the build script is in this repository; the same source tarball is attached to each release (Release stage). ffmpeg is a separate program the user can replace.
+- **LGPL obligations:** the licence texts and the exact source reference and configure line are shipped in `licenses/` (`ffmpeg-SOURCE.txt`); the build script is in this repository; the release notes name the official source URL and its pinned SHA-256 (from `src-tauri/sidecars.json`). The tarball itself is not attached to releases (owner, 2026-11-22; `docs/decisions-release.md`). ffmpeg is a separate program the user can replace.
 - **One architecture per build:** Deno alone is about 80–100 MB per architecture, so a universal app would roughly double in size. Each release is built for one architecture (`aarch64-apple-darwin` or `x86_64-apple-darwin`), with that architecture's ffmpeg and Deno.
 
 ## How a video download runs

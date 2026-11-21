@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EXTENSION_ID, extensionId } from "../extension-id.mjs";
-import { changelogSection, notes } from "../release-notes.mjs";
+import { changelogSection, notes, FFMPEG } from "../release-notes.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -42,6 +42,13 @@ test("the notes match how the files were signed", () => {
   assert.doesNotMatch(signed, /Open Anyway/);
   assert.match(signed, /windows-x64-setup-beta\.exe/);
   assert.throws(() => notes(CL, "0.1.0", "maybe"), /unknown macOS signing/);
+  // Only the four release files are attached: no SHA256SUMS, no source tarball; the ffmpeg
+  // source is named by its official URL and pinned hash instead.
+  for (const n of [adhoc, signed]) {
+    assert.doesNotMatch(n, /SHA256SUMS|ffmpeg-\*\.tar\.xz/);
+    assert.match(n, /gh attestation verify <file> -R kumarsumit17\/ks-download-manager/);
+    assert.ok(n.includes(`built from ffmpeg ${FFMPEG.version}: source ${FFMPEG.source}, SHA-256 \`${FFMPEG.sha256}\``));
+  }
   // The real changelog has the section for the first release.
   assert.ok(changelogSection(readFileSync(join(root, "CHANGELOG.md"), "utf8"), "0.1.2").length > 0);
 });
