@@ -37,10 +37,10 @@ The design must be our own: no copied icons, skins, screenshots or wording from 
 - **Status bar:** active count, total speed, finished count.
 
 ## Dialogs
-- **Add download:** paste a URL (pre-filled from the clipboard when it holds a link); shows file name, size, category and save folder before starting. Buttons: Download now, Download later.
+- **Add download:** paste a URL (pre-filled from the clipboard when it holds a link); shows file name, size, category, quality (for video, audio and multi-size images) and save folder before starting. Buttons: Download now, Download later.
 - **Download progress:** per-download window or panel with speed, time left, and one bar per connection so the user can see the segments working.
 - **Playlist picker:** shown when the pasted link is a playlist: entries with title and duration, a Select all box at the top (everything selected by default, with a selected count), one quality choice for all. See [video-playlists](video-playlists.md).
-- **Settings:** General, Downloads (connections per file, speed limit, default folders per category), Browser integration, Appearance (light, dark, follow system).
+- **Settings:** General, Downloads (connections per file, speed limit, default folders per category, **Always get the best available quality**: on by default, see [video-playlists](video-playlists.md#best-available-quality)), Browser integration, Appearance (light, dark, follow system).
 
 ## Look and feel
 - Flat and calm: one accent colour, generous spacing, no gradients or skeuomorphic buttons.

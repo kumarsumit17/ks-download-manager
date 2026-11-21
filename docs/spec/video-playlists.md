@@ -5,8 +5,19 @@
 - For a playlist: see the list of entries with title, duration and thumbnail, choose quality once for all, and start. Every entry is selected when the list opens, so downloading the whole playlist needs no ticking at all.
 - A **Select all** box at the top of the list ticks or unticks every entry in one click, with a count beside it ("42 of 42 selected"). Individual boxes are only for leaving videos out. Shift-click selects a range.
 - Choose format per download: video (resolution choice) or audio only.
+- Or skip the choice: with **Always get the best available quality** on, the app picks the best version itself. See [Best available quality](#best-available-quality).
 - Each playlist entry appears as its own row in the download list, grouped under the playlist name, saved to a folder named after the playlist, with an optional number prefix to keep the order.
 - Pause, resume and retry work per entry and for the whole playlist. Entries that are unavailable (private, removed, region-blocked) are marked and skipped, without stopping the rest.
+
+## Best available quality
+One setting, **Always get the best available quality** (Settings → Downloads), on by default. It covers video, audio and images.
+
+- **Video:** the highest resolution the site offers for that video, then the highest frame rate, then the highest bitrate, joined with the best audio stream. No resolution question is asked.
+- **Audio only:** the highest-bitrate audio stream, kept in the format the site serves. It is not re-encoded, because converting cannot add quality and usually loses some.
+- **Images:** when a site offers the same image in several sizes, the original or largest one, never a preview or thumbnail. A direct link to an image file downloads that file as it is.
+- **Where it shows:** the Add download dialog and the playlist picker show "Best available" as the quality and start without asking. The user can still pick a lower quality there for one download or one playlist. With the setting off, the quality choice is asked every time.
+- **Honest limits:** "best" means the best version the site gives to a visitor who is not signed in. Formats behind a sign-in, a paid tier or DRM are not included (see Limits). Best quality also means the largest files and the longest downloads.
+- **If the best version fails** (removed or blocked part-way), the download is marked failed with the reason. The app does not quietly fall back to a lower quality.
 
 ## How it works
 - Site support comes from **yt-dlp**, run as a separate bundled program (Tauri sidecar) that the Rust engine calls for two jobs: listing a link's entries and formats, and fetching the media. **ffmpeg** is used to join separate video and audio streams.
@@ -20,5 +31,6 @@
 - The user is responsible for having the right to download what they request. The first-run screen and the README say so plainly.
 
 ## Open points
+- Best-size images: picking the original needs a rule per site (for example a size parameter in the image address). Decide which sites the first version covers and list them here before Stage 7.
 - Licences to confirm and record in `docs/THIRD_PARTY.md` before bundling: yt-dlp and the exact ffmpeg build.
 - Chrome Web Store rules on extensions that help download YouTube video: confirm before designing the extension's "send to app" button for video pages.
