@@ -13,7 +13,7 @@ The design must be our own: no copied icons, skins, screenshots or wording from 
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│  ＋ Add URL   ▶ Resume   ⏸ Pause   ✕ Delete   ⏱ Queues   ⚙ Settings   🔍 │  toolbar
+│ ＋ Add URL  ▶ Resume  ⏸ Pause  ✕ Delete  ⌫ Clear all  ⏱ Queues  ⚙ Settings 🔍│  toolbar
 ├───────────────┬──────────────────────────────────────────────────────┤
 │ All downloads │ Name            Size    Status    Speed   Time left  │
 │  Unfinished   │ ──────────────────────────────────────────────────── │
@@ -31,6 +31,7 @@ The design must be our own: no copied icons, skins, screenshots or wording from 
 ```
 
 - **Toolbar:** a single row of large, labelled actions. Actions that do not apply to the current selection are disabled, not hidden.
+- **Clear all:** removes every download from the list after a confirmation dialog, stopping any still in progress. Files already saved on disk are kept. Disabled when the list is empty.
 - **Sidebar:** All / Unfinished / Finished, then categories by file type (Video, Audio, Images, Other), then queues. Selecting an entry filters the list.
 - **Download list:** a sortable table. Columns: Name, Size, Status (with an inline progress bar), Speed, Time left, Date added. Double-click opens a finished file; right-click gives Open, Open folder, Resume, Pause, Copy link, Delete.
 - **Status bar:** active count, total speed, finished count.

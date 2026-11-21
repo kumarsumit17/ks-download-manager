@@ -8,7 +8,19 @@ Free download manager for images, audio and video, with up to 20× faster downlo
 - Chrome extension, if built: TypeScript, Manifest V3, in `extension/`. It only hands URLs to the desktop app; downloading stays in Rust.
 - The suite's Kotlin, Gradle and package-root rules do not apply here. Bundle identifier: `com.ks.downloadmanager`.
 - Planned layout: `src-tauri/` (Rust), `src/` (interface), `extension/` (Chrome).
-- Exact versions and libraries are not pinned yet: record them here when the project is first generated.
+- Generated 2026-11-21 (Stage 1). Toolchain: Rust 1.100 (rustup, stable), Node 26 / npm 11. Tauri 2.12, React 19.3, TypeScript 6.0, Vite 8.3, Tailwind CSS 4.3, shadcn/ui (CLI 4.23, style radix-nova, Radix base), lucide-react 1.77. Full list with licences: `docs/THIRD_PARTY.md`.
+- Version placeholder: `src-tauri/Cargo.toml` has `version = "0.0.0"` because the Tauri CLI requires the field; `tauri.conf.json` and `package.json` have no version. Release builds pass the tag version (e.g. `tauri build --config '{"version":"1.2.3"}'`).
+- Build stages: `docs/spec/stages.md`. One stage per request.
+
+## Commands
+```bash
+npm install                      # first time
+npm run tauri dev                # run the app with hot reload
+npm run build                    # type-check + build the interface
+cd src-tauri && cargo test       # Rust tests
+cd src-tauri && cargo clippy --all-targets -- -D warnings
+npm run tauri build              # release bundle (.app/.dmg on macOS)
+```
 
 ## UI
 - Follow `docs/spec/ui.md` (IDM-style single window: toolbar, sidebar, download list). Read it before any interface work.
