@@ -47,6 +47,7 @@ All on `dev`, local, not pushed. Each "Part N is done" section in the decisions 
 | 7 · Polish | `47316ec` | Downloads marked as from the internet (quarantine; Windows Mark of the Web untested), first-run notice, clipboard pre-fill through Rust, windowed list, start-up restore after the window opens, Shift+F10 menu |
 | Testing | `52e6ad5` | Real-network test: direct file with pause, resume and the mark |
 | Review file | (the commit adding this file) | This file; `docs/THIRD_PARTY.md` tokio features corrected (`net` was missing) |
+| Final review | `9bcc823`, `5472aac`, `51caee3`, `e6620eb`, `64345f6`, `9d79150` | The review's changes (approved with changes): dead-server handling, list sorting and scrolling, thumbnail fetches, benchmark checks, nits; see `docs/decisions-stage5.md`, "Final review" |
 
 **ks-utility** (`../ks-utility`, `main`): `a1d12b9` docs (pin by tag); `6ea7fb4` `v0.2.0` language support, message codes, token bucket, media types; `830f22b` + `a5aa8e7` `v0.2.1` command from `node_modules`, app terms; `70e9f2b` `v0.2.2` owner's wording; `96741cd` `v0.2.3` playlist terms. `v0.2.2` and `v0.2.3` were pushed by the builder under the owner's rule (fast-forward only, new tags only; each push recorded in the decisions log). **Workspace repo** (`..`): `6e17e8b`, `18fde06`, `96022ed`, `0b37916` (docs only, local).
 
@@ -125,6 +126,8 @@ No other crate or npm package was added. Zustand and TanStack were not added (re
 10. Load the extension unpacked (README): the YouTube button, the X hover button on an image (largest version saved, marked), the popup, the browser-downloads switch.
 11. Start the app with many unfinished downloads: the window appears at once, the list fills a moment later, nothing starts by itself.
 12. Settings: limits, speed limit with a video, Prefer MP4, Update video component, leftover download files (Remove only after confirming).
+13. *(After the final review.)* Start a large download and pull the network cable (or block the server): after about 15 s the row says "Server not answering, retrying…"; after about 2 minutes it fails with "The server stopped answering…"; reconnect and Resume continues from where it stopped. While other rows download, the list does not jump back to the selected row.
+14. *(After the final review.)* A long playlist (hundreds of entries) opens at once and scrolls smoothly in the picker, thumbnails appear as entries come into view. Settings → Add download → turn off **Fill in a link from the clipboard**: Add download stays empty with a link on the clipboard (and macOS shows no paste prompt).
 
 # 7. Instructions for the reviewer
 1. **Requirements coverage:** for every item of Stage 5 in `specs/stages.md` and `docs/stage5-brief.md` (Parts 1–7 and the final steps), say whether it is met, half met or missing. Check that every **Not done** in the decisions log is honest and nothing undone is presented as done.

@@ -136,7 +136,7 @@ Nits (all done, `64345f6` unless noted):
 
 - **Commits:** `9bcc823` (1, dead server), `5472aac` (2, 3, 8, list), `51caee3` (4, thumbnails), `e6620eb` (5, benchmark), `64345f6` (6, 7, 9, 10, 11, nits), and the commit adding this section (specs, `docs/hindi-review.md`).
 - **Checks:** `npm run build` ok; `test:lang` ok; `test:ui` 11/11; `test:extension` 6/6; `build:extension` ok; `cargo test -q` (workspace) 22 + 1 + 55 + 78 passed, 5 ignored (network and benchmark tests); `cargo clippy -q --all-targets -- -D warnings` no output; ks-utility Rust 33/33, TypeScript 17/17; `npm run bench` passed (19.94× at 20 connections, one connection 64.00 s, unthrottled 3,291 MiB/s against the 500 MiB/s floor); real 100 MiB download with pause, resume and the internet mark passed again (`real_file_pause_resume_finish_and_marked`); `graphify update .` run.
-- **Not done:** nothing from the review. **Not tested:** the new row state, the Settings switch and the windowed picker in the running window (this session cannot see it); added to the owner's hand checks in `stage5-final-review.md` section 6 (items 2, 3).
+- **Not done:** nothing from the review. **Not tested:** the new row state, the Settings switch and the windowed picker in the running window (this session cannot see it); added to the owner's hand checks in `stage5-final-review.md` section 6 (items 13, 14).
 
 ## Part 7 — Polish
 
