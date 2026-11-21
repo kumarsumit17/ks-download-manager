@@ -14,7 +14,7 @@ Free download manager for images, audio and video, with up to 20× faster downlo
 - TypeScript: `tsconfig.app.json` (src) and `tsconfig.node.json` (vite.config.ts), both checked by `tsc -b` in `npm run build`.
 - CSP (`tauri.conf.json`): `connect-src ipc: http://ipc.localhost` for Tauri IPC. `dangerousDisableAssetCspModification: ["style-src"]` stops Tauri adding a style nonce, which would make browsers ignore `'unsafe-inline'` and block the `<style>` tag Radix dialogs inject. Scripts keep Tauri's hashes and nonces.
 - Version placeholder: `src-tauri/Cargo.toml` has `version = "0.0.0"` because the Tauri CLI requires the field; `tauri.conf.json` and `package.json` have no version. Release builds pass the tag version (e.g. `tauri build --config '{"version":"1.2.3"}'`).
-- Build stages: `docs/spec/stages.md`. One stage per request.
+- Build stages: `specs/stages.md`. One stage per request.
 
 ## Commands
 ```bash
@@ -26,19 +26,28 @@ cd src-tauri && cargo clippy --all-targets -- -D warnings
 npm run tauri build              # release bundle (.app/.dmg on macOS)
 ```
 
+## Specs
+- All specs for this project live in `specs/` in the repository root, as an Open Knowledge Format (OKF) v0.2 bundle. Never create spec files anywhere else. Start at `specs/index.md`.
+- One topic per file. Every file except `index.md` and `log.md` starts with YAML frontmatter: `type` (required: `Specification`, `Policy` or `Plan`), `title`, `description` (one sentence), `tags`.
+- When a spec is added: list it in `specs/index.md` with its description. When a spec is added or changed: add a line under today's date (`# YYYY-MM-DD`, newest first) in `specs/log.md`.
+- Link between specs with relative markdown links (`[UI direction](ui.md)`), so they also work on GitHub.
+
 ## UI
-- Follow `docs/spec/ui.md` (IDM-style single window: toolbar, sidebar, download list). Read it before any interface work.
+- Follow `specs/ui.md` (IDM-style single window: toolbar, sidebar, download list). Read it before any interface work.
 - The design is our own: never copy icons, skins, screenshots or code from the reference apps.
 
 ## Clean room (non-negotiable)
-- Follow `docs/spec/clean-room.md`. Never read, copy or adapt source code, binaries or assets of other download managers. Implement only from our own specs and public standards.
+- Follow `specs/clean-room.md`. Never read, copy or adapt source code, binaries or assets of other download managers. Implement only from our own specs and public standards.
 - Every dependency is listed with its licence in `docs/THIRD_PARTY.md`.
 
 ## Engine and speed
-- Follow `docs/spec/engine.md`. The "up to 20×" claim is only made with measurements recorded in `docs/benchmarks.md`; never state a speed-up that was not measured.
+- Follow `specs/engine.md`. The "up to 20×" claim is only made with measurements recorded in `docs/benchmarks.md`; never state a speed-up that was not measured.
 
 ## Video and playlists
-- Follow `docs/spec/video-playlists.md`: site support through yt-dlp as an unmodified sidecar, plus ffmpeg. No DRM bypass.
+- Follow `specs/video-playlists.md`: site support through yt-dlp as an unmodified sidecar, plus ffmpeg. No DRM bypass.
+
+## Dependencies
+- Keep third-party dependencies to the minimum. Follow `specs/dependencies.md` before adding any crate or package.
 
 ## Constraints
 - Free: no ads, no analytics, no crash-reporting SDKs.

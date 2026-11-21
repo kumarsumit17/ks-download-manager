@@ -1,3 +1,10 @@
+---
+type: Plan
+title: Build stages
+description: The nine build stages, what each delivers, and the checks that must pass before a stage is committed.
+tags: [plan, stages, process]
+---
+
 # Build stages
 
 The app is built one stage per request. Each stage ends with a build that runs, the checks in **Done means**, a test by the owner, and a commit only after the owner approves.

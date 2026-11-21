@@ -1,3 +1,10 @@
+---
+type: Specification
+title: UI direction
+description: The main window, dialogs, look and feel, UI stack and quality bar for the desktop interface.
+tags: [ui, design, accessibility]
+---
+
 # UI direction
 
 Goal: a clean, classic download-manager window in the spirit of Internet Download Manager (one window, everything visible, nothing hidden behind menus), with a modern look and fast response.

@@ -1,3 +1,10 @@
+---
+type: Specification
+title: Video and playlist downloads
+description: Single-video and playlist downloads through yt-dlp and ffmpeg, the best-available-quality option, and their limits.
+tags: [video, playlists, quality]
+---
+
 # Video and playlist downloads
 
 ## What the user can do

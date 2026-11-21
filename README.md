@@ -9,22 +9,22 @@ A free download manager for images, audio and video, built for speed. The goal i
 | **Platform** | Windows · macOS (desktop) |
 | **Tech stack** | Rust (download engine) · Tauri (desktop shell) · TypeScript + React with shadcn/ui and Lucide icons (interface) |
 | **Chrome extension** | TypeScript, Manifest V3 (under consideration) |
-| **Status** | In development: Stage 1 (main window with sample data) is done; the download engine is next. See [stages](docs/spec/stages.md) |
+| **Status** | In development: Stage 1 (main window with sample data) is done; the download engine is next. See [stages](specs/stages.md) |
 
 ## Planned features
 
 - Download images, audio and video
-- Download single videos and whole playlists from YouTube and other video sites ([spec](docs/spec/video-playlists.md))
-- Faster downloads by fetching each file over many connections at once, aiming for up to 20× a single connection where the server allows it; numbers will be published in `docs/benchmarks.md` once measured ([how](docs/spec/engine.md))
+- Download single videos and whole playlists from YouTube and other video sites ([spec](specs/video-playlists.md))
+- Faster downloads by fetching each file over many connections at once, aiming for up to 20× a single connection where the server allows it; numbers will be published in `docs/benchmarks.md` once measured ([how](specs/engine.md))
 - Free, with no ads, analytics or tracking
 
 ## Interface
 
-A clean, classic single-window layout: toolbar on top, categories and queues on the left, the download list in the middle, in light and dark themes. See [docs/spec/ui.md](docs/spec/ui.md).
+A clean, classic single-window layout: toolbar on top, categories and queues on the left, the download list in the middle, in light and dark themes. See [specs/ui.md](specs/ui.md).
 
 ## Clean-room implementation
 
-This is an independent implementation: no code or assets from other download managers. See [docs/spec/clean-room.md](docs/spec/clean-room.md).
+This is an independent implementation: no code or assets from other download managers. See [specs/clean-room.md](specs/clean-room.md).
 
 You are responsible for having the right to download what you request. The app does not bypass DRM or other copy protection.
 

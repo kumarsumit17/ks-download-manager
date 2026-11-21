@@ -1,3 +1,10 @@
+---
+type: Specification
+title: Download engine
+description: How the Rust engine downloads a file over many connections, resumes safely, and how the speed claim is proven.
+tags: [engine, rust, performance]
+---
+
 # Download engine
 
 Goal: use the user's full connection speed on every download. The headline claim is "up to 20× faster than a single-connection download"; this page says how that is achieved and how it is proven.
