@@ -60,8 +60,8 @@ npm run tauri build              # release bundle (.app/.dmg on macOS)
 ## Platform folders
 - Every KS-Suite app repo has the same top-level platform folders: `tv/google-tv/`, `desktop/mac/`, `desktop/windows/`, `mobile/android/` and `mobile/ios/`. All five exist in every app repo, whether or not the app supports that platform yet.
 - This app targets `desktop/mac` and `desktop/windows`. The other folders are empty on purpose (a `.gitkeep` only): they mark where that platform's code would go, not missing work. Do not add code for a platform that is not a target without the owner asking.
-- Code for one platform goes in that platform's folder. Code used by more than one platform stays in one shared place and is never copied between platform folders.
-- One Tauri codebase builds both desktop targets, and it is still in the repository root (`src/`, `src-tauri/`, `extension/`). Moving code is a separate, planned change, done as its own stage with the builds run. Only what is specific to one operating system (packaging, signing, installer and OS-only code) goes into `desktop/mac/` or `desktop/windows/`; code both targets share stays in one shared place.
+- Three layers, narrowest first: a platform folder holds code for one platform of this app; `shared/` in the repository root holds code used by two or more platforms of this app, written once and never copied between platform folders; `ks-utility` holds generic code used by several apps. Here `shared/` will hold the Tauri codebase both desktop targets build from (`src/`, `src-tauri/`, `extension/`) once the code is moved.
+- One Tauri codebase builds both desktop targets, and it is still in the repository root (`src/`, `src-tauri/`, `extension/`). Moving code is a separate, planned change, done as its own stage with the builds run. Only what is specific to one operating system (packaging, signing, installer and OS-only code) goes into `desktop/mac/` or `desktop/windows/`; code both targets share goes in `shared/`.
 - Never rename, merge or remove these folders, and never add another top-level platform folder; the layout is a suite-wide rule.
 
 ## Shared code (`ks-utility`)
