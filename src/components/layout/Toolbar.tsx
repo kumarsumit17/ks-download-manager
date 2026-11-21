@@ -7,7 +7,7 @@ interface Action {
   label: string;
   icon: LucideIcon;
   enabled: boolean;
-  shortcut?: string;
+  primary?: boolean;
   onClick?: () => void;
 }
 
@@ -23,7 +23,7 @@ interface Props {
 
 export function Toolbar({ canResume, canPause, canDelete, canClearAll, onClearAll, query, onQuery }: Props) {
   const primary: Action[] = [
-    { label: "Add URL", icon: Plus, enabled: true, shortcut: "⌘N" },
+    { label: "Add URL", icon: Plus, enabled: true, primary: true },
     { label: "Resume", icon: Play, enabled: canResume },
     { label: "Pause", icon: Pause, enabled: canPause },
     { label: "Delete", icon: Trash2, enabled: canDelete },
@@ -37,11 +37,11 @@ export function Toolbar({ canResume, canPause, canDelete, canClearAll, onClearAl
   const render = (a: Action) => (
     <Button
       key={a.label}
-      variant={a.label === "Add URL" ? "default" : "ghost"}
+      variant={a.primary ? "default" : "ghost"}
       className="h-14 w-[4.75rem] flex-col gap-1 text-xs"
       disabled={!a.enabled}
       onClick={a.onClick}
-      title={a.shortcut ? `${a.label} (${a.shortcut})` : a.label}
+      title={a.label}
     >
       <a.icon className="size-5" strokeWidth={1.75} aria-hidden />
       {a.label}
@@ -53,7 +53,7 @@ export function Toolbar({ canResume, canPause, canDelete, canClearAll, onClearAl
       {primary.map(render)}
       <Separator orientation="vertical" className="mx-1 !h-10" />
       {secondary.map(render)}
-      <div className="ml-auto flex items-center gap-2 rounded-md border bg-muted/40 px-2 focus-within:ring-2 focus-within:ring-ring/50">
+      <div className="ml-auto flex items-center gap-2 rounded-md border bg-muted/40 px-2 focus-within:ring-2 focus-within:ring-ring">
         <Search className="size-4 text-muted-foreground" strokeWidth={1.75} aria-hidden />
         <input
           type="search"

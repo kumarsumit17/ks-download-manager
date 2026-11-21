@@ -6,6 +6,7 @@ The app is built one stage per request. Each stage ends with a build that runs, 
 - Tauri 2 + React + TypeScript + Vite, Tailwind CSS, shadcn/ui, Lucide, on macOS (Windows build checked in Stage 9).
 - Bundle identifier `com.ks.downloadmanager`; version comes from the git tag, never hardcoded.
 - The main window from [ui](ui.md) with static sample rows: toolbar, sidebar, download list, status bar, light and dark theme following the system.
+- Clear all toolbar action with a confirmation dialog (list only; files on disk are kept).
 - Exact versions recorded in `CLAUDE.md`; every dependency in `docs/THIRD_PARTY.md`.
 
 ## Stage 2 — Engine core (single file)

@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import type { LucideIcon } from "lucide-react";
 import { CheckCircle2, Clock, Download, File, Film, Image, Layers, Music } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -38,7 +39,18 @@ interface Props {
   onSelect: (f: Filter) => void;
 }
 
+const allItems = groups.flatMap((g) => g.items);
+
 export function Sidebar({ downloads, selected, onSelect }: Props) {
+  // One pass over the downloads for every count.
+  const counts = useMemo(() => {
+    const c = new Map<Item, number>(allItems.map((it) => [it, 0]));
+    for (const d of downloads) {
+      for (const it of allItems) if (matches(d, it.filter)) c.set(it, (c.get(it) ?? 0) + 1);
+    }
+    return c;
+  }, [downloads]);
+
   return (
     <nav aria-label="Filters" className="flex w-52 shrink-0 flex-col gap-4 overflow-y-auto border-r bg-sidebar p-2 text-sidebar-foreground">
       {groups.map((g, gi) => (
@@ -48,7 +60,7 @@ export function Sidebar({ downloads, selected, onSelect }: Props) {
           )}
           {g.items.map((it) => {
             const active = sameFilter(it.filter, selected);
-            const count = downloads.filter((d) => matches(d, it.filter)).length;
+            const count = counts.get(it) ?? 0;
             return (
               <button
                 key={it.label}

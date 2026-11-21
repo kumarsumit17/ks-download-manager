@@ -2,20 +2,20 @@
 
 > Part of the [KS-Suite](https://github.com/kumarsumit17/KS-Suite).
 
-A free download manager for images, audio and video, built for speed: up to 20× faster downloads. No ads and no tracking.
+A free download manager for images, audio and video, built for speed. The goal is downloads up to 20× faster than a single connection, to be confirmed by measurements before it is claimed. No ads and no tracking.
 
 | | |
 |---|---|
 | **Platform** | Windows · macOS (desktop) |
 | **Tech stack** | Rust (download engine) · Tauri (desktop shell) · TypeScript + React with shadcn/ui and Lucide icons (interface) |
 | **Chrome extension** | TypeScript, Manifest V3 (under consideration) |
-| **Status** | Planned: this repository holds the project structure; app code is still to come |
+| **Status** | In development: Stage 1 (main window with sample data) is done; the download engine is next. See [stages](docs/spec/stages.md) |
 
 ## Planned features
 
 - Download images, audio and video
 - Download single videos and whole playlists from YouTube and other video sites ([spec](docs/spec/video-playlists.md))
-- Up to 20× faster downloads than a single connection, by fetching each file over many connections at once ([how](docs/spec/engine.md))
+- Faster downloads by fetching each file over many connections at once, aiming for up to 20× a single connection where the server allows it; numbers will be published in `docs/benchmarks.md` once measured ([how](docs/spec/engine.md))
 - Free, with no ads, analytics or tracking
 
 ## Interface

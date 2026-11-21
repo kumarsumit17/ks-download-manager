@@ -1,4 +1,4 @@
-import { useMemo, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
@@ -23,6 +23,8 @@ const statusLabel: Record<Status, string> = {
   finished: "Finished",
   failed: "Failed",
 };
+
+const rowId = (id: string) => `download-row-${id}`;
 
 function timeLeft(d: Download): number | null {
   if (d.status !== "downloading" || d.speed <= 0 || d.size === null) return null;
@@ -75,9 +77,21 @@ export function DownloadList({ downloads, selectedId, onSelect }: Props) {
     onSelect(rows[next < 0 ? 0 : next].id);
   };
 
+  // Keep the selected row visible when it changes (arrow keys, sorting, filtering).
+  useEffect(() => {
+    if (selectedId) document.getElementById(rowId(selectedId))?.scrollIntoView({ block: "nearest" });
+  }, [selectedId, rows]);
+
   return (
-    <div className="min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset" tabIndex={0} onKeyDown={onKey} aria-label="Downloads">
-      <table className="w-full table-fixed border-collapse text-sm" aria-rowcount={rows.length}>
+    <div className="min-h-0 flex-1 overflow-auto">
+      <table
+        role="grid"
+        aria-label="Downloads"
+        aria-activedescendant={selectedId ? rowId(selectedId) : undefined}
+        tabIndex={0}
+        onKeyDown={onKey}
+        className="w-full table-fixed border-collapse text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+      >
         <thead className="sticky top-0 z-10 bg-background">
           <tr className="border-b">
             {columns.map((c) => {
@@ -91,9 +105,11 @@ export function DownloadList({ downloads, selectedId, onSelect }: Props) {
                 >
                   <button
                     type="button"
-                    tabIndex={-1}
                     onClick={() => setSort({ key: c.key, asc: active ? !sort.asc : true })}
-                    className={cn("inline-flex items-center gap-1 hover:text-foreground", c.className.includes("text-right") && "flex-row-reverse")}
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                      c.className.includes("text-right") && "flex-row-reverse",
+                    )}
                   >
                     {c.label}
                     {active && (sort.asc ? <ArrowUp className="size-3" aria-hidden /> : <ArrowDown className="size-3" aria-hidden />)}
@@ -110,17 +126,23 @@ export function DownloadList({ downloads, selectedId, onSelect }: Props) {
             return (
               <tr
                 key={d.id}
+                id={rowId(d.id)}
                 aria-selected={selected}
                 onClick={() => onSelect(d.id)}
                 className={cn(
-                  "h-9 border-b border-border/60 transition-colors duration-120",
+                  "h-9 scroll-mt-8 border-b border-border/60 transition-colors duration-120",
                   selected ? "bg-primary/12" : "hover:bg-muted/60",
                 )}
               >
                 <td className="truncate px-3" title={d.url}>{d.name}</td>
                 <td className="px-3 text-right tabular-nums">{formatBytes(d.size)}</td>
                 <td className="px-3">
-                  {d.status === "downloading" || d.status === "paused" ? (
+                  {d.status === "downloading" && d.size === null ? (
+                    <div className="flex items-center gap-2">
+                      <div role="progressbar" aria-label="Downloading, size unknown" className="progress-indeterminate h-1.5 flex-1 overflow-hidden rounded-full bg-muted" />
+                      <span className="w-14 text-xs text-muted-foreground">{formatBytes(d.received)}</span>
+                    </div>
+                  ) : d.status === "downloading" || d.status === "paused" ? (
                     <div className="flex items-center gap-2">
                       <Progress value={pct} className="h-1.5 flex-1" aria-label={`${statusLabel[d.status]} ${Math.round(pct)}%`} />
                       <span className="w-14 text-xs tabular-nums text-muted-foreground">

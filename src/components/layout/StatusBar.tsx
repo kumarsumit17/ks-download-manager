@@ -7,7 +7,7 @@ export function StatusBar({ downloads }: { downloads: Download[] }) {
   const finished = downloads.filter((d) => d.status === "finished").length;
   const speed = active.reduce((s, d) => s + d.speed, 0);
   return (
-    <footer role="status" className="flex h-7 items-center gap-3 border-t bg-muted/40 px-3 text-xs text-muted-foreground">
+    <footer className="flex h-7 items-center gap-3 border-t bg-muted/40 px-3 text-xs text-muted-foreground">
       <span>{active.length} active</span>
       <span aria-hidden>·</span>
       <span className="flex items-center gap-1 tabular-nums">

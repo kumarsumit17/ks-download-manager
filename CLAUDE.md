@@ -9,6 +9,10 @@ Free download manager for images, audio and video, with up to 20× faster downlo
 - The suite's Kotlin, Gradle and package-root rules do not apply here. Bundle identifier: `com.ks.downloadmanager`.
 - Planned layout: `src-tauri/` (Rust), `src/` (interface), `extension/` (Chrome).
 - Generated 2026-11-21 (Stage 1). Toolchain: Rust 1.100 (rustup, stable), Node 26 / npm 11. Tauri 2.12, React 19.3, TypeScript 6.0, Vite 8.3, Tailwind CSS 4.3, shadcn/ui (CLI 4.23, style radix-nova, Radix base), lucide-react 1.77. Full list with licences: `docs/THIRD_PARTY.md`.
+- Toolchain is pinned: `rust-toolchain.toml` (Rust 1.100 + clippy) and `engines` in `package.json` (Node >= 26, npm >= 11).
+- Theme: light/dark follows the system through a `prefers-color-scheme` media query in `src/index.css` (no JS). The main window starts hidden and Rust shows it after setting a matching background, so there is no white flash.
+- TypeScript: `tsconfig.app.json` (src) and `tsconfig.node.json` (vite.config.ts), both checked by `tsc -b` in `npm run build`.
+- CSP (`tauri.conf.json`): `connect-src ipc: http://ipc.localhost` for Tauri IPC. `dangerousDisableAssetCspModification: ["style-src"]` stops Tauri adding a style nonce, which would make browsers ignore `'unsafe-inline'` and block the `<style>` tag Radix dialogs inject. Scripts keep Tauri's hashes and nonces.
 - Version placeholder: `src-tauri/Cargo.toml` has `version = "0.0.0"` because the Tauri CLI requires the field; `tauri.conf.json` and `package.json` have no version. Release builds pass the tag version (e.g. `tauri build --config '{"version":"1.2.3"}'`).
 - Build stages: `docs/spec/stages.md`. One stage per request.
 
@@ -16,7 +20,7 @@ Free download manager for images, audio and video, with up to 20× faster downlo
 ```bash
 npm install                      # first time
 npm run tauri dev                # run the app with hot reload
-npm run build                    # type-check + build the interface
+npm run build                    # type-check (tsc -b, incl. vite.config.ts) + build the interface
 cd src-tauri && cargo test       # Rust tests
 cd src-tauri && cargo clippy --all-targets -- -D warnings
 npm run tauri build              # release bundle (.app/.dmg on macOS)
