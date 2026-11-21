@@ -14,7 +14,7 @@ Free download manager for images, audio and video, with up to 20× faster downlo
 - TypeScript: `tsconfig.app.json` (src) and `tsconfig.node.json` (vite.config.ts), both checked by `tsc -b` in `npm run build`.
 - CSP (`tauri.conf.json`): `connect-src ipc: http://ipc.localhost` for Tauri IPC. `dangerousDisableAssetCspModification: ["style-src"]` stops Tauri adding a style nonce, which would make browsers ignore `'unsafe-inline'` and block the `<style>` tag Radix dialogs inject. Scripts keep Tauri's hashes and nonces.
 - Version placeholder: `src-tauri/Cargo.toml` has `version = "0.0.0"` because the Tauri CLI requires the field; `tauri.conf.json` and `package.json` have no version. Release builds pass the tag version (e.g. `tauri build --config '{"version":"1.2.3"}'`).
-- Build stages: `specs/stages.md`. One stage per request.
+- Build stages: `specs/stages.md`. One stage per request; Stage 5 (Final) is built in one go, part by part, with decisions recorded in `docs/decisions-stage5.md`.
 
 ## Commands
 ```bash

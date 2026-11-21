@@ -12,9 +12,9 @@ Goal: a clean, classic download-manager window in the spirit of Internet Downloa
 ## References
 - [Internet Download Manager](https://www.internetdownloadmanager.com/): the layout to follow (toolbar, categories, download list) and the feature baseline (segmented downloads, resume, browser hand-off, batch, scheduler and queues, categories, light and dark themes).
 - [AB Download Manager](https://github.com/amir1376/ab-download-manager): reference for a modern take on the same layout, with themes, queues and a browser extension that lives in its own repository. Apache-2.0, Kotlin; use it for ideas only, do not copy its code or assets.
-- [Free Download Manager](https://www.freedownloadmanager.org/): reference for feature scope (segmented downloads, resume, browser integration, wide language support).
+- [Free Download Manager](https://www.freedownloadmanager.org/): **the** reference for feature scope and overall feel from Stage 5 on (segmented downloads, resume, browser integration, scheduler and queues, video, wide language support). Learned only by using it and reading its public pages.
 
-The design must be our own: no copied icons, skins, screenshots or wording from any of these. The full rule is in [clean-room](clean-room.md).
+The design must be our own: our own UI and icons, and no code, assets, screenshots or wording copied from any of these or any other download manager. Site rules in the Chrome extension (which element holds a video, how a site names its largest image) are written from observing the public pages themselves, never from another extension's code. The full rule is in [clean-room](clean-room.md).
 
 ## Main window
 
@@ -60,11 +60,11 @@ The design must be our own: no copied icons, skins, screenshots or wording from 
 - **Clear all:** finished files stay on disk; partial files of unfinished downloads are deleted with them.
 
 ## Deferred from Stage 4
-- **Clipboard pre-fill in Add download** → Stage 8 (Polish). Reading the clipboard from the web view shows a system paste prompt on macOS; doing it properly needs a clipboard plugin, to be justified then.
-- **Folder picker for the save folder** → Stage 5, with the per-category save folders and the settings screen. Until then the folder is a text field, defaulting to the system Downloads folder.
-- **Zustand** → Stage 5, when queues and settings add shared state. Stage 4 uses a small hand-written store (`src/features/downloads/store.ts`).
-- **TanStack Table + TanStack Virtual** → Stage 8, with the 10,000-row scroll test. Stage 4 keeps the plain sortable table.
-- **Start-up restore off the critical path** → Stage 8. Stage 4 reads the range map of every unfinished download before the window shows; fast for a normal list, but it adds to start-up time with many unfinished downloads (quality bar: usable window in under 1 second).
+- **Clipboard pre-fill in Add download** → Stage 5, Part 7 (Polish). Reading the clipboard from the web view shows a system paste prompt on macOS; doing it properly needs a clipboard plugin, to be justified then.
+- **Folder picker for the save folder** → Stage 5, Part 3, with the per-category save folders and the settings screen. Until then the folder is a text field, defaulting to the system Downloads folder.
+- **Zustand** → Stage 5, Part 3, when queues and settings add shared state. Stage 4 uses a small hand-written store (`src/features/downloads/store.ts`).
+- **TanStack Table + TanStack Virtual** → Stage 5, Part 7, with the 10,000-row scroll test. Stage 4 keeps the plain sortable table.
+- **Start-up restore off the critical path** → Stage 5, Part 7. Stage 4 reads the range map of every unfinished download before the window shows; fast for a normal list, but it adds to start-up time with many unfinished downloads (quality bar: usable window in under 1 second).
 
 ## Look and feel
 - Flat and calm: one accent colour, generous spacing, no gradients or skeuomorphic buttons.
