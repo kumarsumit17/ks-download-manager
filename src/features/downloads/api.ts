@@ -19,7 +19,8 @@ export interface Settings {
 /** A leftover download file or temp folder found by the last scan. */
 export interface LeftoverItem {
   path: string;
-  folder: boolean;
+  /** A video temp folder, a `.ksdownload` file, or an empty reservation file. */
+  what: "folder" | "part" | "reservation";
   size: number;
 }
 
@@ -50,7 +51,8 @@ export const api = {
   startQueue: (queue: number | null) => invoke<void>("start_queue", { queue }),
   stopQueue: (queue: number | null) => invoke<number>("stop_queue", { queue }),
   leftovers: (rescan: boolean) => invoke<LeftoverItem[]>("leftover_files", { rescan }),
-  removeLeftovers: () => invoke<[number, number]>("remove_leftover_files"),
+  /** Removes the ticked items of the last scan; each is re-checked first. */
+  removeLeftovers: (paths: string[]) => invoke<[number, number]>("remove_leftover_files", { paths }),
   quit: () => invoke<void>("quit"),
 };
 

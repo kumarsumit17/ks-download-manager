@@ -486,7 +486,7 @@ impl Manager {
         let record = {
             let mut inner = self.lock();
             let taken = |p: &Path| inner.records.iter().any(|r| r.path == p);
-            let path = files::reserve(&folder, &name, &taken).map_err(|e| format!("Could not create the file: {e}."))?;
+            let path = reserve_owned(&folder, &name, &taken, inner.next_id, url).map_err(|e| format!("Could not create the file: {e}."))?;
             let name = path.file_name().map_or(name.clone(), |n| n.to_string_lossy().into_owned());
             let record = Record {
                 id: inner.next_id,
@@ -843,6 +843,10 @@ impl Manager {
         std::fs::rename(part, &target).map_err(|e| {
             RunError::Failed(format!("Downloaded to {}, but could not rename it: {e}.", part.display()))
         })?;
+        // The name is held by the finished file now; its reservation marker goes.
+        if let Some(r) = inner.records.iter().find(|r| r.id == id) {
+            remove_owner(path, id, &r.url);
+        }
         if let Some(r) = inner.records.iter_mut().find(|r| r.id == id)
             && r.path != target
         {
@@ -870,7 +874,7 @@ impl Manager {
         let mut inner = self.lock();
         let taken = |p: &Path| inner.records.iter().any(|r| r.id != record.id && r.path == p);
         let name = record.path.file_name().map_or_else(|| "download".into(), |n| n.to_string_lossy().into_owned());
-        let path = files::reserve(&folder, &name, &taken).map_err(|e| format!("Could not create the file: {e}."))?;
+        let path = reserve_owned(&folder, &name, &taken, record.id, &record.url).map_err(|e| format!("Could not create the file: {e}."))?;
         if let Some(r) = inner.records.iter_mut().find(|r| r.id == record.id) {
             r.name = path.file_name().map_or(r.name.clone(), |n| n.to_string_lossy().into_owned());
             r.path = path.clone();
@@ -1186,10 +1190,19 @@ impl Manager {
         self.leftovers.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|f| f.iter().map(leftovers::Item::from).collect())
     }
 
-    /// Removes what the last scan found (after the user confirmed), each item re-checked
-    /// at this moment, then scans again. Returns how many were removed and kept.
-    pub async fn remove_leftovers(&self) -> (usize, usize) {
-        let found = self.leftovers.lock().unwrap_or_else(|e| e.into_inner()).take().unwrap_or_default();
+    /// Removes the items of the last scan the user ticked (`paths`, after they confirmed),
+    /// each re-checked at this moment, then scans again. A path the last scan did not find
+    /// is ignored. Returns how many were removed and kept.
+    pub async fn remove_leftovers(&self, paths: &[String]) -> (usize, usize) {
+        let found: Vec<leftovers::Found> = self
+            .leftovers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|f| paths.iter().any(|p| Path::new(p) == f.path))
+            .collect();
         let (removed, kept) = leftovers::remove(&found, &self.list()).await;
         self.scan_leftovers().await;
         (removed, kept.len())
@@ -1294,6 +1307,8 @@ async fn remove_files(record: &Record, delete_file: bool) {
         }
         return;
     }
+    // A reservation marker of this download (normally gone once it finished).
+    remove_owner(path, record.id, &record.url);
     match record.status {
         Status::Finished => {
             if delete_file && path.is_file() {
@@ -1335,6 +1350,26 @@ fn without_media_extension(name: &str) -> &str {
     match name.rfind('.') {
         Some(i) if i > 0 && MEDIA.contains(&name[i + 1..].to_ascii_lowercase().as_str()) => &name[..i],
         _ => name,
+    }
+}
+
+/// Reserves a free name (see [`files::reserve`]) and names download `id` of `url` as the
+/// owner of the empty reservation file in `<name>.ksowner`, so an orphaned reservation can
+/// be found by the leftover-files cleanup. Without the marker, the reservation is undone.
+fn reserve_owned(folder: &Path, name: &str, taken: &dyn Fn(&Path) -> bool, id: u64, url: &str) -> std::io::Result<PathBuf> {
+    let path = files::reserve(folder, name, taken)?;
+    if let Err(e) = marker::write(&leftovers::owner_file(&path), &marker::Marker::new(id, url)) {
+        let _ = std::fs::remove_file(&path);
+        return Err(e);
+    }
+    Ok(path)
+}
+
+/// Removes the reservation marker beside `path`, only if it names download `id` of `url`.
+fn remove_owner(path: &Path, id: u64, url: &str) {
+    let owner = leftovers::owner_file(path);
+    if marker::read(&owner).is_some_and(|m| m.is_for(id, url)) {
+        let _ = std::fs::remove_file(owner);
     }
 }
 
@@ -1552,15 +1587,49 @@ mod tests {
         partial(&orphan);
         let unknown = record(3, &other, "c.zip", Status::Paused);
         partial(&unknown);
+        let unticked = record(4, &dir, "d.zip", Status::Paused);
+        partial(&unticked);
+        let (m, _) = manager(&dir, std::slice::from_ref(&mine));
+        let items = m.scan_leftovers().await;
+        assert_eq!(items.len(), 2, "{items:?}");
+        let ticked = files::part(&orphan.path).to_string_lossy().into_owned();
+        assert!(items.iter().any(|i| i.path == ticked));
+        // Only the ticked item goes; a path the scan did not find is ignored.
+        let outside = files::part(&unknown.path).to_string_lossy().into_owned();
+        assert_eq!(m.remove_leftovers(&[ticked, outside]).await, (1, 0));
+        assert!(gone(&orphan.path), "removed with its map");
+        assert!(!gone(&mine.path) && !gone(&unknown.path), "the list's and unknown folders' files stay");
+        assert!(!gone(&unticked.path), "an unticked item stays");
+        assert_eq!(m.leftovers().unwrap().len(), 1, "scanned again after removing");
+        std::fs::remove_dir_all(&dir).unwrap();
+        std::fs::remove_dir_all(&other).unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_orphaned_reservation_is_listed_only_with_our_marker() {
+        let dir = temp_dir();
+        let no = |_: &Path| false;
+        let held = reserve_owned(&dir, "held.bin", &no, 1, "https://f.example/held.bin").unwrap();
+        let orphan = reserve_owned(&dir, "orphan.bin", &no, 2, "https://f.example/orphan.bin").unwrap();
+        assert!(is_reservation(&orphan) && leftovers::owner_file(&orphan).is_file());
+        // An empty file of the user's, with no marker.
+        std::fs::write(dir.join("empty.txt"), b"").unwrap();
+        let mine = Record { url: "https://f.example/held.bin".into(), ..record(1, &dir, "held.bin", Status::Queued) };
+        assert_eq!(mine.path, held);
         let (m, _) = manager(&dir, std::slice::from_ref(&mine));
         let items = m.scan_leftovers().await;
         assert_eq!(items.len(), 1, "{items:?}");
-        assert_eq!(items[0].path, files::part(&orphan.path).to_string_lossy());
-        assert_eq!(m.remove_leftovers().await, (1, 0));
-        assert!(gone(&orphan.path), "removed with its map");
-        assert!(!gone(&mine.path) && !gone(&unknown.path), "the list's and unknown folders' files stay");
+        assert_eq!((items[0].path.as_str(), items[0].what), (orphan.to_str().unwrap(), leftovers::What::Reservation));
+        assert_eq!(m.remove_leftovers(&[items[0].path.clone()]).await, (1, 0));
+        assert!(!orphan.exists() && !leftovers::owner_file(&orphan).exists());
+        assert!(held.exists() && dir.join("empty.txt").exists());
+        // A name next to a marker is not handed out again.
+        std::fs::write(leftovers::owner_file(&dir.join("x.bin")), b"{}").unwrap();
+        assert_eq!(files::reserve(&dir, "x.bin", &no).unwrap(), dir.join("x (1).bin"));
+        // Removing a queued download from the list takes its reservation and marker.
+        remove_files(&mine, false).await;
+        assert!(!held.exists() && !leftovers::owner_file(&held).exists());
         std::fs::remove_dir_all(&dir).unwrap();
-        std::fs::remove_dir_all(&other).unwrap();
     }
 
     #[tokio::test]

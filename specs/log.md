@@ -1,5 +1,6 @@
 # 2026-11-21
 
+* **Update**: [UI direction](ui.md), Part 3 review: empty reservation files carry an ownership marker and orphaned ones are listed as leftovers; leftover items are ticked one by one and Remove removes only the ticked ones; Settings says beside the speed limit that videos pace themselves.
 * **Update**: [UI direction](ui.md), Part 3: Waiting status and the active-download limit, queues, category save folders, folder picker, Settings, leftover download files; Zustand not added.
 * **Update**: [Video and playlist downloads](video-playlists.md), Part 3: videos count toward the active limit, `--limit-rate` as an approximate speed limit, Prefer MP4 in Settings, leftover temp folders.
 * **Update**: [Download engine](engine.md), Part 3: adaptive connections (cap by size, start small, add while speed rises, back off, remember per host), shared connection budget and speed limit.

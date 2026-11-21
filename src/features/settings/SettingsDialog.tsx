@@ -72,12 +72,28 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
   const [update, setUpdate] = useState<{ busy: boolean; note: string | null }>({ busy: false, note: null });
   const [leftovers, setLeftovers] = useState<LeftoverItem[] | null>(null);
   const [leftoverNote, setLeftoverNote] = useState<string | null>(null);
+  // Paths ticked for removal; every item found starts ticked.
+  const [ticked, setTicked] = useState<Set<string>>(new Set());
   const [confirming, setConfirming] = useState(false);
 
   const look = (rescan: boolean) => {
     setLeftovers(null);
-    api.leftovers(rescan).then(setLeftovers, (e) => setLeftoverNote(message(e)));
+    api.leftovers(rescan).then(
+      (items) => {
+        setLeftovers(items);
+        setTicked(new Set(items.map((l) => l.path)));
+      },
+      (e) => setLeftoverNote(message(e)),
+    );
   };
+
+  const tick = (path: string, on: boolean) =>
+    setTicked((old) => {
+      const next = new Set(old);
+      if (on) next.add(path);
+      else next.delete(path);
+      return next;
+    });
 
   useEffect(() => {
     if (!open) return;
@@ -132,6 +148,8 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
   };
 
   const total = leftovers?.reduce((a, l) => a + l.size, 0) ?? 0;
+  const chosen = leftovers?.filter((l) => ticked.has(l.path)) ?? [];
+  const chosenSize = chosen.reduce((a, l) => a + l.size, 0);
 
   return (
     <>
@@ -250,11 +268,19 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
                 {leftovers && leftovers.length > 0 && (
                   <ul className="max-h-32 overflow-y-auto rounded-md border p-2 text-xs">
                     {leftovers.map((l) => (
-                      <li key={l.path} className="flex gap-2 py-0.5">
-                        <span className="flex-1 truncate" title={l.path}>
-                          {l.path}
-                        </span>
-                        <span className="tabular-nums text-muted-foreground">{formatBytes(l.size)}</span>
+                      <li key={l.path}>
+                        <label className="flex items-center gap-2 py-0.5">
+                          <input
+                            type="checkbox"
+                            checked={ticked.has(l.path)}
+                            onChange={(e) => tick(l.path, e.target.checked)}
+                            className="size-3.5 shrink-0 accent-primary"
+                          />
+                          <span className="flex-1 truncate" title={l.path}>
+                            {l.path}
+                          </span>
+                          <span className="tabular-nums text-muted-foreground">{formatBytes(l.size)}</span>
+                        </label>
                       </li>
                     ))}
                   </ul>
@@ -267,7 +293,7 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
                     type="button"
                     size="sm"
                     variant="destructive"
-                    disabled={!leftovers || leftovers.length === 0}
+                    disabled={chosen.length === 0}
                     onClick={() => setConfirming(true)}
                   >
                     {t("remove")}
@@ -304,14 +330,15 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("removeLeftoversTitle")}</AlertDialogTitle>
-            <AlertDialogDescription>{t("removeLeftoversText", { n: leftovers?.length ?? 0, size: formatBytes(total) })}</AlertDialogDescription>
+            <AlertDialogDescription>{t("removeLeftoversText", { n: chosen.length, size: formatBytes(chosenSize) })}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
+                const paths = chosen.map((l) => l.path);
                 setLeftovers(null);
-                api.removeLeftovers().then(
+                api.removeLeftovers(paths).then(
                   ([removed, kept]) => {
                     setLeftoverNote(t("removedResult", { removed, kept }));
                     look(false);

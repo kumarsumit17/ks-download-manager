@@ -15,6 +15,7 @@ Everything a fresh session needs to continue Stage 5 (Final) of ks-download-mana
   - No hard-coded interface text anywhere once Part 4 lands: every string goes behind a key. New text added in Parts 3 and 5–7 needs both languages.
   - Out of scope: torrents.
 - **Generic code goes to ks-utility** (`../ks-utility`, its own repo): commit there, do not push, then move the pin here in its own commit.
+- **No code moves during Stage 5:** do not move code into `shared/` or the platform folders (`desktop/mac/`, `desktop/windows/`, …). That is a separate, later stage (owner, Part 3 review).
 
 ### Done means (every part)
 - `npm run build` succeeds.
@@ -43,7 +44,7 @@ Other local, unpushed commits:
 - ks-utility `a1d12b9`: docs: pin by version tag, versioning rules (`specs/usage.md`, rules, overview, README, CLAUDE.md).
 - KS-Suite workspace repo `6e17e8b`: docs: pin ks-utility by version tag, versioning rules (workspace `CLAUDE.md`, `specs/cross-repo.md`, `specs/log.md`).
 
-Part 1 is "approved with changes" (done in `1c8e5cf`). Part 2 is "approved with changes": the fixes are in section 3a and are still to do.
+Part 1 is "approved with changes" (done in `1c8e5cf`). Part 2 is "approved with changes" (done in `c1afa7c`). Part 3 (`ef4373a`, `7a7b9af`, `4956ff8`) is "approved with small changes": reservation markers, per-item leftover removal, the video speed-limit note (recorded in the decisions log).
 
 ## 3a. Part 2 review fixes (do first, as their own commit, before continuing Part 3)
 
@@ -193,6 +194,7 @@ Tone and formatting:
 ### Part 6: benchmarks
 - A repeatable benchmark against the throttled test server (1, 4, 8, 16, 20, 32 connections), results in `docs/benchmarks.md`, a regression check ready for CI.
 - No speed claim in the README or the app unless the numbers support it. A per-connection-throttled local server measures how the engine scales, not real-world speed; say so wherever a number is quoted.
+- The benchmark measures after the adaptive ramp-up, or with adaptive connections off, and says which (owner, Part 3 review).
 
 ### Part 7: polish
 - First-run notice (the user's responsibility, no DRM bypass), full keyboard reachability, contrast, reduce-motion.

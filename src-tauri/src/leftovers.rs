@@ -1,13 +1,15 @@
 //! Leftover download files (specs/ui.md, "Leftover download files"): our hidden video temp
-//! folders and `.ksdownload` files that belong to no download in the list, for example
-//! after a download was removed while the app was not running, or after a crash.
+//! folders, `.ksdownload` files and empty reservation files (the file that holds a
+//! download's final name until it finishes) that belong to no download in the list, for
+//! example after a download was removed while the app was not running, or after a crash.
 //!
 //! Safety rules:
 //! - Only the folders the app knows are looked in (the default save folder, the folders of
 //!   downloads in the list, the category folders), one level deep. Entries that are links
 //!   are skipped, so nothing outside those folders is ever reached.
 //! - Nothing is listed unless it carries our marker (`ks-owner.json` in a video temp folder,
-//!   `<file>.ksowner` beside a `.ksdownload` file) or a valid engine range map (`.ksdm`).
+//!   `<file>.ksowner` beside a `.ksdownload` file or a reservation) or a valid engine range
+//!   map (`.ksdm`). An empty file without our marker is never listed.
 //! - Nothing is removed automatically. Removal re-checks each item at that moment: it must
 //!   still be the same kind of entry, still carry the same marker or a valid map, and still
 //!   belong to no download in the list.
@@ -31,10 +33,22 @@ enum Proof {
     Map(String),
 }
 
+/// What kind of leftover an item is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum What {
+    /// A hidden video temp folder.
+    Folder,
+    /// A `.ksdownload` file (with its range map and marker, if there).
+    Part,
+    /// The empty file that held a download's final name.
+    Reservation,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Found {
     pub path: PathBuf,
-    pub folder: bool,
+    pub what: What,
     pub size: u64,
     proof: Proof,
 }
@@ -44,19 +58,19 @@ pub struct Found {
 #[serde(rename_all = "camelCase")]
 pub struct Item {
     pub path: String,
-    pub folder: bool,
+    pub what: What,
     pub size: u64,
 }
 
 impl From<&Found> for Item {
     fn from(f: &Found) -> Self {
-        Self { path: f.path.to_string_lossy().into_owned(), folder: f.folder, size: f.size }
+        Self { path: f.path.to_string_lossy().into_owned(), what: f.what, size: f.size }
     }
 }
 
-/// The marker file beside a `.ksdownload` file.
-pub fn owner_file(part: &Path) -> PathBuf {
-    let mut s = part.as_os_str().to_owned();
+/// The marker file beside a `.ksdownload` file or a reservation file: `<file>.ksowner`.
+pub fn owner_file(file: &Path) -> PathBuf {
+    let mut s = file.as_os_str().to_owned();
     s.push(".ksowner");
     PathBuf::from(s)
 }
@@ -90,15 +104,32 @@ async fn examine(path: &Path) -> Option<Found> {
     let meta = std::fs::symlink_metadata(path).ok()?;
     if name.starts_with(VIDEO_PREFIX) && meta.is_dir() {
         let m = marker::of_folder(path)?;
-        return Some(Found { path: path.to_path_buf(), folder: true, size: folder_size(path), proof: Proof::Marker(m) });
+        return Some(Found { path: path.to_path_buf(), what: What::Folder, size: folder_size(path), proof: Proof::Marker(m) });
     }
-    if name.ends_with(PART_SUFFIX) && meta.is_file() {
+    if !meta.is_file() {
+        return None;
+    }
+    if name.ends_with(PART_SUFFIX) {
         let proof = proof_of_part(path).await?;
-        let extras = [files::ksdm(path), owner_file(path)];
-        let size = meta.len() + extras.iter().filter_map(|p| std::fs::symlink_metadata(p).ok()).filter(|m| m.is_file()).map(|m| m.len()).sum::<u64>();
-        return Some(Found { path: path.to_path_buf(), folder: false, size, proof });
+        let size = meta.len() + extras_size(&[files::ksdm(path), owner_file(path)]);
+        return Some(Found { path: path.to_path_buf(), what: What::Part, size, proof });
+    }
+    // An empty file is a reservation only with our marker beside it; our own side files
+    // are never taken for one.
+    if meta.len() == 0 && !OUR_SUFFIXES.iter().any(|s| name.ends_with(s)) {
+        let m = marker::read(&owner_file(path))?;
+        let size = extras_size(&[owner_file(path)]);
+        return Some(Found { path: path.to_path_buf(), what: What::Reservation, size, proof: Proof::Marker(m) });
     }
     None
+}
+
+/// Names of the files we keep beside a download; never reservations themselves.
+const OUR_SUFFIXES: [&str; 3] = [PART_SUFFIX, ".ksdm", ".ksowner"];
+
+/// Bytes in those of `paths` that are regular files.
+fn extras_size(paths: &[PathBuf]) -> u64 {
+    paths.iter().filter_map(|p| std::fs::symlink_metadata(p).ok()).filter(|m| m.is_file()).map(|m| m.len()).sum()
 }
 
 async fn proof_of_part(path: &Path) -> Option<Proof> {
@@ -126,12 +157,11 @@ fn folder_size(dir: &Path) -> u64 {
 
 /// True when a download in the list owns the item.
 fn belongs(f: &Found, records: &[Record]) -> bool {
-    records.iter().any(|r| {
-        if f.folder {
-            r.kind == Kind::Video && matches!(&f.proof, Proof::Marker(m) if m.is_for(r.id, &r.url))
-        } else {
-            r.kind == Kind::File && files::part(&r.path) == f.path
-        }
+    records.iter().any(|r| match f.what {
+        What::Folder => r.kind == Kind::Video && matches!(&f.proof, Proof::Marker(m) if m.is_for(r.id, &r.url)),
+        What::Part => r.kind == Kind::File && files::part(&r.path) == f.path,
+        // Any download whose name it holds, of either kind.
+        What::Reservation => r.path == f.path,
     })
 }
 
@@ -141,17 +171,22 @@ pub async fn remove(found: &[Found], records: &[Record]) -> (usize, Vec<PathBuf>
     let mut removed = 0;
     let mut kept = Vec::new();
     for f in found {
-        let still = examine(&f.path).await.is_some_and(|now| now.folder == f.folder && now.proof == f.proof);
+        let still = examine(&f.path).await.is_some_and(|now| now.what == f.what && now.proof == f.proof);
         if !still || belongs(f, records) {
             kept.push(f.path.clone());
             continue;
         }
-        let result = if f.folder {
+        let extras = match f.what {
+            What::Folder => vec![],
+            What::Part => vec![files::ksdm(&f.path), owner_file(&f.path)],
+            What::Reservation => vec![owner_file(&f.path)],
+        };
+        let result = if f.what == What::Folder {
             // Removes links inside as links; never what they point to.
             std::fs::remove_dir_all(&f.path)
         } else {
             std::fs::remove_file(&f.path).and_then(|()| {
-                for extra in [files::ksdm(&f.path), owner_file(&f.path)] {
+                for extra in extras {
                     if std::fs::symlink_metadata(&extra).is_ok_and(|m| m.is_file()) {
                         std::fs::remove_file(&extra)?;
                     }
@@ -218,10 +253,41 @@ mod tests {
 
         let found = scan(std::slice::from_ref(&base), &[]).await;
         assert_eq!(found.len(), 2, "{found:?}");
-        assert!(found.iter().any(|f| f.folder && f.path == folder && f.size >= 100));
+        assert!(found.iter().any(|f| f.what == What::Folder && f.path == folder && f.size >= 100));
         let (removed, kept) = remove(&found, &[]).await;
         assert_eq!((removed, kept.len()), (2, 0));
         assert!(!folder.exists() && !part.exists() && !owner_file(&part).exists());
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[tokio::test]
+    async fn reservations_are_listed_only_when_empty_and_marked() {
+        let base = dir("reserved");
+        let orphan = base.join("song.mp3");
+        std::fs::write(&orphan, b"").unwrap();
+        marker::write(&owner_file(&orphan), &Marker::new(3, "https://f.example/song.mp3")).unwrap();
+        // Empty without a marker, or marked but not empty (a finished file): never listed.
+        std::fs::write(base.join("plain.txt"), b"").unwrap();
+        let full = base.join("full.bin");
+        std::fs::write(&full, b"data").unwrap();
+        marker::write(&owner_file(&full), &Marker::new(4, "https://f.example/full.bin")).unwrap();
+        // An empty file whose marker is a link to a marker elsewhere is not ours.
+        let linked = base.join("linked.bin");
+        std::fs::write(&linked, b"").unwrap();
+        std::os::unix::fs::symlink(owner_file(&full), owner_file(&linked)).unwrap();
+
+        let found = scan(std::slice::from_ref(&base), &[]).await;
+        assert_eq!(found.iter().map(|f| (&f.path, f.what)).collect::<Vec<_>>(), vec![(&orphan, What::Reservation)]);
+        // Owned by a download in the list: not listed.
+        let owned = [record(3, Kind::File, orphan.clone(), "https://f.example/song.mp3")];
+        assert!(scan(std::slice::from_ref(&base), &owned).await.is_empty());
+        // Written to since the scan: kept.
+        std::fs::write(&orphan, b"now in use").unwrap();
+        assert_eq!(remove(&found, &[]).await, (0, vec![orphan.clone()]));
+        std::fs::write(&orphan, b"").unwrap();
+        assert_eq!(remove(&found, &[]).await.0, 1);
+        assert!(!orphan.exists() && !owner_file(&orphan).exists());
+        assert!(base.join("plain.txt").exists() && full.exists() && owner_file(&full).exists() && linked.exists());
         std::fs::remove_dir_all(&base).unwrap();
     }
 
@@ -253,7 +319,7 @@ mod tests {
         assert!(scan(std::slice::from_ref(&base), &records).await.is_empty());
         // A folder whose marker names the same ID but another URL is not that download's.
         let other = [record(3, Kind::Video, base.join("a.mp4"), "https://v.example/other")];
-        assert_eq!(scan(std::slice::from_ref(&base), &other).await.iter().filter(|f| f.folder).count(), 1);
+        assert_eq!(scan(std::slice::from_ref(&base), &other).await.iter().filter(|f| f.what == What::Folder).count(), 1);
         std::fs::remove_dir_all(&base).unwrap();
     }
 

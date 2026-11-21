@@ -176,10 +176,10 @@ async fn leftover_files(m: Downloads<'_>, rescan: bool) -> Result<Vec<leftovers:
     }
 }
 
-/// Removes the leftovers the last scan found; the interface asked the user first.
+/// Removes the leftovers of the last scan the user ticked; the interface asked first.
 #[tauri::command]
-async fn remove_leftover_files(m: Downloads<'_>) -> Result<(usize, usize), String> {
-    Ok(m.remove_leftovers().await)
+async fn remove_leftover_files(m: Downloads<'_>, paths: Vec<String>) -> Result<(usize, usize), String> {
+    Ok(m.remove_leftovers(&paths).await)
 }
 
 /// "Update video component": installs the newest official yt-dlp, on request only.

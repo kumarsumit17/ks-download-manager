@@ -89,7 +89,10 @@ pub fn check_folder(folder: &str) -> Result<PathBuf, String> {
 /// program or download can take it before the engine opens it.
 pub fn reserve(folder: &Path, name: &str, taken: &dyn Fn(&Path) -> bool) -> std::io::Result<PathBuf> {
     let skip = |candidate: &Path| {
-        taken(candidate) || [ksdm(candidate), part(candidate), ksdm(&part(candidate))].iter().any(|p| p.exists())
+        taken(candidate)
+            || [ksdm(candidate), part(candidate), ksdm(&part(candidate)), with_suffix(candidate, ".ksowner")]
+                .iter()
+                .any(|p| std::fs::symlink_metadata(p).is_ok())
     };
     reserve_free_name(folder, name, &skip)
 }
