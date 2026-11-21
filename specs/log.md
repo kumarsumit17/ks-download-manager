@@ -1,5 +1,6 @@
 # 2026-11-21
 
+* **Update**: [Build stages](stages.md), Release: phase B (Windows beta) built and green on `windows-2025`; the release workflow now builds the Windows installer.
 * **Update**: history rewrite (tool attribution removed from commit messages): `ks-utility` tags moved once, so both lock files now name `d671427` for `v0.2.4`, and the commit IDs above and in `docs/THIRD_PARTY.md` are the new ones. Details in `docs/decisions-stage5.md`, "History rewrite".
 * **Update**: [Build stages](stages.md), Release: phase A built (tag versions, CI on macOS, tag-driven draft release for macOS and the extension with provenance; owner's steps in `docs/release.md`); phase B (Windows beta) next.
 * **Update**: `ks-utility` pin moved from `v0.2.3` (`4dbf50d`) to `v0.2.4` (`d671427`): the owner's final Hindi review (all terms approved; Yes is हाँ).

@@ -23,9 +23,9 @@ jobs:
       contents: read
     outputs:
       version: ${{ steps.v.outputs.version }}
-      # The Windows beta installer: "off" builds no Windows file at all. Switched on only
-      # once every Windows test passes on windows-2025 (docs/release-plan.md, section 4).
-      windows: "off"
+      # The Windows beta installer: "off" builds no Windows file at all. Switched on on
+      # 2026-11-21, after every Windows test passed on windows-2025 (CI run 44930392469).
+      windows: "on"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

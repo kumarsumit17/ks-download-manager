@@ -6,7 +6,7 @@ All notable changes to KS Download Manager. The layout follows [Keep a Changelog
 
 ## [0.1.0] - unreleased
 
-The first public release: macOS (Apple silicon and Intel) and the Chrome extension. A Windows build joins a later release as a beta.
+The first public release: macOS (Apple silicon and Intel) and the Chrome extension, plus a Windows installer as a **beta, untested by hand** (its automated tests pass on Windows Server 2025 in CI; no person has run it on a Windows PC yet).
 
 ### Added
 

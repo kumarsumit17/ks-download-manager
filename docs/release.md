@@ -28,7 +28,7 @@ rm cert.p12 cert.txt
 
 Whether a release is signed is decided by the secrets that exist **when the tag is pushed**. For v0.1.0: ad hoc unless the six secrets are set by then.
 
-Windows (phase B) is unsigned in its first release; the intended route afterwards is SignPath Foundation (draft policy: `docs/code-signing-policy.md`). Not set up yet.
+The Windows installer (beta, phase B; built by the `windows` job, switched on in the `version` job's outputs) is unsigned in its first release; the intended route afterwards is SignPath Foundation (draft policy: `docs/code-signing-policy.md`). Not set up yet.
 
 ## 2. Branches and the tag
 

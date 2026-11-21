@@ -34,9 +34,15 @@ Downloads are on the [Releases page](https://github.com/kumarsumit17/ks-download
 
 To remove it, drag the app to the Bin. It leaves Chrome's small registration file behind, which does nothing without the app; delete it by hand if you like: `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.ks.downloadmanager.json`. Settings and the download list are in `~/Library/Application Support/com.ks.downloadmanager`.
 
-### Windows
+### Windows 10 and 11 (beta, untested by hand)
 
-Not in the first release. A Windows installer will be added to a later release as a **beta, untested by hand**.
+The Windows installer is a **beta**: its automated tests pass on Windows in CI, but no person has tried it on a Windows PC yet. Please report what does not work.
+
+1. Download `…-windows-x64-setup-beta.exe`.
+2. The installer is not code-signed, so SmartScreen says "Windows protected your PC": choose **More info → Run anyway**.
+3. It installs for your user account only, without administrator rights, and registers the app with Chrome (if Chrome has been opened at least once on this PC). WebView2, which Windows 10 and 11 normally have, is installed for you if it is missing.
+
+To remove it: **Settings → Apps → Installed apps → KS Download Manager → Uninstall**. That also removes the app's Chrome registration.
 
 ### Checking a download
 
