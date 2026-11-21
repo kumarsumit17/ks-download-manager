@@ -16,7 +16,8 @@ import { msgText, t } from "@/lib/i18n";
 import { cannotPauseText, type Download, type Queue, type Status, canPause, canResume, cannotPause, isMkvVideo } from "./types";
 import { formatBytes, formatDate, formatSpeed, formatTimeLeft } from "./format";
 import { groupRows } from "./playlist";
-import { scrollToShow, visibleRange } from "./windowing";
+import { visibleRange } from "./windowing";
+import { orderSignature, revealSelection } from "./order";
 
 type SortKey = "name" | "size" | "status" | "speed" | "timeLeft" | "addedAt";
 
@@ -155,27 +156,36 @@ interface Props {
 export function DownloadList({ downloads, selectedId, onSelect, actions, queues, loaded }: Props) {
   const [sort, setSort] = useState<{ key: SortKey; asc: boolean }>({ key: "addedAt", asc: false });
 
-  const rows = useMemo(() => {
-    const out = [...downloads];
+  // Sorting and grouping run only when the order can change (orderSignature): a progress
+  // tick, which replaces every running row a few times a second, only swaps in the fresh
+  // rows by id.
+  const latest = useRef(downloads);
+  latest.current = downloads;
+  const signature = orderSignature(downloads, (d) => sortValue(d, sort.key));
+  const layout = useMemo(() => {
+    const out = [...latest.current];
     out.sort((a, b) => {
       const x = sortValue(a, sort.key);
       const y = sortValue(b, sort.key);
       const c = x < y ? -1 : x > y ? 1 : 0;
       return sort.asc ? c : -c;
     });
-    return out;
-  }, [downloads, sort]);
+    return groupRows(out).map((g) => ({ group: g.group, ids: g.rows.map((r) => r.id) }));
+    // `signature` stands in for `downloads`: it changes exactly when the order can.
+  }, [signature, sort]);
+  const byId = useMemo(() => new Map(downloads.map((d) => [d.id, d])), [downloads]);
 
   // Playlist entries are shown under their playlist's heading; a heading can be folded.
   const [folded, setFolded] = useState<Set<number>>(new Set());
   const items = useMemo(
     () =>
-      groupRows(rows).flatMap((g): Item[] => {
-        if (!g.group) return g.rows.map((d) => ({ d, indent: false }));
+      layout.flatMap((g): Item[] => {
+        const rows = g.ids.flatMap((id) => byId.get(id) ?? []);
+        if (!g.group) return rows.map((d) => ({ d, indent: false }));
         const open = !folded.has(g.group.id);
-        return [{ heading: { id: g.group.id, title: g.group.title, rows: g.rows, open } }, ...(open ? g.rows.map((d) => ({ d, indent: true })) : [])];
+        return [{ heading: { id: g.group.id, title: g.group.title, rows, open } }, ...(open ? rows.map((d) => ({ d, indent: true })) : [])];
       }),
-    [rows, folded],
+    [layout, byId, folded],
   );
   /** The rows the arrow keys move through: folded playlists' entries are left out. */
   const shown = useMemo(() => items.flatMap((i) => ("d" in i ? [i.d] : [])), [items]);
@@ -186,7 +196,7 @@ export function DownloadList({ downloads, selectedId, onSelect, actions, queues,
       return next;
     });
 
-  const selected = rows.find((r) => r.id === selectedId) ?? null;
+  const selected = selectedId === null ? null : (byId.get(selectedId) ?? null);
 
   const onKey = (e: KeyboardEvent) => {
     if (e.key === "Enter" && selected?.status === "finished") {
@@ -225,16 +235,23 @@ export function DownloadList({ downloads, selectedId, onSelect, actions, queues,
     if (head && Math.abs(head.getBoundingClientRect().height - headerHeight) > 0.1) setHeaderHeight(head.getBoundingClientRect().height);
   });
   const range = visibleRange(items.length, rowHeight, scrollTop, viewport - headerHeight);
+  const selectedIndex = selectedId === null ? -1 : items.findIndex((i) => "d" in i && i.d.id === selectedId);
+  /** The selected row is drawn now (not standing in a spacer), so it can be pointed at. */
+  const selectedDrawn = selectedIndex >= range.start && selectedIndex < range.end;
 
-  // Keep the selected row visible when it changes (arrow keys, sorting, filtering).
+  // Scroll to the selected row when the selection changes (arrow keys, a click), and
+  // only then: progress ticks and re-sorting never pull the list back to it.
+  const view = useRef({ selectedIndex, rowHeight, headerHeight });
+  view.current = { selectedIndex, rowHeight, headerHeight };
+  const revealed = useRef<number | null>(null);
   useEffect(() => {
     const el = scroller.current;
-    if (!selectedId || !el) return;
-    const index = items.findIndex((i) => "d" in i && i.d.id === selectedId);
-    if (index < 0) return;
-    const to = scrollToShow(index, rowHeight, el.scrollTop, el.clientHeight - headerHeight);
+    if (!el) return;
+    const v = view.current;
+    const to = revealSelection(revealed.current, selectedId, v.selectedIndex, v.rowHeight, el.scrollTop, el.clientHeight - v.headerHeight);
+    revealed.current = selectedId;
     if (to !== null) el.scrollTop = to;
-  }, [selectedId, items, rowHeight, headerHeight]);
+  }, [selectedId]);
 
   return (
     <ContextMenu>
@@ -243,7 +260,7 @@ export function DownloadList({ downloads, selectedId, onSelect, actions, queues,
       <table
         role="grid"
         aria-label={t("list.label")}
-        aria-activedescendant={selectedId && shown.some((d) => d.id === selectedId) ? rowId(selectedId) : undefined}
+        aria-activedescendant={selectedId !== null && selectedDrawn ? rowId(selectedId) : undefined}
         aria-rowcount={items.length + 1}
         tabIndex={0}
         onKeyDown={onKey}
@@ -359,7 +376,7 @@ export function DownloadList({ downloads, selectedId, onSelect, actions, queues,
           {range.after > 0 && <tr aria-hidden style={{ height: range.after }} />}
         </tbody>
       </table>
-      {loaded && rows.length === 0 && (
+      {loaded && downloads.length === 0 && (
         <p className="p-8 text-center text-sm text-muted-foreground">{t("list.empty")}</p>
       )}
     </div>

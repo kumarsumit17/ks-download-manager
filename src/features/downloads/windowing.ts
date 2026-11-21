@@ -25,15 +25,3 @@ export function visibleRange(
   const end = Math.min(count, Math.max(last, first + 1) + overscan);
   return { start, end, before: start * rowHeight, after: (count - end) * rowHeight };
 }
-
-/**
- * Where to scroll so row `index` is fully visible, or `null` when it already is. Keeps
- * the arrow keys' selection on screen although most rows are not drawn.
- */
-export function scrollToShow(index: number, rowHeight: number, scrollTop: number, viewport: number): number | null {
-  const top = index * rowHeight;
-  const bottom = top + rowHeight;
-  if (top < scrollTop) return top;
-  if (bottom > scrollTop + viewport) return Math.max(0, bottom - viewport);
-  return null;
-}
