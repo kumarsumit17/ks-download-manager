@@ -2,7 +2,8 @@
 
 ## What the user can do
 - Paste a link to a single video or a whole playlist from YouTube or another supported video site.
-- For a playlist: see the list of entries with title, duration and thumbnail, tick the ones wanted (all selected by default), choose quality once for all, and start.
+- For a playlist: see the list of entries with title, duration and thumbnail, choose quality once for all, and start. Every entry is selected when the list opens, so downloading the whole playlist needs no ticking at all.
+- A **Select all** box at the top of the list ticks or unticks every entry in one click, with a count beside it ("42 of 42 selected"). Individual boxes are only for leaving videos out. Shift-click selects a range.
 - Choose format per download: video (resolution choice) or audio only.
 - Each playlist entry appears as its own row in the download list, grouped under the playlist name, saved to a folder named after the playlist, with an optional number prefix to keep the order.
 - Pause, resume and retry work per entry and for the whole playlist. Entries that are unavailable (private, removed, region-blocked) are marked and skipped, without stopping the rest.
