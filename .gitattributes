@@ -1,0 +1,8 @@
+# Every checkout uses LF for text files, on every system (Windows included), so scripts and
+# tests that read files see the same bytes as on macOS.
+* text=auto eol=lf
+
+# Binary files: never converted.
+*.png binary
+*.ico binary
+*.icns binary
