@@ -10,6 +10,10 @@ Free download manager for images, audio and video, with up to 20× faster downlo
 - Planned layout: `src-tauri/` (Rust), `src/` (interface), `extension/` (Chrome).
 - Exact versions and libraries are not pinned yet: record them here when the project is first generated.
 
+## UI
+- Follow `docs/spec/ui.md` (IDM-style single window: toolbar, sidebar, download list). Read it before any interface work.
+- The design is our own: never copy icons, skins, screenshots or code from the reference apps.
+
 ## Constraints
 - Free: no ads, no analytics, no crash-reporting SDKs.
 - Network access is used only for the downloads the user starts.

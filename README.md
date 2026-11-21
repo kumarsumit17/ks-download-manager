@@ -17,6 +17,10 @@ A free download manager for images, audio and video, built for speed: up to 20×
 - Up to 20× faster downloads
 - Free, with no ads, analytics or tracking
 
+## Interface
+
+A clean, classic single-window layout: toolbar on top, categories and queues on the left, the download list in the middle, in light and dark themes. See [docs/spec/ui.md](docs/spec/ui.md).
+
 ## Why this stack
 
 - **Fast:** the download engine is native Rust, and the app starts quickly with low memory use because it bundles no language runtime.
