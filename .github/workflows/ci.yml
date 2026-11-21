@@ -1,0 +1,79 @@
+# Checks on every push and pull request. Release builds are in release.yml.
+# Runner images are named versions, never -latest (docs/decisions-release.md).
+# Actions are GitHub's own, pinned to a full commit SHA (version in the comment).
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            triple: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26"
+          cache: npm
+      - name: Cache Rust build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: rust-${{ runner.os }}-${{ matrix.triple }}-${{ hashFiles('rust-toolchain.toml', 'src-tauri/Cargo.lock') }}
+          restore-keys: rust-${{ runner.os }}-${{ matrix.triple }}-
+      - name: Cache bundled programs
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: src-tauri/binaries
+          key: sidecars-${{ matrix.triple }}-${{ hashFiles('src-tauri/sidecars.json', 'scripts/build-ffmpeg.sh', 'scripts/sidecars.mjs', 'scripts/deno-notices.mjs') }}
+      - run: npm ci
+      - name: Bundled programs (hash-checked; ffmpeg built from source)
+        run: node scripts/sidecars.mjs ${{ matrix.triple }}
+      - run: npm run build
+      - run: npm run test:lang
+      - run: npm run test:ui
+      - run: npm run test:extension
+      - run: npm run build:extension
+      - name: Script tests
+        run: node --test scripts/test/
+      - name: Rust tests
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+      - name: Clippy
+        run: cargo clippy --locked --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings
+
+  bench:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Cache Rust build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: bench-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'src-tauri/Cargo.lock') }}
+          restore-keys: bench-${{ runner.os }}-
+      - name: Benchmark against the local throttled server (no internet download)
+        run: npm run bench
