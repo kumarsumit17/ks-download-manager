@@ -13,13 +13,10 @@ const json = (p) => JSON.parse(readFileSync(p, "utf8"));
 
 // Strings whose Hindi I was unsure about (Stage 5, Part 4); the owner decides.
 const UNSURE = {
-  "common.language.system": "सिस्टम जैसी: or सिस्टम की भाषा",
   "common.error.permission": "इसकी इजाज़त नहीं है: or अनुमति नहीं है (more formal)",
   "details.progress": "प्रोग्रेस (transliteration); प्रगति is understood but more formal",
   "details.problem": "दिक्कत; समस्या is more formal",
   "details.idle": "खाली for an idle connection",
-  "error.tempFolder": "अस्थायी फ़ोल्डर; टेंप फ़ोल्डर is an alternative",
-  "engine.rangeIgnored": "रिक्वेस्ट and नज़रअंदाज़ in one sentence; may read heavy",
   "error.picker": "फ़ोल्डर चुनने वाली विंडो for the folder picker",
   "status.interrupted": "बीच में रुका",
   "sidebar.finished": "पूरे हुए (plural) next to the status पूरा हुआ",

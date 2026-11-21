@@ -16,7 +16,7 @@
   "err_app_not_installed": {"message": "ऐप नहीं मिला"},
   "err_app_not_found": {"message": "ऐप शुरू नहीं हुआ"},
   "err_app_not_running": {"message": "ऐप खुला नहीं है"},
-  "err_bad_url": {"message": "यह लिंक काम नहीं करता"},
+  "err_bad_url": {"message": "इस लिंक से डाउनलोड नहीं हो सकता"},
   "err_bad_request": {"message": "समझ नहीं आया"},
   "err_wrong_kind": {"message": "यह फ़ाइल नहीं है"},
   "err_lookup_failed": {"message": "उपलब्ध नहीं है"},
