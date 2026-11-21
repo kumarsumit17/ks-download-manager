@@ -10,7 +10,7 @@ const REPO = "kumarsumit17/ks-download-manager";
 
 /** The body of "## <version> …" in a Keep a Changelog file, or throws. */
 export function changelogSection(text, version) {
-  const lines = text.split("\n");
+  const lines = text.split(/\r?\n/); // a CRLF checkout reads the same
   const start = lines.findIndex((l) => new RegExp(`^## \\[?${version.replace(/\./g, "\\.")}\\]?( |$)`).test(l));
   if (start < 0) throw new Error(`CHANGELOG.md has no section for ${version}`);
   let end = lines.findIndex((l, i) => i > start && /^## /.test(l));

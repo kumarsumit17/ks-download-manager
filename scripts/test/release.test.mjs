@@ -24,6 +24,12 @@ test("the changelog section for a version is found, and a missing one fails", ()
   assert.throws(() => changelogSection(CL, "0.1"), /no section/);
 });
 
+test("a CRLF changelog gives the same sections, with LF line ends", () => {
+  const crlf = CL.replace(/\n/g, "\r\n");
+  assert.equal(changelogSection(crlf, "0.1.0"), "### Added\n\n- one");
+  assert.equal(changelogSection(crlf, "0.2.0"), "- two");
+});
+
 test("the notes match how the files were signed", () => {
   const adhoc = notes(CL, "0.1.0", "ad-hoc");
   assert.match(adhoc, /not signed with an Apple Developer ID/);
