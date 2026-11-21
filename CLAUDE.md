@@ -57,6 +57,13 @@ npm run tauri build              # release bundle (.app/.dmg on macOS)
 ## Dependencies
 - Keep third-party dependencies to the minimum. Follow `specs/dependencies.md` before adding any crate or package.
 
+## Shared code (`ks-utility`)
+- Generic utility code shared across the KS-Suite apps lives in the `ks-utility` repository: TypeScript in `typescript/`, Rust in `rust/`. It is first-party, has no third-party dependencies, and knows nothing about this app. Application-specific logic stays in this repo.
+- It is a dependency pinned to one commit, the same in both manifests: `"ks-utility": "github:kumarsumit17/ks-utility#<commit>"` in `package.json`, and `ks-utility = { git = "https://github.com/kumarsumit17/ks-utility", rev = "<commit>" }` in `src-tauri/Cargo.toml` (and in `src-tauri/engine/Cargo.toml` if the engine uses it).
+- Pending (approved by the owner on 2026-11-21, not added yet because a stage was in progress): add both lines with commit `ced399ce3667f8643bcf55c9a20c03df051e9049`, run `npm install` and `cargo check`, commit `package-lock.json` and `Cargo.lock`, and list `ks-utility` in `docs/THIRD_PARTY.md` as first-party. Remove this bullet when done.
+- Before writing a generic helper, look in `ks-utility` and use it from there. If it is missing and another app would need it too, add it in the `ks-utility` repository, then move the pin here (change the commit, `npm install`, `cargo check`, commit both lock files).
+- The clean-room rule covers `ks-utility` too.
+
 ## Constraints
 - Free: no ads, no analytics, no crash-reporting SDKs.
 - Network access is used only for the downloads the user starts.
