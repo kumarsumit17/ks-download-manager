@@ -14,6 +14,10 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// The system's tar: on Windows the one in System32 (bsdtar), named by its full path, since
+// Git Bash puts GNU tar first in PATH and GNU tar reads "D:" in a path as a host name.
+const TAR = process.platform === "win32" ? join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe") : "tar";
+
 // Standard licence texts: SPDX license-list-data v3.29.0, by commit so it cannot change.
 export const SPDX_TAG = "v3.29.0";
 const SPDX_COMMIT = "31ba1a50e5397e00a304dbadc76531740e89ee48";
@@ -60,7 +64,7 @@ async function licences({ name, ver }) {
   const dir = mkdtempSync(join(tmpdir(), "crate-"));
   try {
     // Only the top folder's licence files are wanted; list first, extract those alone.
-    const list = execFileSync("tar", ["-tzf", file], { encoding: "utf8", maxBuffer: 64 << 20 }).split("\n");
+    const list = execFileSync(TAR, ["-tzf", file], { encoding: "utf8", maxBuffer: 64 << 20 }).split("\n");
     const wanted = list.filter((p) => {
       const parts = p.split("/");
       return parts.length === 2 && LICENCE_FILE.test(parts[1]) && !p.includes("..");
@@ -69,12 +73,12 @@ async function licences({ name, ver }) {
       const toml = list.find((p) => p.split("/").length === 2 && p.endsWith("/Cargo.toml"));
       let declared = "not declared";
       if (toml) {
-        const body = execFileSync("tar", ["-xzOf", file, toml], { encoding: "utf8" });
+        const body = execFileSync(TAR, ["-xzOf", file, toml], { encoding: "utf8" });
         declared = body.match(/^license\s*=\s*"([^"]+)"/m)?.[1] ?? (body.match(/^license-file/m) ? "licence file named in Cargo.toml" : "not declared");
       }
       return { name, ver, texts: [], declared, missing: `no licence file in the published crate; declares: ${declared}` };
     }
-    execFileSync("tar", ["-xzf", file, "-C", dir, ...wanted]);
+    execFileSync(TAR, ["-xzf", file, "-C", dir, ...wanted]);
     const texts = wanted
       .map((p) => join(dir, p))
       .filter((p) => statSync(p).isFile())
