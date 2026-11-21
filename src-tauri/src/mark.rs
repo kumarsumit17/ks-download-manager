@@ -15,14 +15,17 @@
 //! failure is logged.
 
 use std::path::Path;
+#[cfg(any(target_os = "macos", test))]
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// The agent name the system shows ("downloaded by …").
+/// The agent name macOS shows ("downloaded by …"). Windows' mark has no such field.
+#[cfg(any(target_os = "macos", test))]
 const AGENT: &str = "KS Download Manager";
 
 /// The quarantine value: flags, time (seconds since 1970, hex), agent, event ID.
 /// `0081` = quarantined, downloaded by a non-browser app (the same flags `curl` users set
 /// by hand); the empty event ID means no Launch Services history entry.
+#[cfg(any(target_os = "macos", test))]
 fn quarantine_value(now: SystemTime) -> String {
     let secs = now.duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
     format!("0081;{secs:08x};{AGENT};")
