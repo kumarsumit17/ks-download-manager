@@ -81,4 +81,28 @@ mod tests {
         assert_eq!(of_folder(&dir), None);
         std::fs::remove_dir_all(&dir).unwrap();
     }
+
+    /// Markers and marked folders reached through any kind of link (Windows: file and
+    /// folder symbolic links, and junctions) are not ours. Reservation and part-file markers
+    /// (`<file>.ksowner`) are read with `read`, temp folders with `of_folder`.
+    #[test]
+    fn a_marker_or_folder_behind_a_link_is_not_ours() {
+        let base = std::env::temp_dir().join(format!("ks-marker-links-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let real = base.join("real");
+        std::fs::create_dir_all(&real).unwrap();
+        let m = Marker::new(7, "https://a.example/v");
+        write(&real.join(IN_FOLDER), &m).unwrap();
+        assert_eq!(of_folder(&real).as_ref(), Some(&m));
+        assert_eq!(read(&real.join(IN_FOLDER)).as_ref(), Some(&m));
+
+        let file_link = base.join("song.mp3.ksowner");
+        crate::testlinks::file(&real.join(IN_FOLDER), &file_link);
+        assert_eq!(read(&file_link), None, "a marker that is a file link");
+        for link in crate::testlinks::folder_links(&real, &base.join("ks-video-7")) {
+            assert_eq!(of_folder(&link), None, "{}: a marked folder behind a link", link.display());
+            assert_eq!(read(&link), None, "{}: a folder link in a marker's place", link.display());
+        }
+        std::fs::remove_dir_all(&base).unwrap();
+    }
 }

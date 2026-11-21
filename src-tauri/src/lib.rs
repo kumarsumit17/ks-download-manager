@@ -17,6 +17,8 @@ mod open;
 mod picker;
 mod settings;
 mod store;
+#[cfg(test)]
+mod testlinks;
 mod video;
 
 use std::sync::Arc;

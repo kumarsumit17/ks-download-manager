@@ -1777,6 +1777,37 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// A video temp folder reached through a link (Windows: symbolic link or junction) is
+    /// never ours, even when the folder it points to carries this download's marker: it is
+    /// neither continued in nor removed.
+    #[test]
+    fn a_video_temp_folder_that_is_a_link_is_never_used_or_removed() {
+        let dir = temp_dir();
+        let elsewhere = temp_dir();
+        let mut r = record(7, &dir, "v.mp4", Status::Paused);
+        r.kind = Kind::Video;
+        let target = elsewhere.join("target");
+        std::fs::create_dir(&target).unwrap();
+        marker::write(&target.join(marker::IN_FOLDER), &marker::Marker::new(r.id, &r.url)).unwrap();
+        std::fs::write(target.join("keep.part"), b"x").unwrap();
+        for link in crate::testlinks::folder_links(&target, &dir.join(format!("{VIDEO_TEMP_PREFIX}7"))) {
+            r.temp = Some(link.file_name().unwrap().to_str().unwrap().to_owned());
+            assert_eq!(video_temp(&r), Some(link.clone()));
+            assert_eq!(own_video_temp(&r), None, "{}", link.display());
+            remove_video_temp(&r);
+            assert!(std::fs::symlink_metadata(&link).is_ok(), "the link is left alone");
+        }
+        assert!(target.join("keep.part").exists() && target.join(marker::IN_FOLDER).exists());
+        // The real folder, in place and marked for this download, is ours.
+        r.temp = None;
+        let own = dir.join(format!("{VIDEO_TEMP_PREFIX}7"));
+        std::fs::create_dir(&own).unwrap();
+        marker::write(&own.join(marker::IN_FOLDER), &marker::Marker::new(r.id, &r.url)).unwrap();
+        assert_eq!(own_video_temp(&r), Some(own.clone()));
+        remove_video_temp(&r);
+        assert!(!own.exists());
+    }
+
     #[cfg(windows)]
     #[test]
     fn a_hidden_folder_has_the_hidden_attribute() {
@@ -2244,7 +2275,7 @@ mod tests {
 
         // Every finished file is marked as downloaded from the internet (Part 7); the
         // user's own file that kept its name is not touched.
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", windows))]
         {
             for f in [&held.path, &new, &missing.path] {
                 assert!(quarantined(f), "{} is marked", f.display());
@@ -2316,7 +2347,7 @@ mod tests {
         assert_eq!(std::fs::read(&target).unwrap(), b"merged video");
         assert_eq!(get(&m, 1).name, "Big Buck Bunny (1).mkv");
         assert!(!dir.join("Big Buck Bunny.mp4").exists(), "the planned name was never reserved");
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", windows))]
         {
             assert!(quarantined(&target), "a finished video is marked");
             assert!(!quarantined(&dir.join("Big Buck Bunny.mkv")));
@@ -2329,6 +2360,14 @@ mod tests {
     fn quarantined(f: &Path) -> bool {
         let out = std::process::Command::new("/usr/bin/xattr").args(["-p", "com.apple.quarantine"]).arg(f).output().unwrap();
         out.status.success() && String::from_utf8_lossy(&out.stdout).contains(";KS Download Manager;")
+    }
+
+    /// The file carries the Mark of the Web, Internet zone (Windows).
+    #[cfg(windows)]
+    fn quarantined(f: &Path) -> bool {
+        let mut stream = f.as_os_str().to_owned();
+        stream.push(":Zone.Identifier");
+        std::fs::read_to_string(stream).is_ok_and(|m| m.starts_with("[ZoneTransfer]\r\nZoneId=3\r\n"))
     }
 
     #[tokio::test]
@@ -2435,7 +2474,7 @@ mod tests {
         println!("finished: {:?}, {} bytes, {}", done.status, done.received, done.path.display());
         assert_eq!(done.status, Status::Finished, "{:?}", done.error);
         assert_eq!(std::fs::metadata(&done.path).unwrap().len(), view.size.unwrap());
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", windows))]
         assert!(quarantined(&done.path), "marked as downloaded from the internet");
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -2669,12 +2708,13 @@ mod tests {
         assert_eq!(playlist_folder(&dir, "a/../../b").unwrap().parent(), Some(dir.as_path()));
         std::fs::write(dir.join("taken"), b"x").unwrap();
         assert!(playlist_folder(&dir, "taken").is_err(), "a file with that name");
-        #[cfg(unix)]
-        {
-            let elsewhere = temp_dir();
-            std::os::unix::fs::symlink(&elsewhere, dir.join("link")).unwrap();
-            assert!(playlist_folder(&dir, "link").is_err(), "a link is never followed");
+        // Every kind of folder link (Windows: symbolic link and junction).
+        let elsewhere = temp_dir();
+        for link in crate::testlinks::folder_links(&elsewhere, &dir.join("link")) {
+            let name = link.file_name().unwrap().to_str().unwrap();
+            assert!(playlist_folder(&dir, name).is_err(), "{name}: a link is never followed");
         }
+        assert!(std::fs::read_dir(&elsewhere).unwrap().next().is_none(), "nothing was made through a link");
         std::fs::create_dir(dir.join("mine")).unwrap();
         assert_eq!(playlist_folder(&dir, "mine").unwrap(), dir.join("mine"), "an existing folder is used");
     }

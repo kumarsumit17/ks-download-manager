@@ -207,6 +207,7 @@ mod tests {
     use super::*;
     use crate::files::Category;
     use crate::store::Status;
+    use crate::testlinks;
 
     fn dir(tag: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("ks-leftovers-{tag}-{}", std::process::id()));
@@ -275,7 +276,7 @@ mod tests {
         // An empty file whose marker is a link to a marker elsewhere is not ours.
         let linked = base.join("linked.bin");
         std::fs::write(&linked, b"").unwrap();
-        std::os::unix::fs::symlink(owner_file(&full), owner_file(&linked)).unwrap();
+        testlinks::file(&owner_file(&full), &owner_file(&linked));
 
         let found = scan(std::slice::from_ref(&base), &[]).await;
         assert_eq!(found.iter().map(|f| (&f.path, f.what)).collect::<Vec<_>>(), vec![(&orphan, What::Reservation)]);
@@ -324,23 +325,54 @@ mod tests {
         std::fs::remove_dir_all(&base).unwrap();
     }
 
+    /// Every kind of link the system has (Windows: file and folder symbolic links and
+    /// folder junctions) is refused, as on Unix.
     #[tokio::test]
     async fn links_out_of_the_folder_are_not_followed() {
         let base = dir("links");
         let outside = dir("links-outside");
         let target = video_folder(&outside, 8, "https://v.example/b");
-        std::os::unix::fs::symlink(&target, base.join(format!("{VIDEO_PREFIX}8"))).unwrap();
+        let links = testlinks::folder_links(&target, &base.join(format!("{VIDEO_PREFIX}8")));
+        assert!(!links.is_empty());
         let far = outside.join("far.ksdownload");
         std::fs::write(&far, b"x").unwrap();
         marker::write(&owner_file(&far), &Marker::new(9, "https://f.example/far")).unwrap();
-        std::os::unix::fs::symlink(&far, base.join("near.ksdownload")).unwrap();
+        testlinks::file(&far, &base.join("near.ksdownload"));
         // A real part file whose marker is a link to a marker elsewhere is not ours either.
         let real = base.join("real.ksdownload");
         std::fs::write(&real, b"x").unwrap();
-        std::os::unix::fs::symlink(owner_file(&far), owner_file(&real)).unwrap();
+        testlinks::file(&owner_file(&far), &owner_file(&real));
 
-        assert!(scan(std::slice::from_ref(&base), &[]).await.is_empty());
-        assert!(target.join(marker::IN_FOLDER).exists() && far.exists());
+        let found = scan(std::slice::from_ref(&base), &[]).await;
+        assert!(found.is_empty(), "{found:?}");
+        // Asked to remove them anyway (as if the scan had listed them): refused, untouched.
+        let forged: Vec<Found> = links
+            .iter()
+            .map(|l| Found { path: l.clone(), what: What::Folder, size: 0, proof: Proof::Marker(Marker::new(8, "https://v.example/b")) })
+            .collect();
+        assert_eq!(remove(&forged, &[]).await, (0, links.clone()));
+        assert!(links.iter().all(|l| std::fs::symlink_metadata(l).is_ok()));
+        assert!(target.join(marker::IN_FOLDER).exists() && target.join("video.f1.mp4.part").exists() && far.exists());
+        std::fs::remove_dir_all(&base).unwrap();
+        std::fs::remove_dir_all(&outside).unwrap();
+    }
+
+    /// Removing a leftover folder removes links inside it as links, never what they point to.
+    #[tokio::test]
+    async fn removing_a_folder_never_follows_a_link_inside_it() {
+        let base = dir("inner");
+        let outside = dir("inner-outside");
+        std::fs::write(outside.join("keep.txt"), b"the user's").unwrap();
+        let folder = video_folder(&base, 5, "https://v.example/a");
+        let links = testlinks::folder_links(&outside, &folder.join("sub"));
+        testlinks::file(&outside.join("keep.txt"), &folder.join("keep-link.txt"));
+
+        let found = scan(std::slice::from_ref(&base), &[]).await;
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].size, 100 + std::fs::metadata(folder.join(marker::IN_FOLDER)).unwrap().len(), "links count as nothing");
+        assert_eq!(remove(&found, &[]).await, (1, vec![]));
+        assert!(!folder.exists() && links.iter().all(|l| std::fs::symlink_metadata(l).is_err()));
+        assert_eq!(std::fs::read(outside.join("keep.txt")).unwrap(), b"the user's");
         std::fs::remove_dir_all(&base).unwrap();
         std::fs::remove_dir_all(&outside).unwrap();
     }
