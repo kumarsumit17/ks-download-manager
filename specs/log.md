@@ -1,5 +1,6 @@
 # 2026-11-21
 
+* **Update**: `ks-utility` pin moved from `v0.2.1` (`a5aa8e7`) to `v0.2.2` (`70e9f2b`): the owner's Hindi wording for Status (स्टेटस), the temp folder (टेंप फ़ोल्डर) and the system language (सिस्टम की भाषा).
 * **Update**: `ks-utility` pin moved from `v0.2.0` (`6ea7fb4`) to `v0.2.1` (`a5aa8e7`): the language-file command runs from `node_modules`; Hindi terms from this app added to the style guide.
 * **Update**: [UI direction](ui.md), Part 4: Languages section (English and Hindi through ks-utility, keys in `src/locales`, Settings → Language, Rust message codes, Intl formatting, the language-file check, `docs/hindi-review.md`). [Chrome extension and hand-off](extension.md): replies carry only a code; Hindi labels.
 * **Update**: `ks-utility` pin moved from `v0.1.0` (`f772fa8`) to `v0.2.0` (`6ea7fb4`): language support (format, shared English and Hindi catalogue, translator, language rule, check), message codes, token bucket, media-type extensions, locale-aware formatting.

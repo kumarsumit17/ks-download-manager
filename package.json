@@ -22,7 +22,7 @@
     "@tauri-apps/api": "^2",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.5.2",
-    "ks-utility": "git+https://github.com/kumarsumit17/ks-utility.git#v0.2.1",
+    "ks-utility": "git+https://github.com/kumarsumit17/ks-utility.git#v0.2.2",
     "lucide-react": "^1.77.0",
     "radix-ui": "^1.8.1",
     "react": "^19.1.0",
