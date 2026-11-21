@@ -4,7 +4,7 @@ Everything a fresh session needs to continue Stage 5 (Final) of ks-download-mana
 
 ## 1. Run rules
 
-- **Parts in order:** 3, 4, 5, 6, 7, then full testing and the review file. One part per session: when a part is done, run the **Done means** checks (below) and `graphify update .`, commit locally, then report **"Part N is done"** in bold with a short summary and stop. The owner runs `/clear` and starts the next part.
+- **Parts in order:** first the Part 2 review fixes (section 3a, its own commit), then Parts 3, 4, 5, 6, 7, then full testing and the review file. One part per session: when a part is done, run the **Done means** checks (below) and `graphify update .`, commit locally, then report **"Part N is done"** in bold with a short summary and stop. The owner runs `/clear` and starts the next part.
 - **Within a part, do not stop to ask.** When a decision is open, take the option closest to the specs and to this brief, and record it in `docs/decisions-stage5.md` with the reason and the alternative. Stop only if continuing would risk losing the owner's data or breaking the repository. If a part cannot be finished, finish what you can, mark the rest **Not done** in the decisions log, and still report the part.
 - **Commits:** local only, never push (not this repo, not ks-utility, not the workspace). One or more commits per part, Conventional Commits. **No Claude attribution:** no `Co-Authored-By: Claude`, no `Claude-Session:`, no "Generated with Claude Code" lines. The owner is the only author.
 - **Never commit** `stage5-plan-review.md` (untracked, kept as the style example for the final review file), `src-tauri/binaries/` or `extension/dist/` (both git-ignored).
@@ -43,7 +43,24 @@ Other local, unpushed commits:
 - ks-utility `a1d12b9`: docs: pin by version tag, versioning rules (`specs/usage.md`, rules, overview, README, CLAUDE.md).
 - KS-Suite workspace repo `6e17e8b`: docs: pin ks-utility by version tag, versioning rules (workspace `CLAUDE.md`, `specs/cross-repo.md`, `specs/log.md`).
 
-Parts 1 and 2 are the owner's to review. Part 1 is "approved with changes" (done in `1c8e5cf`); Part 2 has not been reviewed yet.
+Part 1 is "approved with changes" (done in `1c8e5cf`). Part 2 is "approved with changes": the fixes are in section 3a and are still to do.
+
+## 3a. Part 2 review fixes (do first, as their own commit, before continuing Part 3)
+
+Commit the uncommitted Part 3 files separately or leave them uncommitted, so they do not mix with this commit (for example `git stash push -u -- src-tauri/engine/src/limits.rs src-tauri/engine/src/ranges.rs`, then `git stash pop` after committing). Message, for example: `fix: Part 2 review: validators after dropping If-Range, safer hand-off`.
+
+- **a. Engine, after If-Range is dropped:** once If-Range has been dropped for a download (`Ctx::whole_file_reply` sets `if_range` to `None`), every 206 reply must carry a validator equal to ours. A 206 with no validator, or a different one, is treated as "file changed" (`EngineError::FileChanged`: restart once, as before). While If-Range is still sent, behaviour is unchanged (today `Ctx::check_206` only compares when the reply has a validator; make the missing-validator case fail only after the drop). Tests (with the `if_range_unsupported` test-server option, plus a new option to leave out the ETag on 206 replies):
+  - a server that ignores If-Range and sends 206 without a validator does not produce a mixed file;
+  - one that sends matching validators completes.
+- **b. Browser-download hand-off:** never take over a download Chrome marks as dangerous (`DownloadItem.danger` other than `safe`/`accepted`, or any danger state still being decided; add `danger` to `extension/src/chrome.d.ts`). The option's description, in both languages, must say three things:
+  - Chrome's download safety check does not apply to handed-over files;
+  - downloads that need a sign-in stay in Chrome;
+  - single-use links may fail.
+- **c. Fallback socket folder under `/tmp`:** on both the app side (`handoff::bind`) and the host side (`handoff::socket_path` / `ask`), use `/tmp/ksdm-<uid>` only if it is a real folder (not a link), owned by the current user, with mode `0700`; otherwise refuse. Test it.
+- **d. Image button** (`extension/src/hover.ts`): do the look-up under the pointer (`elementsFromPoint`) at most once per animation frame.
+- **e. App side of the socket** (`handoff::serve`): close a connection that sends no complete line within a few seconds. Test it.
+
+Update `specs/extension.md` (and `specs/engine.md` for a) and `specs/log.md`, and add the review entry to `docs/decisions-stage5.md`.
 
 ## 3. Uncommitted Part 3 work (in the working tree)
 
@@ -112,7 +129,7 @@ Language support lives in ks-utility, as a utility every KS-Suite app can use to
 - Record in ks-utility's specs and in the workspace `CLAUDE.md` that every KS-Suite app supports English and Hindi through ks-utility.
 - Also move the generic helpers written in the app meanwhile: `files::extension_for` / `name_with_type` (`src-tauri/src/files.rs`) and the `SpeedLimit` token bucket's arithmetic (the engine keeps the async waiting). Make `formatBytes`/`formatSpeed`/`formatTimeLeft` locale-aware with built-in `Intl`.
 - Commit in ks-utility, **tag that commit `v0.2.0` locally** (MINOR: new helpers), do not push, and pin the app to `v0.2.0` (`package.json`, `src-tauri/Cargo.toml`, `src-tauri/engine/Cargo.toml`, both lock files), in its own commit.
-- **The unpushed tag cannot be fetched from GitHub,** so a local workaround is needed to build: for example, fetch the tag into Cargo's git database under `~/.cargo/git/db/ks-utility-*` and build with `CARGO_NET_OFFLINE=true`, and place the package in `node_modules/ks-utility` from the local repo. Lock files must still name the GitHub source and the tag's commit, exactly as after a push. Note in the decisions log that **the owner must push the ks-utility commits and the `v0.2.0` tag** before a clean build elsewhere will work.
+- **No workaround for the unpushed tag:** no changes to Cargo's git database, no manual copy into `node_modules`, no offline build. Commit in ks-utility, tag `v0.2.0` locally, then **stop and ask the owner to push ks-utility and the tag** (give the exact commands). Pin the app to `v0.2.0` only after the owner confirms, using a normal fetch from GitHub (`npm install`, `cargo check`; check that both lock files name the tag's commit), in its own commit. The app-side Part 4 work that needs the new ks-utility code continues after that.
 
 **Hindi style guide (use for every Hindi string)**
 Natural app Hindi with familiar Devanagari transliterations, no stiff or Sanskritised words.
@@ -183,7 +200,7 @@ Tone and formatting:
 - Window material (Tauri's built-in window effects; watch the contrast).
 - Clipboard pre-fill in Add download (no new crate; check whether macOS prompts on reading the clipboard, and record it).
 - Start-up restore of the download list off the critical path.
-- Mark downloaded files as coming from the internet: the quarantine attribute on macOS; the Windows Mark of the Web (`Zone.Identifier`) written but marked untested. **The yt-dlp update must stay unmarked**, as already decided and recorded in `specs/video-playlists.md` ("Updates and 'downloaded from the internet' marking") and `src-tauri/src/component.rs`.
+- Mark downloaded files as coming from the internet: the quarantine attribute on macOS; the Windows Mark of the Web (`Zone.Identifier`) written but marked untested. This includes files handed over by the extension (video, image and browser downloads), not only those added in the app. **The yt-dlp update must stay unmarked**, as already decided and recorded in `specs/video-playlists.md` ("Updates and 'downloaded from the internet' marking") and `src-tauri/src/component.rs`.
 
 ### Later, not in Stage 5
 - Release: Windows build, signing through `SIGNING_*` secrets in CI, notarisation, tag-driven versions, the release workflow, DMG after re-signing.
@@ -211,14 +228,14 @@ Tone and formatting:
 
 ## 6. Deferred: history rewrite (do not start yet)
 
-The owner asked to remove Claude from the git history of ks-utility and ks-download-manager. **Check first, and stop if any of these is false:**
+The owner asked to remove Claude from the git history of three repos: ks-utility, ks-download-manager, and the KS-Suite workspace repo (the parent folder `..`, done last). **Check first, and stop if any of these is false:**
 - the Stage 5 run is finished and the owner has approved it;
-- both working trees are clean, with nothing uncommitted or stashed;
-- both repos are fully pushed, including tags;
-- no other Claude Code session is open in either repo.
+- all three working trees are clean, with nothing uncommitted or stashed;
+- all three repos are fully pushed, including tags;
+- no other Claude Code session is open in any of them.
 
 Then, in this order:
-1. Back up: `git clone --mirror` of each repo into a new folder outside both repos. Tell the owner the paths; never delete them.
+1. Back up: `git clone --mirror` of each of the three repos into a new folder outside all of them. Tell the owner the paths; never delete them.
 2. ks-utility first. Rewrite every commit message on every branch and tag to remove only:
    - any `Co-Authored-By:` line naming Claude;
    - any `Claude-Session:` line;
@@ -231,9 +248,10 @@ Then, in this order:
    - a search of every commit message finds none of the three kinds of line;
    - its tests pass.
 4. ks-download-manager: the same rewrite and the same verification.
+4b. The KS-Suite workspace repo, last: the same rewrite and the same verification (commit count per branch, tree hash at each tag if any, message search). It has no build of its own; check that its specs and `CLAUDE.md` are unchanged by comparing tree hashes.
 5. Re-pin: the tag names are unchanged but the commit IDs behind them are new. Refresh both lock files to the new commit for the pinned tag, and update any commit ID written in `docs/THIRD_PARTY.md`, `CLAUDE.md` or the specs. This depends on ks-utility being pushed, so **stop here and wait for the owner**.
 6. Record in ks-utility's `specs/usage.md` that tags were moved once, on that date, to remove tool attribution from history: the single exception to the rule that tags never move.
 
-Push nothing. Give the owner the exact push commands for each repo, and a summary: commits rewritten per repo, the old and new ID of each tag, and the verification results.
+Push nothing. Give the owner the exact push commands for each of the three repos, and a summary: commits rewritten per repo, the old and new ID of each tag, and the verification results.
 
 Commits with a `Co-Authored-By: Claude` line in this repo on 2026-11-21: 25 of 29, from the Stage 1–4 history up to `3209888` (`git log --grep='Co-Authored-By: Claude' -i`). Commits from `42dca38` on have none. Check ks-utility the same way, and also look for the other two kinds of line.
