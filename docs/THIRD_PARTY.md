@@ -71,12 +71,23 @@ Separate programs shipped inside the app, run as child processes, never linked. 
 | ffmpeg, ffprobe | 9.1 | LGPL-2.1-or-later (no GPL or non-free parts; zlib and Secure Transport from the system) | Built by `scripts/build-ffmpeg.sh` from the ffmpeg.org tarball, SHA-256 `1a4d394a…2433`; licence texts and source reference in `licenses/` | Joining video and audio, container fixes |
 | Deno | 2.9.8 | MIT; V8 (BSD-3-Clause), ICU (Unicode) and 1,048 Rust crates, with their licence texts in `licenses/deno-THIRD-PARTY.txt` (made by `scripts/deno-notices.mjs`). 123 of the crates publish no licence file; for them the file gives the **standard text of each licence they declare** (SPDX license-list-data v3.29.0). Those texts come from the declared licence, not from the crate's own file, and the file says so | Official GitHub release for the target architecture, SHA-256 pinned per architecture | The JavaScript runtime yt-dlp needs for YouTube |
 
+**Windows (beta, phase B of `docs/release-plan.md`).** Same versions and the same rules; only the files differ:
+
+| Program | Windows file | Licence | How it is obtained and checked |
+|---|---|---|---|
+| yt-dlp | `yt-dlp_win.zip` 2026.10.26 (unpacked build, x64), SHA-256 `fd51b212…7419` | As above; `_internal/THIRD_PARTY_LICENSES.txt` is shipped | Official GitHub release; the hash is listed in the same signed `SHA2-256SUMS` as the macOS file |
+| Deno | `deno-x86_64-pc-windows-msvc.zip` 2.9.8, SHA-256 `cba84b26…93bf` | As above | Official GitHub release, hash from its `.sha256sum` |
+| ffmpeg, ffprobe | 9.1, the same tarball | LGPL-2.1-or-later; zlib built in (below); Schannel (Windows' own TLS) | Cross-built on `ubuntu-24.04` by `scripts/build-ffmpeg.sh … windows-x86_64` with Ubuntu's `mingw-w64` (the `-win32` compiler: Windows threads, no winpthreads) and `nasm`, statically; the script fails if the programs need any DLL from the toolchain. Toolchain versions are written into `licenses/ffmpeg-SOURCE.txt` |
+| zlib | 1.3.2, `zlib-1.3.2.tar.xz` from the GitHub release, SHA-256 `d7a06547…92f3` | Zlib (`licenses/zlib-LICENSE.txt`) | Linked into the Windows ffmpeg/ffprobe only (macOS uses the system copy). 1.3.2 rather than 1.4 (released 2026-11-05, two weeks old) |
+| mingw-w64 runtime | Ubuntu 24.04's `mingw-w64-x86-64-dev` | ZPL-2.1, public domain and others, as listed in the package's copyright file (shipped as `licenses/mingw-w64-runtime-COPYING.txt`) | Start-up code and C-runtime glue linked into the Windows ffmpeg/ffprobe by the compiler; libgcc is linked statically under the GCC Runtime Library Exception |
+
 ### Publisher signatures (checked 2026-11-21 with GnuPG 2, installed as a development tool)
 
 | What | Signature | Signing key (fingerprint) | Result |
 |---|---|---|---|
 | yt-dlp 2026.10.26 `SHA2-256SUMS` (lists our pinned `yt-dlp_macos.zip` hash `20d98fa6…3ef1`) | `SHA2-256SUMS.sig` from the release | `AC0C BBE6 848D 6A87 3464 AF4E 57CF 6593 3B5A 7581`, "yt-dlp signing key", from `public.key` in the yt-dlp repository at that tag | Good signature |
 | ffmpeg 9.1 tarball (`1a4d394a…2433`) | `ffmpeg-9.1.tar.xz.asc` from ffmpeg.org | `FCF9 86EA 15E6 E293 A564 4F10 B432 2F04 D676 58D8`, "FFmpeg release signing key", from https://ffmpeg.org/ffmpeg-devel.asc | Good signature |
+| zlib 1.3.2 tarball (`d7a06547…92f3`) | `zlib-1.3.2.tar.xz.asc` from the GitHub release | `5ED4 6A67 21D3 6558 7791 E2AA 783F CD8E 58BC AFBA`, "Mark Adler", from keys.openpgp.org | Good signature |
 | Deno 2.9.8 | none published (only `.sha256sum` files next to each zip) | — | Hash only; Deno's macOS binary is also signed and notarised by Deno Land (Team ID `2H4KBF436B`) before we re-sign it |
 
 The keys were fetched from the publishers' own sites (trust on first use); GnuPG reports them as "not certified", which only means nobody in our keyring vouches for them. Compare the fingerprints above when repeating the check.
@@ -91,7 +102,7 @@ Size: about 252 MB for the arm64 app (yt-dlp folder 120 MB, Deno 80 MB, ffmpeg a
 
 ## Build and release (GitHub Actions, not shipped)
 
-Used only by `.github/workflows/ci.yml` and `release.yml`; nothing from them is in the app. GitHub's own actions only, each pinned to a full commit SHA. Runner images: `macos-15`, `ubuntu-24.04` (`docs/decisions-release.md`).
+Used only by `.github/workflows/ci.yml` and `release.yml`; nothing from them is in the app. GitHub's own actions only, each pinned to a full commit SHA. Runner images: `macos-15`, `ubuntu-24.04`, `windows-2025` (`docs/decisions-release.md`). The `ffmpeg-windows` job installs Ubuntu's own `mingw-w64` and `nasm` packages (`apt-get`, from the Ubuntu archive of the runner image) for the Windows cross build.
 
 | Action | Version | Commit | Licence | Used for |
 |---|---|---|---|---|

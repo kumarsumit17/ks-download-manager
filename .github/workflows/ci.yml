@@ -60,6 +60,35 @@ jobs:
       - name: Clippy
         run: cargo clippy --locked --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings
 
+  # ffmpeg/ffprobe for Windows, cross-built on Linux (docs/release-plan.md, section 4.1).
+  # Cached by the ffmpeg and zlib pins plus the build script, so a change to either rebuilds.
+  ffmpeg-windows:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Cache key
+        id: key
+        run: echo "key=ffmpeg-windows-x86_64-$( (jq -c '[.ffmpeg, .zlib]' src-tauri/sidecars.json; cat scripts/build-ffmpeg.sh) | sha256sum | cut -c1-32)" >> "$GITHUB_OUTPUT"
+      - name: Cache the build
+        id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ffmpeg-work/out-windows-x86_64
+          key: ${{ steps.key.outputs.key }}
+      - name: Cross-build (mingw-w64, nasm)
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends mingw-w64 nasm >/dev/null
+          sh scripts/build-ffmpeg.sh "$PWD/ffmpeg-work" windows-x86_64
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ffmpeg-windows
+          path: ffmpeg-work/out-windows-x86_64/
+          if-no-files-found: error
+
   bench:
     runs-on: macos-15
     steps:
