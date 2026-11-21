@@ -26,7 +26,7 @@ gh secret set APPLE_CERTIFICATE_PASSWORD -R kumarsumit17/ks-download-manager   #
 rm cert.p12 cert.txt
 ```
 
-Whether a release is signed is decided by the secrets that exist **when the tag is pushed**. For v0.1.1, the first release: ad hoc unless the six secrets are set by then (none were).
+Whether a release is signed is decided by the secrets that exist **when the tag is pushed**. For v0.1.2, the first release: ad hoc unless the six secrets are set by then (none were).
 
 The Windows installer (beta, phase B; built by the `windows` job, switched on in the `version` job's outputs) is unsigned in its first release; the intended route afterwards is SignPath Foundation (draft policy: `docs/code-signing-policy.md`). Not set up yet.
 
@@ -86,6 +86,16 @@ for f in *.dmg *.zip *.tar.xz SHA256SUMS; do gh attestation verify "$f" -R kumar
 
 Read the notes: they must say "signed with a Developer ID and notarised" only if the secrets were set, and otherwise give the "Open Anyway" steps. Then do every hand check in `docs/release-plan.md` section 9 on these files.
 
+## 4b. Rehearsal before a tag
+
+A release can be rehearsed on any branch without a tag: **Actions → Release → Run workflow**, pick the branch (e.g. `dev`) and give the version (`X.Y.Z`, with its dated changelog section on that branch), or
+
+```bash
+gh workflow run release.yml --ref dev -f version=X.Y.Z -R kumarsumit17/ks-download-manager
+```
+
+Every job runs as for a tag, except the check that the tag is on `main`. Nothing is attested and no release is created; the files (`release-files`) and the notes (`release-notes`) are kept as the run's artifacts. Rehearse before every tag.
+
 ## 5. Publishing
 
 Only when every check in section 4 has passed: open the draft, choose **Edit**, then **Publish release**. Or: `gh release edit vX.Y.Z --draft=false -R kumarsumit17/ks-download-manager`.
@@ -94,4 +104,4 @@ Only when every check in section 4 has passed: open the draft, choose **Edit**, 
 
 - **A build job fails** (no draft yet): read the log (`gh run view <run id> --log-failed`), fix on a branch, merge through `dev` into `main` as in section 2, and tag a **new** version (the next PATCH). Or, if nothing was published and the tag only failed in CI because of the runner, re-run the failed jobs from the Actions page: the same tag builds the same commit.
 - **A run is re-run on the same tag:** the `release` job replaces an existing **draft** for that tag. It never touches a published release; it fails instead.
-- **A hand check fails on the draft:** delete the draft (`gh release delete vX.Y.Z -R kumarsumit17/ks-download-manager --yes`, which keeps the tag), fix, and release a new version. Tags that were pushed are never moved or deleted. Example: v0.1.0 was pushed on a commit with an undated changelog section; the `version` job refused it, the tag stayed, and the release became v0.1.1.
+- **A hand check fails on the draft:** delete the draft (`gh release delete vX.Y.Z -R kumarsumit17/ks-download-manager --yes`, which keeps the tag), fix, and release a new version. Tags that were pushed are never moved or deleted. Example: v0.1.0 was pushed on a commit with an undated changelog section; the `version` job refused it, the tag stayed, and the release became v0.1.1. v0.1.1 then failed in the extension job (an environment variable named `ZIP`); its tag stayed too, and the next tag was v0.1.2 after a rehearsal.
