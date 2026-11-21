@@ -20,7 +20,7 @@ Everything a fresh session needs to continue Stage 5 (Final) of ks-download-mana
 ### Done means (every part)
 - `npm run build` succeeds.
 - In `src-tauri/`: `cargo test -q`, and `cargo clippy -q --all-targets -- -D warnings` with no output.
-- `npm run test:extension` and `npm run build:extension` succeed (from Part 4 on, also the language-file check).
+- `npm run test:extension` and `npm run build:extension` succeed, and from Part 4 on `npm run test:lang` (the language-file check).
 - Any new dependency or binary is in `docs/THIRD_PARTY.md` in the same commit. Specs changed → a line in `specs/log.md`; new spec → listed in `specs/index.md`.
 
 ### Practical notes
@@ -44,7 +44,7 @@ Other local, unpushed commits:
 - ks-utility `a1d12b9`: docs: pin by version tag, versioning rules (`specs/usage.md`, rules, overview, README, CLAUDE.md).
 - KS-Suite workspace repo `6e17e8b`: docs: pin ks-utility by version tag, versioning rules (workspace `CLAUDE.md`, `specs/cross-repo.md`, `specs/log.md`).
 
-**Part 4 status:** Part 3 review fixes committed (`bc67b18`). ks-utility side of Part 4 committed (`6ea7fb4`) and tagged `v0.2.0` locally; workspace `CLAUDE.md` updated (`0b37916`). Pinned to `v0.2.0` (`77a1cfb`). App-side Part 4 work committed. ks-utility `v0.2.1` (fix: the language-file command inside `node_modules`, plus new Hindi terms) committed and tagged locally. **Next:** once the owner has pushed ks-utility and `v0.2.1`, pin the app to `v0.2.1` (own commit), wire `npm run test:lang` and regenerate `docs/hindi-review.md`; then Part 4 is done. Decisions so far: `docs/decisions-stage5.md`, "Part 4".
+**Part 4 status:** Part 3 review fixes committed (`bc67b18`). ks-utility side of Part 4 committed (`6ea7fb4`) and tagged `v0.2.0` locally; workspace `CLAUDE.md` updated (`0b37916`). Pinned to `v0.2.0` (`77a1cfb`). App-side Part 4 work committed. ks-utility `v0.2.1` (fix: the language-file command inside `node_modules`, plus new Hindi terms) committed and tagged locally. Owner pushed `v0.2.1`; pinned in `b4c4908`; `npm run test:lang` wired. **Part 4 is done.** Next: Part 5 (playlists). Decisions so far: `docs/decisions-stage5.md`, "Part 4".
 
 Part 1 is "approved with changes" (done in `1c8e5cf`). Part 2 is "approved with changes" (done in `c1afa7c`). Part 3 (`ef4373a`, `7a7b9af`, `4956ff8`) is "approved with small changes": reservation markers, per-item leftover removal, the video speed-limit note (recorded in the decisions log).
 

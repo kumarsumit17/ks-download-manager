@@ -21,6 +21,8 @@ Free download manager for images, audio and video, with up to 20× faster downlo
 npm install                      # first time
 npm run tauri dev                # run the app with hot reload
 npm run build                    # type-check (tsc -b, incl. vite.config.ts) + build the interface
+npm run test:lang                # language files (src/locales, extension/_locales): ks-utility's check
+npm run hindi-review             # regenerate docs/hindi-review.md after changing a language file
 cd src-tauri && cargo test       # Rust tests
 cd src-tauri && cargo clippy --all-targets -- -D warnings
 npm run tauri build              # release bundle (.app/.dmg on macOS)
@@ -40,6 +42,7 @@ npm run tauri build              # release bundle (.app/.dmg on macOS)
 - Link between specs with relative markdown links (`[UI direction](ui.md)`), so they also work on GitHub.
 
 ## UI
+- Interface text is English and Hindi: every string is a key in `src/locales/{en,hi}.json` or ks-utility's `common.*` catalogue, used with `t()` from `src/lib/i18n.ts`; Rust sends message codes (`msg!`), never sentences. Hindi follows ks-utility's `specs/hindi-style.md`.
 - Follow `specs/ui.md` (IDM-style single window: toolbar, sidebar, download list). Read it before any interface work.
 - The design is our own: never copy icons, skins, screenshots or code from the reference apps.
 - Component reference: https://ui.shadcn.com/ (docs, component list and CLI). Check it for the current API before adding or changing a shadcn/ui component, instead of guessing or reading `node_modules`.
