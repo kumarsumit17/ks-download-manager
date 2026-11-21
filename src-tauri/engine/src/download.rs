@@ -1,6 +1,6 @@
 use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
@@ -47,6 +47,11 @@ pub struct DownloadOptions {
     pub budget: Option<ConnectionBudget>,
     /// A speed limit shared with other downloads.
     pub speed_limit: Option<SpeedLimit>,
+    /// With no byte for this long (not counting time spent waiting for a connection from
+    /// `budget`), the download stops as if paused and returns `Stalled`; the partial file
+    /// and its map stay, so it can be resumed. It cancels through `cancel`, so that token
+    /// is cancelled afterwards.
+    pub stall_timeout: Duration,
 }
 
 impl Default for DownloadOptions {
@@ -60,6 +65,7 @@ impl Default for DownloadOptions {
             adaptive: None,
             budget: None,
             speed_limit: None,
+            stall_timeout: Duration::from_secs(120),
         }
     }
 }
@@ -171,6 +177,43 @@ pub async fn download(url: &str, destination: &Path, options: DownloadOptions) -
     if options.retry.max_attempts == 0 {
         return Err(EngineError::InvalidOptions("retry.max_attempts must be at least 1".into()));
     }
+    let stalled = AtomicBool::new(false);
+    let work = attempts(url, destination, &options);
+    tokio::pin!(work);
+    // The watchdog never drops the download: it cancels it, then waits for it to stop, so
+    // every checkpoint finishes (rangemap.rs: never abort mid-checkpoint).
+    let result = tokio::select! {
+        r = &mut work => r,
+        () = watch_for_stall(&options, &stalled) => work.await,
+    };
+    match result {
+        Err(EngineError::Cancelled) if stalled.load(Ordering::SeqCst) => Err(EngineError::Stalled),
+        r => r,
+    }
+}
+
+/// Returns after cancelling the download when no byte has arrived for
+/// `options.stall_timeout`, the clock held while it waits for a connection slot. Runs
+/// until then; the caller stops polling it when the download ends first.
+async fn watch_for_stall(options: &DownloadOptions, stalled: &AtomicBool) {
+    let step = (options.stall_timeout / 8).clamp(Duration::from_millis(10), Duration::from_secs(1));
+    let mut last = options.progress.snapshot().received;
+    let mut since = Instant::now();
+    loop {
+        tokio::time::sleep(step).await;
+        let now = options.progress.snapshot().received;
+        if now != last || options.progress.is_waiting() {
+            last = now;
+            since = Instant::now();
+        } else if since.elapsed() >= options.stall_timeout {
+            stalled.store(true, Ordering::SeqCst);
+            options.cancel.cancel();
+            return;
+        }
+    }
+}
+
+async fn attempts(url: &str, destination: &Path, options: &DownloadOptions) -> Result<DownloadOutcome, EngineError> {
     // A file that changes while we fetch it is restarted once; a second change is an error.
     let mut may_resume = true;
     loop {
@@ -180,8 +223,8 @@ pub async fn download(url: &str, destination: &Path, options: DownloadOptions) -
             r = probe(url) => r?,
         };
         let result = match info.size {
-            Some(size) if info.ranges && size > 0 => segmented(url, info, size, destination, &options, may_resume).await,
-            _ => single(info, destination, &options).await,
+            Some(size) if info.ranges && size > 0 => segmented(url, info, size, destination, options, may_resume).await,
+            _ => single(info, destination, options).await,
         };
         match result {
             Err(EngineError::FileChanged) if may_resume => may_resume = false,
@@ -254,6 +297,7 @@ async fn segmented(
     options.progress.set_base(resumed);
 
     let ctx = Arc::new(Ctx {
+        progress: options.progress.clone(),
         source: source.to_owned(),
         url,
         total: size,
@@ -341,6 +385,8 @@ fn is_trouble(e: &EngineError) -> bool {
 
 /// Shared by the workers of one segmented download.
 struct Ctx {
+    /// The caller's progress, for the "waiting for a connection" flag.
+    progress: Progress,
     source: String,
     url: Url,
     total: u64,
@@ -435,11 +481,16 @@ async fn run_workers(ctx: &Arc<Ctx>, host: &str, start: usize, cancel: &CancelTo
     // The first connection waits for the budget; the others start only if it has room.
     let first = match &ctx.budget {
         None => None,
-        Some(b) => tokio::select! {
-            biased;
-            _ = cancel.cancelled() => return Err(EngineError::Cancelled),
-            p = b.acquire() => Some(p),
-        },
+        Some(b) => {
+            ctx.progress.set_waiting(true);
+            let p = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => None,
+                p = b.acquire() => Some(p),
+            };
+            ctx.progress.set_waiting(false);
+            Some(p.ok_or(EngineError::Cancelled)?)
+        }
     };
     spawn(0, first, &mut tasks, &mut live);
     for id in 1..start {
@@ -816,7 +867,12 @@ async fn single(info: ProbeInfo, destination: &Path, options: &DownloadOptions) 
     let attempts = async {
         // Counts toward the connections shared with other downloads.
         let _permit = match &options.budget {
-            Some(b) => Some(b.acquire().await),
+            Some(b) => {
+                options.progress.set_waiting(true);
+                let p = b.acquire().await;
+                options.progress.set_waiting(false);
+                Some(p)
+            }
             None => None,
         };
         let client = client()?;

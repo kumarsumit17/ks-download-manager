@@ -30,6 +30,9 @@ pub enum EngineError {
     /// The download was cancelled (paused) by the caller. For a resumable download the
     /// partial file and its range map stay on disk; see [`crate::discard`].
     Cancelled,
+    /// No byte arrived for [`crate::DownloadOptions::stall_timeout`] (the server stopped
+    /// answering). Like a pause, the partial file and its range map stay for a resume.
+    Stalled,
     /// A download task stopped unexpectedly (a bug, not a server problem).
     Internal(String),
 }
@@ -55,6 +58,7 @@ impl fmt::Display for EngineError {
             Self::Io(e) => write!(f, "file error: {e}"),
             Self::FileChanged => write!(f, "the file changed on the server during the download"),
             Self::Cancelled => write!(f, "download cancelled"),
+            Self::Stalled => write!(f, "the server stopped sending data"),
             Self::Internal(m) => write!(f, "internal error: {m}"),
         }
     }

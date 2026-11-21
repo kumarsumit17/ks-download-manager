@@ -320,7 +320,11 @@ export function DownloadList({ downloads, selectedId, onSelect, actions, queues,
                 </td>
                 <td className="px-3 text-right tabular-nums">{formatBytes(d.size)}</td>
                 <td className="px-3">
-                  {d.status === "downloading" && d.merging ? (
+                  {d.status === "downloading" && d.stalled ? (
+                    <span role="status" className="text-xs text-amber-700 dark:text-amber-300">
+                      {t("list.notAnswering")}
+                    </span>
+                  ) : d.status === "downloading" && d.merging ? (
                     <div className="flex items-center gap-2">
                       <div role="progressbar" aria-label={t("list.joining")} className="progress-indeterminate h-1.5 flex-1 overflow-hidden rounded-full bg-muted" />
                       <span className="w-14 text-xs text-muted-foreground">{t("list.merging")}</span>

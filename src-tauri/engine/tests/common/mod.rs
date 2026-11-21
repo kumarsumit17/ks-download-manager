@@ -4,7 +4,7 @@
 
 #![allow(dead_code)]
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -100,6 +100,7 @@ pub struct TestServer {
     pub heads: Arc<AtomicUsize>,
     file: Arc<RwLock<FileState>>,
     log: Arc<Mutex<Vec<Request>>>,
+    silent: Arc<AtomicBool>,
     task: JoinHandle<()>,
 }
 
@@ -139,6 +140,13 @@ impl TestServer {
     pub fn clear_log(&self) {
         self.log.lock().unwrap().clear();
     }
+
+    /// On: the server stops answering without closing anything. Bodies being sent stop
+    /// part-way and new requests (other than the probe) get no reply, as when a server
+    /// hangs. Off: it answers again.
+    pub fn go_silent(&self, on: bool) {
+        self.silent.store(on, Ordering::SeqCst);
+    }
 }
 
 /// Deterministic bytes where neighbouring offsets differ, so a misplaced range is caught.
@@ -165,6 +173,7 @@ pub async fn start(opts: ServerOptions) -> TestServer {
         heads: Arc::new(AtomicUsize::new(0)),
         fails: AtomicUsize::new(0),
         drops: AtomicUsize::new(0),
+        silent: Arc::new(AtomicBool::new(false)),
     });
     let (s, a) = (shared.clone(), active.clone());
     let task = tokio::spawn(async move {
@@ -183,6 +192,7 @@ pub async fn start(opts: ServerOptions) -> TestServer {
         heads: shared.heads.clone(),
         file,
         log: shared.log.clone(),
+        silent: shared.silent.clone(),
         task,
     }
 }
@@ -195,11 +205,15 @@ struct Shared {
     heads: Arc<AtomicUsize>,
     fails: AtomicUsize,
     drops: AtomicUsize,
+    silent: Arc<AtomicBool>,
 }
 
 async fn serve(mut stream: TcpStream, shared: &Shared) -> std::io::Result<()> {
     let opts = &shared.opts;
     let head = read_head(&mut stream).await?;
+    if shared.silent.load(Ordering::SeqCst) && !head.contains("bytes=0-0") {
+        hang().await;
+    }
     let method = head.split("\r\n").next().unwrap_or("").split(' ').next().unwrap_or("").to_owned();
     let header = |name: &str| {
         head.split("\r\n").skip(1).find_map(|l| {
@@ -311,7 +325,7 @@ async fn serve(mut stream: TcpStream, shared: &Shared) -> std::io::Result<()> {
     }
     msg.push_str("\r\n");
     stream.write_all(msg.as_bytes()).await?;
-    if send_body(&mut stream, body, drop_after, rate).await? {
+    if send_body(&mut stream, body, drop_after, rate, &shared.silent).await? {
         stream.shutdown().await?;
     }
     Ok(()) // a dropped stream is closed abruptly here
@@ -333,11 +347,14 @@ fn parse_range(value: &str, size: u64) -> Option<Option<(u64, u64)>> {
 }
 
 /// Returns false when the connection was dropped part-way on purpose.
-async fn send_body(stream: &mut TcpStream, body: &[u8], drop_after: Option<u64>, rate: Option<u64>) -> std::io::Result<bool> {
+async fn send_body(stream: &mut TcpStream, body: &[u8], drop_after: Option<u64>, rate: Option<u64>, silent: &AtomicBool) -> std::io::Result<bool> {
     let limit = drop_after.map_or(body.len(), |d| (d as usize).min(body.len()));
     let started = Instant::now();
     let mut sent = 0usize;
     for chunk in body[..limit].chunks(16 * 1024) {
+        if silent.load(Ordering::SeqCst) {
+            hang().await;
+        }
         stream.write_all(chunk).await?;
         sent += chunk.len();
         if let Some(rate) = rate {
@@ -348,6 +365,13 @@ async fn send_body(stream: &mut TcpStream, body: &[u8], drop_after: Option<u64>,
         }
     }
     Ok(limit == body.len())
+}
+
+/// Holds the connection open and sends nothing, until the client gives up.
+async fn hang() {
+    loop {
+        tokio::time::sleep(Duration::from_secs(3600)).await;
+    }
 }
 
 async fn read_head(stream: &mut TcpStream) -> std::io::Result<String> {

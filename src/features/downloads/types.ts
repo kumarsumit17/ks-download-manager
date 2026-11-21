@@ -76,6 +76,8 @@ export interface Tick {
   connections: (ConnectionTick | null)[];
   /** A video whose streams are being joined. */
   merging: boolean;
+  /** No byte for 15 s: the server is not answering and the download is retrying. */
+  stalled: boolean;
 }
 
 export interface Download extends DownloadRecord {
@@ -83,6 +85,7 @@ export interface Download extends DownloadRecord {
   speed: number;
   connections: (ConnectionTick | null)[];
   merging: boolean;
+  stalled: boolean;
 }
 
 export interface ProbeView {

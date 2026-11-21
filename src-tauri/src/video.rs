@@ -500,7 +500,7 @@ struct ProgressState {
 }
 
 impl VideoProgress {
-    fn line(&self, line: &str) {
+    pub(crate) fn line(&self, line: &str) {
         let mut s = self.0.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(rest) = line.strip_prefix(PROGRESS) {
             if let Some((id, done, total)) = parse_progress(rest) {

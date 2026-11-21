@@ -590,6 +590,54 @@ async fn crash_mid_download_then_resume_fetches_only_the_missing_bytes() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_server_that_stops_answering_stalls_the_download_which_resumes_later() {
+    let size: u64 = 2 * 1024 * 1024;
+    let server = start(ServerOptions { rate: Some(256 * 1024), ..ServerOptions::new(size) }).await;
+    let out = TempFile::new();
+    let progress = Progress::new();
+    let stall = Duration::from_millis(600);
+    let options = DownloadOptions { progress: progress.clone(), stall_timeout: stall, ..opts(4) };
+    let (url, path) = (server.url.clone(), out.0.clone());
+    let task = tokio::spawn(async move { download(&url, &path, options).await });
+
+    wait_for(&progress, size / 4).await;
+    server.go_silent(true);
+    let silent_at = Instant::now();
+    let r = tokio::time::timeout(Duration::from_secs(10), task).await.expect("gives up").expect("no panic");
+    assert!(matches!(r, Err(EngineError::Stalled)), "got {r:?}");
+    let took = silent_at.elapsed();
+    assert!(took >= stall && took < stall * 4, "gave up after {took:?}, not the read timeout");
+
+    // Like a pause: the partial file and its map stay, and a resume continues from them.
+    let saved = saved_state(&out.0).await.expect("map kept for a resume");
+    assert!(saved.done_bytes() >= size / 4 - 64 * 1024 && saved.done_bytes() < size, "saved {}", saved.done_bytes());
+    server.go_silent(false);
+    let outcome = download(&server.url, &out.0, opts(4)).await.expect("resume");
+    assert_eq!(outcome.resumed, saved.done_bytes());
+    assert_same(&out.0, &server.data());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn waiting_for_a_connection_slot_is_not_a_stall() {
+    let server = start(ServerOptions { rate: Some(512 * 1024), ..ServerOptions::new(1024 * 1024) }).await;
+    let budget = engine::ConnectionBudget::new(1);
+    // The first download holds the only connection for about 2 s.
+    let (a, b) = (TempFile::new(), TempFile::new());
+    let first = DownloadOptions { budget: Some(budget.clone()), ..opts(1) };
+    let (url, path) = (server.url.clone(), a.0.clone());
+    let one = tokio::spawn(async move { download(&url, &path, first).await });
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    // The second waits for it far longer than its stall limit, and must not give up.
+    let second = DownloadOptions { budget: Some(budget), stall_timeout: Duration::from_millis(300), ..opts(1) };
+    let (url, path) = (server.url.clone(), b.0.clone());
+    let two = tokio::spawn(async move { download(&url, &path, second).await });
+    one.await.unwrap().expect("first");
+    tokio::time::timeout(Duration::from_secs(10), two).await.expect("finishes").unwrap().expect("not stalled while waiting");
+    assert_same(&a.0, &server.data());
+    assert_same(&b.0, &server.data());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn cancel_stops_every_connection_quickly_and_keeps_the_partial_file() {
     let size: u64 = 4_000_000;
     let server = start(ServerOptions { rate: Some(64 * 1024), ..ServerOptions::new(size) }).await;

@@ -5,13 +5,17 @@ use reqwest::{Client, RequestBuilder, Url};
 
 use crate::error::EngineError;
 
+/// A read that brings nothing for this long fails and is retried (Final review: 60 s made
+/// a dead server keep a row "Downloading" for 6 to 7 minutes).
+pub(crate) const READ_TIMEOUT: Duration = Duration::from_secs(25);
+
 /// One client per connection. Each `Client` has its own pool, so every range really
 /// gets its own TCP connection (specs/engine.md: per-connection limits, no HTTP/2 multiplexing).
 /// The crate is built without reqwest's `http2` feature, so this is always HTTP/1.1.
 pub(crate) fn client() -> Result<Client, EngineError> {
     Client::builder()
         .connect_timeout(Duration::from_secs(30))
-        .read_timeout(Duration::from_secs(60))
+        .read_timeout(READ_TIMEOUT)
         .user_agent(concat!("KS-Download-Manager/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(EngineError::from)

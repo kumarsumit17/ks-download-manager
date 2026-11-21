@@ -40,6 +40,9 @@ const PLAYLISTS_KEPT: usize = 8;
 const THUMBNAIL_MAX: usize = 1024 * 1024;
 /// How long quitting waits for downloads to save their range maps.
 const QUIT_WAIT: Duration = Duration::from_secs(3);
+/// A running download with no new byte for this long shows "Server not answering,
+/// retrying" (the engine gives up after `DownloadOptions::stall_timeout`, 2 minutes).
+const NOT_ANSWERING: Duration = Duration::from_secs(15);
 /// Weight of the newest sample in the smoothed speeds.
 const SMOOTHING: f64 = 0.3;
 
@@ -70,6 +73,9 @@ pub struct Tick {
     pub connections: Vec<Option<ConnectionTick>>,
     /// A video whose streams are all here and are being joined by ffmpeg.
     pub merging: bool,
+    /// No byte for 15 s (not while waiting for a connection slot or joining streams):
+    /// the row says the server is not answering and the download is retrying.
+    pub stalled: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -180,6 +186,8 @@ struct Running {
     /// Set when the download is deleted while running: what to clean up once it stops.
     deleted: Option<Record>,
     last_at: Instant,
+    /// When the received count last changed.
+    bytes_at: Instant,
     last_received: u64,
     last_per: Vec<u64>,
     speed: f64,
@@ -313,6 +321,7 @@ fn engine_message(e: &EngineError) -> Msg {
         EngineError::Io(e) => msg!("engine.file", detail = e),
         EngineError::FileChanged => msg!("engine.fileChanged"),
         EngineError::Cancelled => msg!("engine.cancelled"),
+        EngineError::Stalled => msg!("engine.stalled"),
     }
 }
 
@@ -947,6 +956,7 @@ impl Manager {
                     stop: None,
                     deleted: None,
                     last_at: Instant::now(),
+                    bytes_at: Instant::now(),
                     last_received: record.received,
                     last_per: Vec::new(),
                     speed: 0.0,
@@ -1526,9 +1536,13 @@ impl Running {
                 let dt = now.duration_since(self.last_at).as_secs_f64().max(1e-3);
                 let delta = received.saturating_sub(self.last_received);
                 self.speed += SMOOTHING * (delta as f64 / dt - self.speed);
+                if received != self.last_received || merging {
+                    self.bytes_at = now;
+                }
                 self.last_at = now;
                 self.last_received = received;
-                return Tick { id, size: total, received, speed: self.speed, connections: Vec::new(), merging };
+                let stalled = now.duration_since(self.bytes_at) >= NOT_ANSWERING;
+                return Tick { id, size: total, received, speed: self.speed, connections: Vec::new(), merging, stalled };
             }
         };
         let dt = now.duration_since(self.last_at).as_secs_f64().max(1e-3);
@@ -1539,6 +1553,10 @@ impl Running {
         for (i, &n) in snap.per_connection.iter().enumerate() {
             let before = self.last_per.get(i).copied().unwrap_or(0);
             self.connection_speed[i] = smooth(self.connection_speed[i], n.saturating_sub(before));
+        }
+        let waiting = matches!(&self.progress, Source::Engine(p) if p.is_waiting());
+        if snap.received != self.last_received || waiting {
+            self.bytes_at = now;
         }
         self.last_at = now;
         self.last_received = snap.received;
@@ -1555,6 +1573,7 @@ impl Running {
                 .map(|(c, &speed)| c.map(|c| ConnectionTick { start: c.start, position: c.position, end: c.end, speed }))
                 .collect(),
             merging: false,
+            stalled: now.duration_since(self.bytes_at) >= NOT_ANSWERING,
         }
     }
 }
@@ -2460,6 +2479,7 @@ mod tests {
             stop: None,
             deleted: None,
             last_at: start,
+            bytes_at: start,
             last_received: 1000,
             last_per: vec![500, 500],
             speed: 0.0,
@@ -2470,6 +2490,31 @@ mod tests {
         assert_eq!(tick.id, 7);
         assert_eq!(tick.speed, 0.0);
         assert!(tick.connections.is_empty());
+    }
+
+    #[test]
+    fn a_row_says_the_server_is_not_answering_after_15_s_without_bytes() {
+        let progress = Progress::new();
+        let start = Instant::now();
+        let mut run = Running {
+            cancel: CancelToken::new(),
+            progress: Source::Engine(progress),
+            stop: None,
+            deleted: None,
+            last_at: start,
+            bytes_at: start,
+            last_received: 0,
+            last_per: Vec::new(),
+            speed: 0.0,
+            connection_speed: Vec::new(),
+        };
+        assert!(!run.sample(1, start + Duration::from_secs(14)).stalled);
+        assert!(run.sample(1, start + Duration::from_secs(15)).stalled, "15 s without a byte");
+        // A video while ffmpeg joins its streams is never "not answering".
+        let video = VideoProgress::default();
+        video.line("KSDM-M Merger started");
+        let mut run = Running { progress: Source::Video(video), bytes_at: start, last_at: start, ..run };
+        assert!(!run.sample(1, start + Duration::from_secs(60)).stalled);
     }
 
     // ---- Playlists (Part 5) ----

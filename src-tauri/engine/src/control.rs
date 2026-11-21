@@ -56,6 +56,9 @@ struct ProgressInner {
     per_connection: RwLock<Arc<[AtomicU64]>>,
     /// Reads each connection's current range while a download runs; `None` otherwise.
     ranges: RwLock<Option<RangeSource>>,
+    /// Waiting for a connection from the shared budget: no bytes are expected, so the
+    /// stall watchdog does not count this time.
+    waiting: AtomicBool,
 }
 
 /// The range one connection is working on: the half-open byte range `[start, end)`, of
@@ -102,6 +105,7 @@ impl Default for Progress {
             base: AtomicU64::new(0),
             per_connection: RwLock::new(Arc::from(Vec::new())),
             ranges: RwLock::new(None),
+            waiting: AtomicBool::new(false),
         }))
     }
 }
@@ -144,6 +148,15 @@ impl Progress {
 
     pub(crate) fn set_total(&self, total: u64) {
         self.0.total.store(total, Ordering::Relaxed);
+    }
+
+    pub(crate) fn set_waiting(&self, on: bool) {
+        self.0.waiting.store(on, Ordering::Relaxed);
+    }
+
+    /// True while the download waits for a connection slot shared with other downloads.
+    pub fn is_waiting(&self) -> bool {
+        self.0.waiting.load(Ordering::Relaxed)
     }
 
     /// The counters for the current download; tasks hold this so a chunk is one atomic add.
