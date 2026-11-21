@@ -12,6 +12,7 @@ use ks_utility::atomic::write_atomic;
 use serde::{Deserialize, Serialize};
 
 use crate::files::Category;
+use crate::msg::Msg;
 
 pub const FILE_NAME: &str = "downloads.json";
 /// Bumped when the format changes incompatibly.
@@ -60,7 +61,7 @@ pub struct Record {
     pub received: u64,
     /// From the last probe: the server allows pausing and resuming this download.
     pub resumable: bool,
-    pub error: Option<String>,
+    pub error: Option<Msg>,
     /// What the interface can offer for the error, e.g. `videoOutdated` (an update button).
     #[serde(default)]
     pub error_code: Option<String>,
@@ -195,7 +196,7 @@ mod tests {
         let dir = temp_dir();
         let file = path(&dir);
         assert!(load(&file).is_empty(), "no file yet");
-        let list = vec![record(1), Record { status: Status::Failed, error: Some("x".into()), size: None, ..record(2) }];
+        let list = vec![record(1), Record { status: Status::Failed, error: Some(crate::msg!("error.interrupted")), size: None, ..record(2) }];
         save(&file, &list, 3, &[]).unwrap();
         assert_eq!(load(&file), list);
         assert!(!with_suffix(&file, ".tmp").exists(), "temp file renamed away");

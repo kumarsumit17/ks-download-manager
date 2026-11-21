@@ -4,7 +4,7 @@ import { Clock, ListX, Pause, Play, Plus, Search, Settings, Trash2 } from "lucid
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { t } from "@/lib/text";
+import { t } from "@/lib/i18n";
 
 interface Action {
   label: string;
@@ -39,15 +39,15 @@ const mod = navigator.userAgent.includes("Mac") ? "⌘" : "Ctrl+";
 
 export function Toolbar(p: Props) {
   const primary: Action[] = [
-    { label: "Add URL", icon: Plus, enabled: true, primary: true, onClick: p.onAdd, hint: `Add a download (${mod}N)` },
-    { label: "Resume", icon: Play, enabled: p.canResume, onClick: p.onResume, hint: "Resume (Space)" },
-    { label: "Pause", icon: Pause, enabled: p.canPause, onClick: p.onPause, hint: p.pauseHint ?? "Pause (Space)" },
-    { label: "Delete", icon: Trash2, enabled: p.canDelete, onClick: p.onDelete, hint: "Delete (Delete key)" },
-    { label: "Clear all", icon: ListX, enabled: p.canClearAll, onClick: p.onClearAll, hint: "Remove every download from the list" },
+    { label: t("toolbar.add"), icon: Plus, enabled: true, primary: true, onClick: p.onAdd, hint: t("toolbar.addHint", { shortcut: `${mod}N` }) },
+    { label: t("common.resume"), icon: Play, enabled: p.canResume, onClick: p.onResume, hint: t("toolbar.resumeHint") },
+    { label: t("common.pause"), icon: Pause, enabled: p.canPause, onClick: p.onPause, hint: p.pauseHint ?? t("toolbar.pauseHint") },
+    { label: t("common.delete"), icon: Trash2, enabled: p.canDelete, onClick: p.onDelete, hint: t("toolbar.deleteHint") },
+    { label: t("clear.confirm"), icon: ListX, enabled: p.canClearAll, onClick: p.onClearAll, hint: t("toolbar.clearHint") },
   ];
   const secondary: Action[] = [
     { label: t("queues"), icon: Clock, enabled: true, onClick: p.onQueues, hint: t("queuesHint") },
-    { label: t("settings"), icon: Settings, enabled: true, onClick: p.onSettings, hint: t("settingsHint") },
+    { label: t("common.settings"), icon: Settings, enabled: true, onClick: p.onSettings, hint: t("settingsHint") },
   ];
 
   const render = (a: Action) => {
@@ -78,7 +78,7 @@ export function Toolbar(p: Props) {
   };
 
   return (
-    <header role="toolbar" aria-label="Download actions" className="flex items-center gap-1 border-b bg-background px-2 py-1.5">
+    <header role="toolbar" aria-label={t("toolbar.label")} className="flex items-center gap-1 border-b bg-background px-2 py-1.5">
       {primary.map(render)}
       <Separator orientation="vertical" className="mx-1 !h-10" />
       {secondary.map(render)}
@@ -89,8 +89,8 @@ export function Toolbar(p: Props) {
           type="search"
           value={p.query}
           onChange={(e) => p.onQuery(e.target.value)}
-          placeholder="Search downloads"
-          aria-label="Search downloads"
+          placeholder={t("toolbar.search")}
+          aria-label={t("toolbar.search")}
           className="h-8 w-52 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
         />
       </div>

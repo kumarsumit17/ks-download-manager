@@ -8,6 +8,8 @@ mod handoff;
 mod leftovers;
 mod manager;
 mod marker;
+#[macro_use]
+mod msg;
 mod open;
 mod picker;
 mod settings;
@@ -58,49 +60,49 @@ fn list_downloads(m: Downloads<'_>) -> Vec<Record> {
 }
 
 #[tauri::command]
-fn default_folder(app: AppHandle) -> Result<String, String> {
-    let dir = app.path().download_dir().map_err(|e| e.to_string())?;
+fn default_folder(app: AppHandle) -> Result<String, msg::Msg> {
+    let dir = app.path().download_dir().map_err(|e| msg!("error.noDownloadsFolder", detail = e))?;
     Ok(dir.to_string_lossy().into_owned())
 }
 
 #[tauri::command]
-async fn probe_url(m: Downloads<'_>, url: String) -> Result<ProbeView, String> {
+async fn probe_url(m: Downloads<'_>, url: String) -> Result<ProbeView, msg::Msg> {
     m.probe(&url).await
 }
 
 #[tauri::command]
-async fn add_download(m: Downloads<'_>, url: String, name: String, folder: String, start: bool) -> Result<Record, String> {
+async fn add_download(m: Downloads<'_>, url: String, name: String, folder: String, start: bool) -> Result<Record, msg::Msg> {
     m.inner().add(&url, &name, &folder, start).await
 }
 
 #[tauri::command]
-fn resume_download(m: Downloads<'_>, id: u64) -> Result<(), String> {
+fn resume_download(m: Downloads<'_>, id: u64) -> Result<(), msg::Msg> {
     m.inner().resume(id)
 }
 
 #[tauri::command]
-fn pause_download(m: Downloads<'_>, id: u64) -> Result<(), String> {
+fn pause_download(m: Downloads<'_>, id: u64) -> Result<(), msg::Msg> {
     m.pause(id)
 }
 
 #[tauri::command]
-async fn delete_download(m: Downloads<'_>, id: u64, delete_file: bool) -> Result<(), String> {
+async fn delete_download(m: Downloads<'_>, id: u64, delete_file: bool) -> Result<(), msg::Msg> {
     m.delete(id, delete_file).await
 }
 
 #[tauri::command]
-async fn clear_all(m: Downloads<'_>) -> Result<(), String> {
+async fn clear_all(m: Downloads<'_>) -> Result<(), msg::Msg> {
     m.clear_all().await;
     Ok(())
 }
 
 #[tauri::command]
-fn open_file(m: Downloads<'_>, id: u64) -> Result<(), String> {
+fn open_file(m: Downloads<'_>, id: u64) -> Result<(), msg::Msg> {
     m.open_file(id)
 }
 
 #[tauri::command]
-fn open_folder(m: Downloads<'_>, id: u64) -> Result<(), String> {
+fn open_folder(m: Downloads<'_>, id: u64) -> Result<(), msg::Msg> {
     m.open_folder(id)
 }
 
@@ -115,7 +117,7 @@ fn get_settings(m: Downloads<'_>) -> Settings {
 }
 
 #[tauri::command]
-fn set_settings(m: Downloads<'_>, settings: Settings) -> Result<Settings, String> {
+fn set_settings(m: Downloads<'_>, settings: Settings) -> Result<Settings, msg::Msg> {
     m.inner().set_settings(settings)
 }
 
@@ -127,7 +129,7 @@ fn category_folder(m: Downloads<'_>, category: Category) -> Option<String> {
 
 /// The system folder picker; `None` when cancelled. `start` is only where it opens.
 #[tauri::command]
-async fn pick_folder(prompt: String, start: Option<String>) -> Result<Option<String>, String> {
+async fn pick_folder(prompt: String, start: Option<String>) -> Result<Option<String>, msg::Msg> {
     picker::pick_folder(&prompt, start.as_deref().map(std::path::Path::new)).await
 }
 
@@ -137,39 +139,39 @@ fn list_queues(m: Downloads<'_>) -> Vec<Queue> {
 }
 
 #[tauri::command]
-fn create_queue(m: Downloads<'_>, name: String) -> Result<Queue, String> {
+fn create_queue(m: Downloads<'_>, name: String) -> Result<Queue, msg::Msg> {
     m.create_queue(&name)
 }
 
 #[tauri::command]
-fn rename_queue(m: Downloads<'_>, id: u64, name: String) -> Result<(), String> {
+fn rename_queue(m: Downloads<'_>, id: u64, name: String) -> Result<(), msg::Msg> {
     m.rename_queue(id, &name)
 }
 
 #[tauri::command]
-fn delete_queue(m: Downloads<'_>, id: u64) -> Result<(), String> {
+fn delete_queue(m: Downloads<'_>, id: u64) -> Result<(), msg::Msg> {
     m.delete_queue(id)
 }
 
 #[tauri::command]
-fn move_to_queue(m: Downloads<'_>, id: u64, queue: Option<u64>) -> Result<(), String> {
+fn move_to_queue(m: Downloads<'_>, id: u64, queue: Option<u64>) -> Result<(), msg::Msg> {
     m.move_to_queue(id, queue)
 }
 
 #[tauri::command]
-fn start_queue(m: Downloads<'_>, queue: Option<u64>) -> Result<(), String> {
+fn start_queue(m: Downloads<'_>, queue: Option<u64>) -> Result<(), msg::Msg> {
     m.inner().start_queue(queue)
 }
 
 /// Returns how many downloads kept running because they cannot be paused.
 #[tauri::command]
-fn stop_queue(m: Downloads<'_>, queue: Option<u64>) -> Result<usize, String> {
+fn stop_queue(m: Downloads<'_>, queue: Option<u64>) -> Result<usize, msg::Msg> {
     m.stop_queue(queue)
 }
 
 /// The last scan for leftover download files, or a new one (`rescan`, or none yet).
 #[tauri::command]
-async fn leftover_files(m: Downloads<'_>, rescan: bool) -> Result<Vec<leftovers::Item>, String> {
+async fn leftover_files(m: Downloads<'_>, rescan: bool) -> Result<Vec<leftovers::Item>, msg::Msg> {
     match m.leftovers() {
         Some(items) if !rescan => Ok(items),
         _ => Ok(m.scan_leftovers().await),
@@ -178,13 +180,13 @@ async fn leftover_files(m: Downloads<'_>, rescan: bool) -> Result<Vec<leftovers:
 
 /// Removes the leftovers of the last scan the user ticked; the interface asked first.
 #[tauri::command]
-async fn remove_leftover_files(m: Downloads<'_>, paths: Vec<String>) -> Result<(usize, usize), String> {
+async fn remove_leftover_files(m: Downloads<'_>, paths: Vec<String>) -> Result<(usize, usize), msg::Msg> {
     Ok(m.remove_leftovers(&paths).await)
 }
 
 /// "Update video component": installs the newest official yt-dlp, on request only.
 #[tauri::command]
-async fn update_video_component(m: Downloads<'_>) -> Result<component::Update, String> {
+async fn update_video_component(m: Downloads<'_>) -> Result<component::Update, msg::Msg> {
     let tools = m.video_tools()?;
     component::update(&tools).await
 }
@@ -200,7 +202,7 @@ fn video_tools(app: &tauri::App, data: &std::path::Path) -> Option<video::Tools>
 
 /// Stops every download (resumable ones save their place), then exits.
 #[tauri::command]
-async fn quit(app: AppHandle, m: Downloads<'_>) -> Result<(), String> {
+async fn quit(app: AppHandle, m: Downloads<'_>) -> Result<(), msg::Msg> {
     m.quit().await;
     app.exit(0);
     Ok(())

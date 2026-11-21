@@ -11,11 +11,14 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ks_utility::file_name::sanitize_file_name;
+use ks_utility::media_type::name_with_type;
 use engine::{Adaptive, CancelToken, ConnectionBudget, DownloadOptions, DownloadOutcome, EngineError, HostLimits, ProbeInfo, Progress, SpeedLimit};
 use serde::Serialize;
 
 use crate::files::{self, Category};
 use crate::leftovers;
+use crate::msg;
+use crate::msg::Msg;
 use crate::marker;
 use crate::settings::{self, Settings};
 use crate::open;
@@ -31,9 +34,6 @@ const QUIT_WAIT: Duration = Duration::from_secs(3);
 /// Weight of the newest sample in the smoothed speeds.
 const SMOOTHING: f64 = 0.3;
 
-const NOT_RESUMABLE: &str =
-    "This server does not support resuming, so this download cannot be paused: stopping it loses what it has.";
-const INTERRUPTED: &str = "Stopped before it finished, with nothing to resume from. Resume starts it over.";
 /// `Record::error_code` for a failure that the "Update video component" action may fix.
 pub const VIDEO_OUTDATED: &str = "videoOutdated";
 /// Prefix of the hidden folder beside the destination where yt-dlp works.
@@ -160,33 +160,27 @@ fn now_ms() -> u64 {
 }
 
 /// What to tell the user when yt-dlp gives no video, and what the interface can offer.
-pub fn video_message(e: &VideoError) -> (String, Option<&'static str>) {
+pub fn video_message(e: &VideoError) -> (Msg, Option<&'static str>) {
     match e {
-        VideoError::NotAVideoSite => ("This link is a web page, not a file.".into(), None),
+        VideoError::NotAVideoSite => (msg!("error.webPage"), None),
         VideoError::Outdated(detail) => (
-            format!("The video component is out of date, so this site could not be read ({detail}). Update the video component, then try again."),
+            msg!("video.outdated", detail = detail),
             Some(VIDEO_OUTDATED),
         ),
-        VideoError::SignIn => ("This video needs a sign-in. Only videos anyone can watch without signing in are supported.".into(), None),
-        VideoError::Blocked => (
-            "The site is temporarily blocking downloads from this network. Try again later, or on another network.".into(),
-            None,
-        ),
+        VideoError::SignIn => (msg!("video.signIn"), None),
+        VideoError::Blocked => (msg!("video.blocked"), None),
         VideoError::Forbidden(detail) => (
-            format!("The site refused the download ({detail}). It may be blocked in your region or need a sign-in; if it keeps happening, update the video component."),
+            msg!("video.forbidden", detail = detail),
             Some(VIDEO_OUTDATED),
         ),
-        VideoError::Unavailable => ("This video is unavailable: private, removed or blocked in your region.".into(), None),
-        VideoError::Drm => ("This video is protected by DRM. Protected videos are not supported.".into(), None),
-        VideoError::Live => ("Live streams are not supported.".into(), None),
-        VideoError::Runtime => (
-            "The video component's JavaScript runtime did not run, so the best quality could not be reached. Nothing was saved.".into(),
-            None,
-        ),
-        VideoError::Timeout => ("The video site took too long to answer. Try again later.".into(), None),
-        VideoError::Start(e) => (format!("The video component could not be started: {e}."), Some(VIDEO_OUTDATED)),
-        VideoError::Cancelled => ("Stopped.".into(), None),
-        VideoError::Other(m) => (format!("The video could not be downloaded: {m}"), None),
+        VideoError::Unavailable => (msg!("video.unavailable"), None),
+        VideoError::Drm => (msg!("video.drm"), None),
+        VideoError::Live => (msg!("video.live"), None),
+        VideoError::Runtime => (msg!("video.runtime"), None),
+        VideoError::Timeout => (msg!("video.timeout"), None),
+        VideoError::Start(e) => (msg!("video.start", detail = e), Some(VIDEO_OUTDATED)),
+        VideoError::Cancelled => (msg!("video.stopped"), None),
+        VideoError::Other(m) => (msg!("video.other", detail = m), None),
     }
 }
 
@@ -239,10 +233,22 @@ fn hide(dir: &Path) {
 fn hide(_dir: &Path) {}
 
 /// The engine's messages start in lower case; the interface shows them as sentences.
-fn sentence(e: &EngineError) -> String {
-    let s = e.to_string();
-    let mut c = s.chars();
-    c.next().map_or(s.clone(), |f| f.to_uppercase().chain(c).collect::<String>() + ".")
+/// The message for an engine error. The engine's own `Display` text is for logs.
+fn engine_message(e: &EngineError) -> Msg {
+    match e {
+        EngineError::InvalidUrl(_) => msg!("engine.invalidUrl"),
+        EngineError::InvalidOptions(m) | EngineError::Internal(m) => msg!("engine.internal", detail = m),
+        EngineError::HttpStatus(s) => msg!("engine.httpStatus", status = s),
+        EngineError::Network(m) => msg!("engine.network", detail = m),
+        EngineError::BadContentRange { .. } => msg!("engine.wrongPart"),
+        EngineError::RangeIgnored => msg!("engine.rangeIgnored"),
+        EngineError::Incomplete { expected, received } => msg!("engine.incomplete", received = received, expected = expected),
+        EngineError::TooMuchData => msg!("engine.tooMuchData"),
+        EngineError::SizeMismatch { expected, written } => msg!("engine.sizeMismatch", expected = expected, written = written),
+        EngineError::Io(e) => msg!("engine.file", detail = e),
+        EngineError::FileChanged => msg!("engine.fileChanged"),
+        EngineError::Cancelled => msg!("engine.cancelled"),
+    }
 }
 
 impl Manager {
@@ -286,12 +292,12 @@ impl Manager {
 
     /// Checks, saves and applies new settings. Lower limits apply as running connections
     /// and downloads end; nothing running is stopped.
-    pub fn set_settings(self: &Arc<Self>, new: Settings) -> Result<Settings, String> {
+    pub fn set_settings(self: &Arc<Self>, new: Settings) -> Result<Settings, Msg> {
         let new = new.checked();
         for folder in new.folders.all() {
             files::check_folder(folder)?;
         }
-        settings::save(&self.settings_file, &new).map_err(|e| format!("Could not save the settings: {e}."))?;
+        settings::save(&self.settings_file, &new).map_err(|e| msg!("error.saveSettings", detail = e))?;
         self.budget.set(new.total_connections);
         self.speed.set(new.speed_limit);
         if let Some(tools) = self.video.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
@@ -311,8 +317,8 @@ impl Manager {
         })
     }
 
-    pub fn video_tools(&self) -> Result<Arc<Tools>, String> {
-        self.video.lock().unwrap_or_else(|e| e.into_inner()).clone().ok_or_else(|| "Video downloads are not available.".into())
+    pub fn video_tools(&self) -> Result<Arc<Tools>, Msg> {
+        self.video.lock().unwrap_or_else(|e| e.into_inner()).clone().ok_or_else(|| msg!("error.noVideo"))
     }
 
     fn lock(&self) -> MutexGuard<'_, Inner> {
@@ -376,7 +382,7 @@ impl Manager {
                 (Status::Downloading | Status::Waiting | Status::Paused | Status::Interrupted, None) => {
                     r.status = Status::Interrupted;
                     r.received = 0;
-                    r.error = Some(INTERRUPTED.into());
+                    r.error = Some(msg!("error.interrupted"));
                 }
                 (_, s) => r.received = s.as_ref().map_or(0, engine::SavedState::done_bytes),
             }
@@ -405,7 +411,7 @@ impl Manager {
         probes
     }
 
-    async fn lookup_cached(&self, url: &str) -> Result<Lookup, (String, Option<&'static str>)> {
+    async fn lookup_cached(&self, url: &str) -> Result<Lookup, (Msg, Option<&'static str>)> {
         let fresh = self.probes().get(url).map(|(_, p)| p.clone());
         if let Some(p) = fresh {
             return Ok(p);
@@ -415,10 +421,10 @@ impl Manager {
         Ok(found)
     }
 
-    async fn probe_cached(&self, url: &str) -> Result<ProbeInfo, String> {
+    async fn probe_cached(&self, url: &str) -> Result<ProbeInfo, Msg> {
         match self.lookup_cached(url).await {
             Ok(Lookup::File(info)) => Ok(info),
-            Ok(Lookup::Video(_)) => Err("This link is a video page, not a file.".into()),
+            Ok(Lookup::Video(_)) => Err(msg!("error.videoPage")),
             Err((message, _)) => Err(message),
         }
     }
@@ -427,23 +433,23 @@ impl Manager {
     /// which knows the video sites; if no site extractor knows it either, it is a plain web
     /// page and is refused, never saved. Some video sites refuse plain requests (401, 403,
     /// 405, 429); those are tried with yt-dlp too, keeping the engine's error otherwise.
-    async fn lookup(&self, url: &str) -> Result<Lookup, (String, Option<&'static str>)> {
+    async fn lookup(&self, url: &str) -> Result<Lookup, (Msg, Option<&'static str>)> {
         match engine::probe(url).await {
             Ok(info) if !info.is_web_page() => Ok(Lookup::File(info)),
             Ok(_) => self.lookup_video(url).await,
             Err(e @ EngineError::HttpStatus(401 | 403 | 405 | 429)) => match self.lookup_video(url).await {
                 Ok(found) => Ok(found),
-                Err(_) => Err((sentence(&e), None)),
+                Err(_) => Err((engine_message(&e), None)),
             },
-            Err(e) => Err((sentence(&e), None)),
+            Err(e) => Err((engine_message(&e), None)),
         }
     }
 
-    async fn lookup_video(&self, url: &str) -> Result<Lookup, (String, Option<&'static str>)> {
+    async fn lookup_video(&self, url: &str) -> Result<Lookup, (Msg, Option<&'static str>)> {
         let tools = self.video_tools().map_err(|m| (m, None))?;
         match tools.info(url, false).await {
             Ok(info) if info.is_playlist => {
-                Err(("This is a playlist link. Open a single video from it, or use the playlist download.".into(), None))
+                Err((msg!("error.playlist"), None))
             }
             Ok(info) => Ok(Lookup::Video(info)),
             Err(e) => Err(video_message(&e)),
@@ -452,13 +458,13 @@ impl Manager {
 
     /// For the Add dialog: what the link is, its name, size, category and whether it can
     /// be paused.
-    pub async fn probe(&self, url: &str) -> Result<ProbeView, String> {
+    pub async fn probe(&self, url: &str) -> Result<ProbeView, Msg> {
         let url = url.trim();
         let found = self.lookup(url).await.map_err(|(m, _)| m)?;
         self.probes().insert(url.to_owned(), (Instant::now(), found.clone()));
         Ok(match found {
             Lookup::File(info) => {
-                let name = sanitize_file_name(&files::name_with_type(&info.file_name, info.content_type.as_deref()));
+                let name = sanitize_file_name(&name_with_type(&info.file_name, info.content_type.as_deref()));
                 ProbeView { kind: Kind::File, category: files::category(&name), name, size: info.size, resumable: info.resumable() }
             }
             Lookup::Video(info) => ProbeView {
@@ -474,19 +480,19 @@ impl Manager {
     /// Adds a download to the list, reserving a file name that does not exist yet in
     /// `folder` ("name (1).ext" and so on). `start` is "Download now"; otherwise it waits
     /// in the list until resumed.
-    pub async fn add(self: &Arc<Self>, url: &str, name: &str, folder: &str, start: bool) -> Result<Record, String> {
+    pub async fn add(self: &Arc<Self>, url: &str, name: &str, folder: &str, start: bool) -> Result<Record, Msg> {
         let url = url.trim();
         let info = match self.lookup_cached(url).await.map_err(|(m, _)| m)? {
             Lookup::File(info) => info,
             Lookup::Video(video) => return self.add_video(url, name, folder, start, &video),
         };
         let folder = files::check_folder(folder)?;
-        let suggested = files::name_with_type(&info.file_name, info.content_type.as_deref());
+        let suggested = name_with_type(&info.file_name, info.content_type.as_deref());
         let name = sanitize_file_name(if name.trim().is_empty() { &suggested } else { name });
         let record = {
             let mut inner = self.lock();
             let taken = |p: &Path| inner.records.iter().any(|r| r.path == p);
-            let path = reserve_owned(&folder, &name, &taken, inner.next_id, url).map_err(|e| format!("Could not create the file: {e}."))?;
+            let path = reserve_owned(&folder, &name, &taken, inner.next_id, url).map_err(|e| msg!("error.createFile", detail = e))?;
             let name = path.file_name().map_or(name.clone(), |n| n.to_string_lossy().into_owned());
             let record = Record {
                 id: inner.next_id,
@@ -521,7 +527,7 @@ impl Manager {
     /// its own temp folder, and only when it is done is "title.<real extension>" reserved
     /// and the file renamed into place ([`Manager::complete_video`]). `record.path` holds
     /// the planned name until then.
-    fn add_video(self: &Arc<Self>, url: &str, name: &str, folder: &str, start: bool, video: &VideoInfo) -> Result<Record, String> {
+    fn add_video(self: &Arc<Self>, url: &str, name: &str, folder: &str, start: bool, video: &VideoInfo) -> Result<Record, Msg> {
         let folder = files::check_folder(folder)?;
         let name = if name.trim().is_empty() { video_name(&video.title, &video.ext) } else { sanitize_file_name(name) };
         let record = {
@@ -564,7 +570,7 @@ impl Manager {
         let url = url.trim();
         let found = match self.lookup_cached(url).await {
             Ok(f) => f,
-            Err((message, code)) => return Reply::err(code.unwrap_or("lookup_failed"), message),
+            Err((_, code)) => return Reply::err(code.unwrap_or("lookup_failed")),
         };
         let fits = match (&found, kind) {
             (Lookup::File(info), AddKind::Image) => {
@@ -575,35 +581,32 @@ impl Manager {
             (Lookup::Video(_), AddKind::Image | AddKind::File) => false,
         };
         if !fits {
-            return Reply::err("wrong_kind", match kind {
-                AddKind::Image => "This link is not an image file.",
-                _ => "This link is not a file.",
-            });
+            return Reply::err("wrong_kind");
         }
         let category = match &found {
             Lookup::Video(_) => Category::Video,
-            Lookup::File(info) => files::category(&files::name_with_type(&info.file_name, info.content_type.as_deref())),
+            Lookup::File(info) => files::category(&name_with_type(&info.file_name, info.content_type.as_deref())),
         };
         let Some(folder) = self.folder_for(category) else {
-            return Reply::err("add_failed", "No downloads folder.");
+            return Reply::err("add_failed");
         };
         match self.add(url, "", &folder, true).await {
             Ok(r) => Reply::ok(Some(r.id)),
-            Err(e) => Reply::err("add_failed", e),
+            Err(_) => Reply::err("add_failed"),
         }
     }
 
     /// A queued, paused, failed or interrupted download wants to run: it is marked
     /// Waiting and starts as soon as a slot is free ([`Manager::schedule`]).
-    pub fn resume(self: &Arc<Self>, id: u64) -> Result<(), String> {
+    pub fn resume(self: &Arc<Self>, id: u64) -> Result<(), Msg> {
         let changed = {
             let mut inner = self.lock();
             if inner.running.contains_key(&id) {
                 return Ok(());
             }
-            let r = inner.records.iter_mut().find(|r| r.id == id).ok_or("No such download.")?;
+            let r = inner.records.iter_mut().find(|r| r.id == id).ok_or_else(|| msg!("error.noSuchDownload"))?;
             if r.status == Status::Finished {
-                return Err("This download has already finished.".into());
+                return Err(msg!("error.alreadyFinished"));
             }
             let changed = (r.status != Status::Waiting).then(|| {
                 r.status = Status::Waiting;
@@ -652,15 +655,15 @@ impl Manager {
     }
 
     /// Starts a download now.
-    fn start(self: &Arc<Self>, id: u64) -> Result<(), String> {
+    fn start(self: &Arc<Self>, id: u64) -> Result<(), Msg> {
         let (cancel, progress, record) = {
             let mut inner = self.lock();
             if inner.running.contains_key(&id) {
                 return Ok(());
             }
-            let r = inner.records.iter_mut().find(|r| r.id == id).ok_or("No such download.")?;
+            let r = inner.records.iter_mut().find(|r| r.id == id).ok_or_else(|| msg!("error.noSuchDownload"))?;
             if r.status == Status::Finished {
-                return Err("This download has already finished.".into());
+                return Err(msg!("error.alreadyFinished"));
             }
             r.status = Status::Downloading;
             r.error = None;
@@ -725,7 +728,7 @@ impl Manager {
         // cleanup (a range map names the URL only, and not every download has one).
         let owner = leftovers::owner_file(&part);
         if let Err(e) = marker::write(&owner, &marker::Marker::new(record.id, &record.url)) {
-            return Err(RunError::Failed(format!("Could not write in the save folder: {e}.")));
+            return Err(RunError::Failed(msg!("error.writeFolder", detail = e)));
         }
         let s = self.settings();
         let options = DownloadOptions {
@@ -743,7 +746,7 @@ impl Manager {
         }
         let outcome = result.map_err(|e| match e {
             EngineError::Cancelled => RunError::Cancelled,
-            e => RunError::Failed(sentence(&e)),
+            e => RunError::Failed(engine_message(&e)),
         })?;
         self.complete(record.id, &path, &part)?;
         let _ = std::fs::remove_file(&owner);
@@ -777,17 +780,17 @@ impl Manager {
         if let Some(dir) = own_video_temp(record) {
             return Ok(dir);
         }
-        let folder = record.path.parent().ok_or_else(|| RunError::Failed("The download has no folder.".into()))?;
+        let folder = record.path.parent().ok_or_else(|| RunError::Failed(msg!("error.noFolder")))?;
         let default = format!("{VIDEO_TEMP_PREFIX}{}", record.id);
         let name = (0..1000)
             .map(|n| if n == 0 { default.clone() } else { format!("{default}-{n}") })
             .find(|n| std::fs::symlink_metadata(folder.join(n)).is_err())
-            .ok_or_else(|| RunError::Failed("Could not create the temp folder.".into()))?;
+            .ok_or_else(|| RunError::Failed(msg!("error.tempFolder", detail = "-")))?;
         let dir = folder.join(&name);
-        std::fs::create_dir(&dir).map_err(|e| RunError::Failed(format!("Could not create the temp folder: {e}.")))?;
+        std::fs::create_dir(&dir).map_err(|e| RunError::Failed(msg!("error.tempFolder", detail = e)))?;
         hide(&dir);
         marker::write(&dir.join(marker::IN_FOLDER), &marker::Marker::new(record.id, &record.url))
-            .map_err(|e| RunError::Failed(format!("Could not create the temp folder: {e}.")))?;
+            .map_err(|e| RunError::Failed(msg!("error.tempFolder", detail = e)))?;
         let mut inner = self.lock();
         if let Some(r) = inner.records.iter_mut().find(|r| r.id == record.id) {
             r.temp = (name != default).then_some(name);
@@ -801,18 +804,18 @@ impl Manager {
     /// then the file is renamed over the reservation, as [`Manager::complete`] does.
     fn complete_video(&self, id: u64, file: &Path) -> Result<(PathBuf, u64), RunError> {
         let mut inner = self.lock();
-        let r = inner.records.iter().find(|r| r.id == id).ok_or_else(|| RunError::Failed("No such download.".into()))?;
-        let folder = r.path.parent().ok_or_else(|| RunError::Failed("The download has no folder.".into()))?.to_path_buf();
+        let r = inner.records.iter().find(|r| r.id == id).ok_or_else(|| RunError::Failed(msg!("error.noSuchDownload")))?;
+        let folder = r.path.parent().ok_or_else(|| RunError::Failed(msg!("error.noFolder")))?.to_path_buf();
         // From `path`, not `name`: a damaged list cannot ask for a name outside the folder.
         let planned = r.path.file_name().map_or_else(|| "video".into(), |n| n.to_string_lossy().into_owned());
         let ext = file.extension().map_or_else(|| "mp4".into(), |e| e.to_string_lossy().into_owned());
         let name = sanitize_file_name(&format!("{}.{ext}", without_media_extension(&planned)));
         let taken = |p: &Path| inner.records.iter().any(|o| o.id != id && o.path == p);
         let target = files::reserve(&folder, &name, &taken)
-            .map_err(|e| RunError::Failed(format!("Downloaded, but could not create the final file: {e}.")))?;
+            .map_err(|e| RunError::Failed(msg!("error.finalFile", detail = e)))?;
         std::fs::rename(file, &target).map_err(|e| {
             let _ = std::fs::remove_file(&target);
-            RunError::Failed(format!("Downloaded to {}, but could not move it: {e}.", file.display()))
+            RunError::Failed(msg!("error.moveFinished", path = file.display(), detail = e))
         })?;
         let bytes = std::fs::metadata(&target).map_or(0, |m| m.len());
         if let Some(r) = inner.records.iter_mut().find(|r| r.id == id) {
@@ -834,14 +837,14 @@ impl Manager {
         let target = if is_reservation(path) || free() {
             path.to_path_buf()
         } else {
-            let folder = path.parent().ok_or_else(|| RunError::Failed("The download has no folder.".into()))?;
+            let folder = path.parent().ok_or_else(|| RunError::Failed(msg!("error.noFolder")))?;
             let name = path.file_name().map_or_else(|| "download".into(), |n| n.to_string_lossy().into_owned());
             let taken = |p: &Path| inner.records.iter().any(|r| r.id != id && r.path == p);
             files::reserve(folder, &name, &taken)
-                .map_err(|e| RunError::Failed(format!("Downloaded, but could not create the final file: {e}.")))?
+                .map_err(|e| RunError::Failed(msg!("error.finalFile", detail = e)))?
         };
         std::fs::rename(part, &target).map_err(|e| {
-            RunError::Failed(format!("Downloaded to {}, but could not rename it: {e}.", part.display()))
+            RunError::Failed(msg!("error.moveFinished", path = part.display(), detail = e))
         })?;
         // The name is held by the finished file now; its reservation marker goes.
         if let Some(r) = inner.records.iter().find(|r| r.id == id) {
@@ -864,17 +867,17 @@ impl Manager {
     /// file of the old name is removed. An existing file is never overwritten. The name is
     /// taken from `record.path`, not `record.name`, so a damaged list cannot ask for one
     /// that is not a single file name.
-    async fn destination(&self, record: &Record) -> Result<PathBuf, String> {
+    async fn destination(&self, record: &Record) -> Result<PathBuf, Msg> {
         if own_partial(&record.url, &record.path).await.is_some() || is_reservation(&record.path) {
             return Ok(record.path.clone());
         }
         discard_partial(&record.path).await;
-        let folder = record.path.parent().ok_or("The download has no folder.")?;
+        let folder = record.path.parent().ok_or_else(|| msg!("error.noFolder"))?;
         let folder = files::check_folder(&folder.to_string_lossy())?;
         let mut inner = self.lock();
         let taken = |p: &Path| inner.records.iter().any(|r| r.id != record.id && r.path == p);
         let name = record.path.file_name().map_or_else(|| "download".into(), |n| n.to_string_lossy().into_owned());
-        let path = reserve_owned(&folder, &name, &taken, record.id, &record.url).map_err(|e| format!("Could not create the file: {e}."))?;
+        let path = reserve_owned(&folder, &name, &taken, record.id, &record.url).map_err(|e| msg!("error.createFile", detail = e))?;
         if let Some(r) = inner.records.iter_mut().find(|r| r.id == record.id) {
             r.name = path.file_name().map_or(r.name.clone(), |n| n.to_string_lossy().into_owned());
             r.path = path.clone();
@@ -935,7 +938,7 @@ impl Manager {
                     (RunError::Cancelled, Some(_)) => (Status::Paused, None),
                     // Paused before any byte arrived: nothing lost, it simply waits again.
                     (RunError::Cancelled, None) if stop == Some(Stop::Pause) => (Status::Queued, None),
-                    (RunError::Cancelled, None) => (Status::Interrupted, Some(INTERRUPTED.into())),
+                    (RunError::Cancelled, None) => (Status::Interrupted, Some(msg!("error.interrupted"))),
                     (RunError::Failed(message) | RunError::Coded(message, _), _) => (Status::Failed, Some(message)),
                 };
             }
@@ -948,9 +951,9 @@ impl Manager {
 
     /// Pauses a running download. Refused when the server cannot resume it: stopping
     /// such a download deletes its partial file, which would lose data without a word.
-    pub fn pause(&self, id: u64) -> Result<(), String> {
+    pub fn pause(&self, id: u64) -> Result<(), Msg> {
         let mut inner = self.lock();
-        let r = inner.records.iter_mut().find(|r| r.id == id).ok_or("No such download.")?;
+        let r = inner.records.iter_mut().find(|r| r.id == id).ok_or_else(|| msg!("error.noSuchDownload"))?;
         if r.status == Status::Waiting {
             // Not started yet: it stops waiting, keeping what it has.
             r.status = if r.received > 0 { Status::Paused } else { Status::Queued };
@@ -962,7 +965,7 @@ impl Manager {
         }
         let resumable = r.resumable;
         if !resumable {
-            return Err(NOT_RESUMABLE.into());
+            return Err(msg!("error.notResumable"));
         }
         if let Some(run) = inner.running.get_mut(&id) {
             run.stop = Some(Stop::Pause);
@@ -973,10 +976,10 @@ impl Manager {
 
     /// Removes a download from the list. A running one is stopped. Its partial file and
     /// range map are deleted; a finished file is deleted only when `delete_file` is set.
-    pub async fn delete(&self, id: u64, delete_file: bool) -> Result<(), String> {
+    pub async fn delete(&self, id: u64, delete_file: bool) -> Result<(), Msg> {
         let record = {
             let mut inner = self.lock();
-            let i = inner.records.iter().position(|r| r.id == id).ok_or("No such download.")?;
+            let i = inner.records.iter().position(|r| r.id == id).ok_or_else(|| msg!("error.noSuchDownload"))?;
             let record = inner.records.remove(i);
             if let Some(run) = inner.running.get_mut(&id) {
                 run.stop = Some(Stop::Delete);
@@ -1000,23 +1003,23 @@ impl Manager {
         }
     }
 
-    fn path_of(&self, id: u64) -> Result<(PathBuf, Status), String> {
+    fn path_of(&self, id: u64) -> Result<(PathBuf, Status), Msg> {
         let inner = self.lock();
-        let r = inner.records.iter().find(|r| r.id == id).ok_or("No such download.")?;
+        let r = inner.records.iter().find(|r| r.id == id).ok_or_else(|| msg!("error.noSuchDownload"))?;
         Ok((r.path.clone(), r.status))
     }
 
-    pub fn open_file(&self, id: u64) -> Result<(), String> {
+    pub fn open_file(&self, id: u64) -> Result<(), Msg> {
         let (path, status) = self.path_of(id)?;
         if status != Status::Finished {
-            return Err("The file can be opened once the download has finished.".into());
+            return Err(msg!("error.notFinished"));
         }
-        open::open_file(&path).map_err(|e| format!("Could not open the file: {e}."))
+        open::open_file(&path).map_err(|e| msg!("error.openFile", detail = e))
     }
 
-    pub fn open_folder(&self, id: u64) -> Result<(), String> {
+    pub fn open_folder(&self, id: u64) -> Result<(), Msg> {
         let (path, _) = self.path_of(id)?;
-        open::reveal(&path).map_err(|e| format!("Could not open the folder: {e}."))
+        open::reveal(&path).map_err(|e| msg!("error.openFolder", detail = e))
     }
 
     /// Stops every download for quitting and waits (up to 3 s) until they have saved
@@ -1049,11 +1052,11 @@ impl Manager {
         self.events.queues(&queues);
     }
 
-    pub fn create_queue(&self, name: &str) -> Result<Queue, String> {
+    pub fn create_queue(&self, name: &str) -> Result<Queue, Msg> {
         let name = queue_name(name)?;
         let mut inner = self.lock();
         if inner.queues.iter().any(|q| q.name.eq_ignore_ascii_case(&name)) {
-            return Err("A queue with this name exists.".into());
+            return Err(msg!("error.queueExists"));
         }
         let id = inner.queues.iter().map(|q| q.id).max().unwrap_or(0) + 1;
         let queue = Queue { id, name };
@@ -1062,21 +1065,21 @@ impl Manager {
         Ok(queue)
     }
 
-    pub fn rename_queue(&self, id: u64, name: &str) -> Result<(), String> {
+    pub fn rename_queue(&self, id: u64, name: &str) -> Result<(), Msg> {
         let name = queue_name(name)?;
         let mut inner = self.lock();
         if inner.queues.iter().any(|q| q.id != id && q.name.eq_ignore_ascii_case(&name)) {
-            return Err("A queue with this name exists.".into());
+            return Err(msg!("error.queueExists"));
         }
-        inner.queues.iter_mut().find(|q| q.id == id).ok_or("No such queue.")?.name = name;
+        inner.queues.iter_mut().find(|q| q.id == id).ok_or_else(|| msg!("error.noSuchQueue"))?.name = name;
         self.queues_changed(inner);
         Ok(())
     }
 
     /// Deletes a queue; its downloads move to the main queue (nothing is stopped).
-    pub fn delete_queue(&self, id: u64) -> Result<(), String> {
+    pub fn delete_queue(&self, id: u64) -> Result<(), Msg> {
         let mut inner = self.lock();
-        let i = inner.queues.iter().position(|q| q.id == id).ok_or("No such queue.")?;
+        let i = inner.queues.iter().position(|q| q.id == id).ok_or_else(|| msg!("error.noSuchQueue"))?;
         inner.queues.remove(i);
         let moved: Vec<Record> = inner
             .records
@@ -1095,12 +1098,12 @@ impl Manager {
     }
 
     /// Moves a download to a queue (`None`: the main queue).
-    pub fn move_to_queue(&self, id: u64, queue: Option<u64>) -> Result<(), String> {
+    pub fn move_to_queue(&self, id: u64, queue: Option<u64>) -> Result<(), Msg> {
         let mut inner = self.lock();
         if queue.is_some_and(|q| !inner.queues.iter().any(|x| x.id == q)) {
-            return Err("No such queue.".into());
+            return Err(msg!("error.noSuchQueue"));
         }
-        let r = inner.records.iter_mut().find(|r| r.id == id).ok_or("No such download.")?;
+        let r = inner.records.iter_mut().find(|r| r.id == id).ok_or_else(|| msg!("error.noSuchDownload"))?;
         r.queue = queue;
         let r = r.clone();
         self.save(&inner);
@@ -1110,11 +1113,11 @@ impl Manager {
     }
 
     /// Every unfinished download of the queue that is not running wants to run.
-    pub fn start_queue(self: &Arc<Self>, queue: Option<u64>) -> Result<(), String> {
+    pub fn start_queue(self: &Arc<Self>, queue: Option<u64>) -> Result<(), Msg> {
         let ids: Vec<u64> = {
             let inner = self.lock();
             if queue.is_some_and(|q| !inner.queues.iter().any(|x| x.id == q)) {
-                return Err("No such queue.".into());
+                return Err(msg!("error.noSuchQueue"));
             }
             inner
                 .records
@@ -1131,11 +1134,11 @@ impl Manager {
 
     /// Pauses the queue's running downloads and stops its waiting ones. Downloads that
     /// cannot be paused (no resume support) keep running; their number is returned.
-    pub fn stop_queue(&self, queue: Option<u64>) -> Result<usize, String> {
+    pub fn stop_queue(&self, queue: Option<u64>) -> Result<usize, Msg> {
         let ids: Vec<(u64, Status, bool)> = {
             let inner = self.lock();
             if queue.is_some_and(|q| !inner.queues.iter().any(|x| x.id == q)) {
-                return Err("No such queue.".into());
+                return Err(msg!("error.noSuchQueue"));
             }
             inner.records.iter().filter(|r| r.queue == queue).map(|r| (r.id, r.status, r.resumable)).collect()
         };
@@ -1226,13 +1229,13 @@ impl Manager {
 enum RunError {
     /// Stopped on purpose (pause, delete, quit), told apart by type, not by message text.
     Cancelled,
-    Failed(String),
+    Failed(Msg),
     /// A failure the interface can offer something for (`Record::error_code`).
-    Coded(String, Option<&'static str>),
+    Coded(Msg, Option<&'static str>),
 }
 
-impl From<String> for RunError {
-    fn from(message: String) -> Self {
+impl From<Msg> for RunError {
+    fn from(message: Msg) -> Self {
         Self::Failed(message)
     }
 }
@@ -1328,10 +1331,10 @@ async fn remove_files(record: &Record, delete_file: bool) {
 }
 
 /// A queue name: trimmed, 1 to 60 characters.
-fn queue_name(name: &str) -> Result<String, String> {
+fn queue_name(name: &str) -> Result<String, Msg> {
     let name = name.trim();
     if name.is_empty() || name.chars().count() > 60 {
-        return Err("A queue name needs 1 to 60 characters.".into());
+        return Err(msg!("error.queueName", min = 1, max = 60));
     }
     Ok(name.to_owned())
 }
@@ -1674,7 +1677,7 @@ mod tests {
         let r = Record { resumable: false, ..record(1, &dir, "a.bin", Status::Downloading) };
         let (m, _) = manager(&dir, &[r, record(2, &dir, "b.bin", Status::Paused)]);
         let err = m.pause(1).unwrap_err();
-        assert!(err.contains("cannot be paused"), "{err}");
+        assert_eq!(err.code(), "error.notResumable");
         assert!(m.pause(2).is_ok());
         assert!(m.pause(99).is_err());
         std::fs::remove_dir_all(&dir).unwrap();
@@ -1829,7 +1832,7 @@ mod tests {
     async fn open_needs_a_finished_download_and_no_path_from_outside() {
         let dir = temp_dir();
         let (m, _) = manager(&dir, &[record(1, &dir, "a.bin", Status::Paused)]);
-        assert!(m.open_file(1).unwrap_err().contains("finished"));
+        assert_eq!(m.open_file(1).unwrap_err().code(), "error.notFinished");
         assert!(m.open_file(42).is_err());
         assert!(m.open_folder(42).is_err());
         std::fs::remove_dir_all(&dir).unwrap();
@@ -1937,7 +1940,7 @@ mod tests {
         assert!(done.path.is_file() && done.received > 100_000);
         assert!(!video_temp(&done).unwrap().exists(), "temp folder removed");
         // A plain web page is refused, never saved.
-        assert_eq!(m.probe("https://example.com/").await.unwrap_err(), "This link is a web page, not a file.");
+        assert_eq!(m.probe("https://example.com/").await.unwrap_err().code(), "error.webPage");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -2011,7 +2014,7 @@ mod tests {
         assert_eq!(without_media_extension("Mr. Smith"), "Mr. Smith", "a dot is not always an extension");
         assert_eq!(without_media_extension("v1.2 release.MKV"), "v1.2 release");
         assert_eq!(without_media_extension(".hidden"), ".hidden");
-        assert_eq!(video_message(&VideoError::NotAVideoSite).0, "This link is a web page, not a file.");
+        assert_eq!(video_message(&VideoError::NotAVideoSite).0.code(), "error.webPage");
         assert_eq!(video_message(&VideoError::Outdated("x".into())).1, Some(VIDEO_OUTDATED));
     }
 

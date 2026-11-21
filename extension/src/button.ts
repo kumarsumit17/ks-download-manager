@@ -65,11 +65,9 @@ export function pageButton(onClick: () => void): PageButton {
     result(r) {
       button.dataset.state = r.ok ? "done" : "error";
       setLabel(replyText(r));
-      button.title = r.ok ? "" : (r.error ?? "");
       clearTimeout(timer);
       timer = setTimeout(() => {
         delete button.dataset.state;
-        button.title = "";
         setLabel(label);
       }, r.ok ? 2000 : 5000);
     },

@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use ks_utility::token_bucket::TokenBucket;
 use tokio::sync::Notify;
 
 /// How many connections all downloads together may have open. A connection holds one
@@ -63,30 +64,12 @@ impl ConnectionBudget {
 
 /// A speed limit in bytes per second across every download that shares it. `None` while
 /// unlimited. A token bucket holding at most a quarter second of data, so bursts stay
-/// short.
+/// short; its arithmetic is `ks_utility::token_bucket`, the waiting is done here.
 #[derive(Clone, Debug, Default)]
-pub struct SpeedLimit(Arc<Mutex<Bucket>>);
+pub struct SpeedLimit(Arc<Mutex<Option<TokenBucket>>>);
 
-#[derive(Debug, Default)]
-struct Bucket {
-    rate: Option<u64>,
-    /// May go negative: the debt is paid by waiting.
-    tokens: f64,
-    last: Option<Instant>,
-}
-
-impl Bucket {
-    /// How long to wait after taking `n` bytes at `now`.
-    fn take(&mut self, n: u64, now: Instant) -> Duration {
-        let Some(rate) = self.rate.filter(|r| *r > 0) else { return Duration::ZERO };
-        let rate = rate as f64;
-        let capacity = rate / 4.0;
-        let elapsed = self.last.map_or(0.0, |l| now.duration_since(l).as_secs_f64());
-        self.last = Some(now);
-        self.tokens = (self.tokens + elapsed * rate).min(capacity) - n as f64;
-        if self.tokens >= 0.0 { Duration::ZERO } else { Duration::from_secs_f64(-self.tokens / rate) }
-    }
-}
+/// The most a burst may hold.
+const BURST: Duration = Duration::from_millis(250);
 
 impl SpeedLimit {
     pub fn new(bytes_per_second: Option<u64>) -> Self {
@@ -96,19 +79,22 @@ impl SpeedLimit {
     }
 
     pub fn set(&self, bytes_per_second: Option<u64>) {
-        let mut b = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        b.rate = bytes_per_second.filter(|r| *r > 0);
-        b.tokens = 0.0;
-        b.last = None;
+        *self.0.lock().unwrap_or_else(|e| e.into_inner()) =
+            bytes_per_second.filter(|r| *r > 0).map(|r| TokenBucket::new(r, BURST));
     }
 
     pub fn get(&self) -> Option<u64> {
-        self.0.lock().unwrap_or_else(|e| e.into_inner()).rate
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(TokenBucket::rate)
+    }
+
+    /// How long to wait after `n` bytes received at `now` (zero while unlimited).
+    fn wait(&self, n: u64, now: Instant) -> Duration {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).as_mut().map_or(Duration::ZERO, |b| b.take(n, now))
     }
 
     /// Accounts for `n` bytes just received and waits as long as the limit needs.
     pub(crate) async fn take(&self, n: u64) {
-        let wait = self.0.lock().unwrap_or_else(|e| e.into_inner()).take(n, Instant::now());
+        let wait = self.wait(n, Instant::now());
         if !wait.is_zero() {
             tokio::time::sleep(wait).await;
         }
@@ -161,16 +147,19 @@ mod tests {
 
     #[test]
     fn the_bucket_allows_a_short_burst_then_paces() {
-        let mut b = Bucket { rate: Some(1000), ..Bucket::default() };
+        let b = SpeedLimit::new(Some(1000));
+        assert_eq!(b.get(), Some(1000));
         let t0 = Instant::now();
         // Starts empty: the first 1000 bytes cost a second.
-        assert_eq!(b.take(1000, t0), Duration::from_secs(1));
+        assert_eq!(b.wait(1000, t0), Duration::from_secs(1));
         // A second later the debt is paid; the bucket holds at most a quarter second.
         let t1 = t0 + Duration::from_secs(10);
-        assert_eq!(b.take(250, t1), Duration::ZERO);
-        assert!(b.take(500, t1) >= Duration::from_millis(499));
-        let mut off = Bucket::default();
-        assert_eq!(off.take(1 << 30, t0), Duration::ZERO, "no limit");
+        assert_eq!(b.wait(250, t1), Duration::ZERO);
+        assert!(b.wait(500, t1) >= Duration::from_millis(499));
+        let off = SpeedLimit::new(None);
+        assert_eq!((off.get(), off.wait(1 << 30, t0)), (None, Duration::ZERO), "no limit");
+        b.set(Some(0));
+        assert_eq!(b.get(), None, "zero means no limit");
     }
 
     #[tokio::test]

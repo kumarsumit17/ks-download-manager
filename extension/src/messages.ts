@@ -15,8 +15,8 @@ export type ToBackground =
 export interface Reply {
   ok: boolean;
   id?: number;
+  /** A message code, shown through `_locales` in the browser's language (`err_<code>`). */
   code?: string;
-  error?: string;
 }
 
 export const HOST = "com.ks.downloadmanager";

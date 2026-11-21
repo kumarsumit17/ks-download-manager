@@ -10,12 +10,12 @@ import { AddDownloadDialog } from "@/features/downloads/AddDownloadDialog";
 import { DeleteDialog } from "@/features/downloads/DeleteDialog";
 import { QueuesDialog } from "@/features/queues/QueuesDialog";
 import { SettingsDialog } from "@/features/settings/SettingsDialog";
-import { t } from "@/lib/text";
+import { t } from "@/lib/i18n";
 import { api, message, onQuitRequested } from "@/features/downloads/api";
 import { useDownloads, useQueues } from "@/features/downloads/store";
 import {
   type Active,
-  CANNOT_PAUSE,
+  cannotPauseText,
   type Download,
   type Filter,
   canPause,
@@ -33,8 +33,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-
-const plural = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` : `${n} ${many}`);
 
 /** True while typing in a field, where Space and Delete must keep their usual meaning. */
 function typing(e: KeyboardEvent): boolean {
@@ -89,7 +87,7 @@ export default function App() {
     (q: number | null) =>
       run(
         api.stopQueue(q).then((kept) => {
-          if (kept > 0) setNotice(t("stopKept", { n: kept }));
+          if (kept > 0) setNotice(t("stopKept", { count: kept }));
         }),
       ),
     [run],
@@ -120,7 +118,7 @@ export default function App() {
         e.preventDefault();
         if (canPause(selected)) actions.pause(selected);
         else if (canResume(selected)) actions.resume(selected);
-        else if (cannotPause(selected)) setNotice(CANNOT_PAUSE);
+        else if (cannotPause(selected)) setNotice(cannotPauseText());
       } else if (e.key === "Delete" || (e.key === "Backspace" && mod)) {
         e.preventDefault();
         setDeleting(selected);
@@ -136,7 +134,7 @@ export default function App() {
         <Toolbar
           canResume={selected !== null && canResume(selected)}
           canPause={selected !== null && canPause(selected)}
-          pauseHint={selected && cannotPause(selected) ? CANNOT_PAUSE : undefined}
+          pauseHint={selected && cannotPause(selected) ? cannotPauseText() : undefined}
           canDelete={selected !== null}
           canClearAll={downloads.length > 0}
           onAdd={() => setAdding(true)}
@@ -163,7 +161,7 @@ export default function App() {
             {notice && (
               <div role="alert" className="flex items-start gap-2 border-b bg-destructive/10 px-3 py-2 text-sm text-destructive">
                 <span className="flex-1">{notice}</span>
-                <button type="button" aria-label="Dismiss" onClick={() => setNotice(null)} className="rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <button type="button" aria-label={t("common.close")} onClick={() => setNotice(null)} className="rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   <X className="size-4" aria-hidden />
                 </button>
               </div>
@@ -197,22 +195,27 @@ export default function App() {
         <AlertDialog open={confirmClear} onOpenChange={setConfirmClear}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Clear all downloads?</AlertDialogTitle>
+              <AlertDialogTitle>{t("clear.title")}</AlertDialogTitle>
               <AlertDialogDescription>
-                This removes {downloads.length === 1 ? "the 1 download" : `all ${downloads.length} downloads`} from the list
-                {active.length > 0 ? ` and stops the ${active.length} still in progress` : ""}. Finished files on your disk are
-                kept{unfinished > 0 ? "; partial files of unfinished downloads are deleted" : ""}.
+                {[
+                  t("clear.removes", { count: downloads.length }),
+                  active.length > 0 && t("clear.stops", { count: active.length }),
+                  t("clear.keeps"),
+                  unfinished > 0 && t("clear.partials"),
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
               <AlertDialogAction
                 onClick={() => {
                   setSelectedId(null);
                   run(api.clearAll());
                 }}
               >
-                Clear all
+                {t("clear.confirm")}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -221,21 +224,16 @@ export default function App() {
         <AlertDialog open={quitting !== null} onOpenChange={(o) => !o && setQuitting(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Quit while downloading?</AlertDialogTitle>
+              <AlertDialogTitle>{t("quit.title")}</AlertDialogTitle>
               <AlertDialogDescription>
                 {quitting && quitting.running - quitting.notResumable > 0 &&
-                  `${plural(quitting.running - quitting.notResumable, "download is", "downloads are")} paused and can be resumed next time. `}
-                {quitting && quitting.notResumable > 0 && (
-                  <strong>
-                    {plural(quitting.notResumable, "download", "downloads")} cannot be resumed and will be lost (the server
-                    does not support resuming).
-                  </strong>
-                )}
+                  `${t("quit.paused", { count: quitting.running - quitting.notResumable })} `}
+                {quitting && quitting.notResumable > 0 && <strong>{t("quit.lost", { count: quitting.notResumable })}</strong>}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Keep downloading</AlertDialogCancel>
-              <AlertDialogAction onClick={() => run(api.quit())}>Quit</AlertDialogAction>
+              <AlertDialogCancel>{t("quit.keep")}</AlertDialogCancel>
+              <AlertDialogAction onClick={() => run(api.quit())}>{t("quit.confirm")}</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

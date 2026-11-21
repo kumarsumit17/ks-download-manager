@@ -9,6 +9,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { t } from "@/lib/i18n";
 import type { Download } from "./types";
 
 interface Props {
@@ -18,11 +19,10 @@ interface Props {
 }
 
 function explain(d: Download): string {
-  if (d.status === "finished") return "It is removed from the list.";
-  if (d.status === "downloading" && !d.resumable)
-    return "The download stops and what it has downloaded so far is lost: this server does not support resuming.";
-  if (d.status === "downloading") return "The download stops and its partial file is deleted.";
-  return "Its partial file is deleted.";
+  if (d.status === "finished") return t("delete.finished");
+  if (d.status === "downloading" && !d.resumable) return t("delete.lost");
+  if (d.status === "downloading") return t("delete.stops");
+  return t("delete.partial");
 }
 
 export function DeleteDialog({ target, onCancel, onConfirm }: Props) {
@@ -33,7 +33,7 @@ export function DeleteDialog({ target, onCancel, onConfirm }: Props) {
     <AlertDialog open={target !== null} onOpenChange={(o) => !o && onCancel()}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete “{target?.name}”?</AlertDialogTitle>
+          <AlertDialogTitle>{t("delete.title", { name: target?.name ?? "" })}</AlertDialogTitle>
           <AlertDialogDescription>{target && explain(target)}</AlertDialogDescription>
         </AlertDialogHeader>
         {target?.status === "finished" && (
@@ -44,12 +44,12 @@ export function DeleteDialog({ target, onCancel, onConfirm }: Props) {
               onChange={(e) => setDeleteFile(e.target.checked)}
               className="size-4 accent-primary"
             />
-            Also delete the file from the disk
+            {t("delete.alsoFile")}
           </label>
         )}
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction onClick={() => target && onConfirm(target, deleteFile)}>Delete</AlertDialogAction>
+          <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+          <AlertDialogAction onClick={() => target && onConfirm(target, deleteFile)}>{t("common.delete")}</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

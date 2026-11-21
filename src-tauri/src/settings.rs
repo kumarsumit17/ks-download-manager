@@ -31,6 +31,9 @@ pub struct Settings {
     pub folders: Folders,
     /// Video: prefer MP4 (H.264/AAC) when it has the same resolution as the best stream.
     pub prefer_mp4: bool,
+    /// Interface language: "system" (follow the system), "en" or "hi". Anything else
+    /// reads as "system" (specs/ui.md, "Languages").
+    pub language: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -66,6 +69,7 @@ impl Default for Settings {
             speed_limit: None,
             folders: Folders::default(),
             prefer_mp4: false,
+            language: "system".into(),
         }
     }
 }
@@ -77,6 +81,9 @@ impl Settings {
         self.total_connections = self.total_connections.clamp(1, MAX_TOTAL_CONNECTIONS);
         self.per_download = self.per_download.clamp(1, engine::MAX_CONNECTIONS);
         self.speed_limit = self.speed_limit.filter(|l| *l > 0);
+        if !matches!(self.language.as_str(), "system" | "en" | "hi") {
+            self.language = "system".into();
+        }
         for f in [&mut self.folders.video, &mut self.folders.audio, &mut self.folders.images, &mut self.folders.other] {
             if f.as_deref().is_some_and(|s| s.trim().is_empty()) {
                 *f = None;
@@ -152,12 +159,14 @@ mod tests {
             speed_limit: Some(0),
             folders: Folders { video: Some("  ".into()), ..Folders::default() },
             prefer_mp4: false,
+            language: "fr".into(),
         }
         .checked();
         assert_eq!((s.max_active, s.total_connections, s.per_download, s.speed_limit), (1, MAX_TOTAL_CONNECTIONS, 32, None));
-        assert_eq!(s.folders.video, None);
+        assert_eq!((s.folders.video, s.language.as_str()), (None, "system"));
+        assert_eq!(Settings { language: "hi".into(), ..Settings::default() }.checked().language, "hi");
         // Older files without a field get its default.
         let partial: OnDisk = serde_json::from_str(r#"{"version":1,"settings":{"maxActive":2}}"#).unwrap();
-        assert_eq!(partial.settings.per_download, engine::DEFAULT_CONNECTIONS);
+        assert_eq!((partial.settings.per_download, partial.settings.language.as_str()), (engine::DEFAULT_CONNECTIONS, "system"));
     }
 }

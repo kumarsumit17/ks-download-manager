@@ -15,16 +15,22 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { t, type TextKey } from "@/lib/text";
+import { setLanguage, t, type TextKey } from "@/lib/i18n";
 import { api, message, type LeftoverItem, type Settings } from "@/features/downloads/api";
 import { formatBytes } from "@/features/downloads/format";
 import type { Category } from "@/features/downloads/types";
 
 const categories: { key: Category; label: TextKey }[] = [
-  { key: "video", label: "categoryVideo" },
-  { key: "audio", label: "categoryAudio" },
-  { key: "images", label: "categoryImages" },
-  { key: "other", label: "categoryOther" },
+  { key: "video", label: "category.video" },
+  { key: "audio", label: "category.audio" },
+  { key: "images", label: "category.images" },
+  { key: "other", label: "category.other" },
+];
+
+const languages: { value: string; label: TextKey }[] = [
+  { value: "system", label: "common.language.system" },
+  { value: "en", label: "common.language.english" },
+  { value: "hi", label: "common.language.hindi" },
 ];
 
 /** Settings keep the speed limit in bytes per second; the field shows KB/s. */
@@ -119,6 +125,8 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
       const saved = await api.saveSettings({ ...s, speedLimit: limited && kbps > 0 ? Math.round(kbps * KB) : null });
       setS(saved);
       onOpenChange(false);
+      // Redraws the window in the chosen language (after the dialog has closed).
+      if (saved.language !== s.language) setLanguage(saved.language);
     } catch (e) {
       setError(message(e));
     } finally {
@@ -156,7 +164,7 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>{t("settings")}</DialogTitle>
+            <DialogTitle>{t("common.settings")}</DialogTitle>
             <DialogDescription>{t("settingsDescription")}</DialogDescription>
           </DialogHeader>
 
@@ -168,6 +176,26 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
                 void save();
               }}
             >
+              <Section title={t("settings.language")}>
+                <div className="grid grid-cols-[1fr_12rem] items-center gap-3">
+                  <Label htmlFor="set-language">{t("common.language")}</Label>
+                  <select
+                    id="set-language"
+                    value={s.language}
+                    onChange={(e) => setS({ ...s, language: e.target.value })}
+                    className="h-8 rounded-md border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {languages.map((l) => (
+                      <option key={l.value} value={l.value}>
+                        {t(l.label)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </Section>
+
+              <Separator />
+
               <Section title={t("limits")}>
                 <NumberField id="set-active" label={t("maxActive")} value={s.maxActive} min={1} max={20} onChange={(n) => setS({ ...s, maxActive: n })} />
                 <NumberField
@@ -222,7 +250,7 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
                       className="h-8"
                     />
                     <Button type="button" size="sm" variant="outline" onClick={() => void choose(c.key)}>
-                      <FolderOpen aria-hidden /> {t("choose")}
+                      <FolderOpen aria-hidden /> {t("common.choose")}
                     </Button>
                   </div>
                 ))}
@@ -263,7 +291,7 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
                     ? t("leftoversLooking")
                     : leftovers.length === 0
                       ? t("leftoversNone")
-                      : t("leftoversFound", { n: leftovers.length, size: formatBytes(total) })}
+                      : t("leftoversFound", { count: leftovers.length, size: formatBytes(total) })}
                 </div>
                 {leftovers && leftovers.length > 0 && (
                   <ul className="max-h-32 overflow-y-auto rounded-md border p-2 text-xs">
@@ -296,7 +324,7 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
                     disabled={chosen.length === 0}
                     onClick={() => setConfirming(true)}
                   >
-                    {t("remove")}
+                    {t("common.remove")}
                   </Button>
                   {leftoverNote && <span className="text-xs text-muted-foreground">{leftoverNote}</span>}
                 </div>
@@ -310,10 +338,10 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
 
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                  {t("cancel")}
+                  {t("common.cancel")}
                 </Button>
                 <Button type="submit" disabled={saving}>
-                  {t("save")}
+                  {t("common.save")}
                 </Button>
               </DialogFooter>
             </form>
@@ -330,10 +358,10 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("removeLeftoversTitle")}</AlertDialogTitle>
-            <AlertDialogDescription>{t("removeLeftoversText", { n: chosen.length, size: formatBytes(chosenSize) })}</AlertDialogDescription>
+            <AlertDialogDescription>{t("removeLeftoversText", { count: chosen.length, size: formatBytes(chosenSize) })}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 const paths = chosen.map((l) => l.path);
@@ -347,7 +375,7 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
                 );
               }}
             >
-              {t("remove")}
+              {t("common.remove")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

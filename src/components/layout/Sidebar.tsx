@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import type { LucideIcon } from "lucide-react";
 import { CheckCircle2, Clock, Download, File, Film, Image, Layers, Music, Play, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { t } from "@/lib/text";
+import { t } from "@/lib/i18n";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { type Download as Dl, type Filter, type Queue, matches, sameFilter } from "@/features/downloads/types";
 
@@ -15,21 +15,22 @@ interface Item {
   queue?: number | null;
 }
 
-const fixed: { title?: string; items: Item[] }[] = [
+// A function, not a constant: the labels are looked up in the current language.
+const fixed = (): { title?: string; items: Item[] }[] => [
   {
     items: [
-      { key: "all", label: "All downloads", icon: Layers, filter: { kind: "all" } },
-      { key: "unfinished", label: "Unfinished", icon: Download, filter: { kind: "unfinished" } },
-      { key: "finished", label: "Finished", icon: CheckCircle2, filter: { kind: "finished" } },
+      { key: "all", label: t("sidebar.all"), icon: Layers, filter: { kind: "all" } },
+      { key: "unfinished", label: t("sidebar.unfinished"), icon: Download, filter: { kind: "unfinished" } },
+      { key: "finished", label: t("sidebar.finished"), icon: CheckCircle2, filter: { kind: "finished" } },
     ],
   },
   {
-    title: "Categories",
+    title: t("sidebar.categories"),
     items: [
-      { key: "video", label: t("categoryVideo"), icon: Film, filter: { kind: "category", category: "video" } },
-      { key: "audio", label: t("categoryAudio"), icon: Music, filter: { kind: "category", category: "audio" } },
-      { key: "images", label: t("categoryImages"), icon: Image, filter: { kind: "category", category: "images" } },
-      { key: "other", label: t("categoryOther"), icon: File, filter: { kind: "category", category: "other" } },
+      { key: "video", label: t("category.video"), icon: Film, filter: { kind: "category", category: "video" } },
+      { key: "audio", label: t("category.audio"), icon: Music, filter: { kind: "category", category: "audio" } },
+      { key: "images", label: t("category.images"), icon: Image, filter: { kind: "category", category: "images" } },
+      { key: "other", label: t("category.other"), icon: File, filter: { kind: "category", category: "other" } },
     ],
   },
 ];
@@ -46,7 +47,7 @@ interface Props {
 export function Sidebar({ downloads, queues, selected, onSelect, onStartQueue, onStopQueue }: Props) {
   const groups = useMemo(
     () => [
-      ...fixed,
+      ...fixed(),
       {
         title: t("queues"),
         items: [
@@ -89,7 +90,7 @@ export function Sidebar({ downloads, queues, selected, onSelect, onStartQueue, o
   };
 
   return (
-    <nav aria-label="Filters" className="flex w-52 shrink-0 flex-col gap-4 overflow-y-auto border-r bg-sidebar p-2 text-sidebar-foreground">
+    <nav aria-label={t("sidebar.label")} className="flex w-52 shrink-0 flex-col gap-4 overflow-y-auto border-r bg-sidebar p-2 text-sidebar-foreground">
       {groups.map((g, gi) => (
         <div key={gi} className="flex flex-col gap-0.5">
           {g.title && (

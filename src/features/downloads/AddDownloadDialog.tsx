@@ -11,12 +11,12 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { t } from "@/lib/text";
+import { t } from "@/lib/i18n";
 import { api, message } from "./api";
 import { formatBytes } from "./format";
 import type { Category, ProbeView } from "./types";
 
-const categoryLabel: Record<Category, string> = { video: "Video", audio: "Audio", images: "Images", other: "Other" };
+const categoryLabel = (c: Category) => t(`category.${c}`);
 
 function looksLikeUrl(s: string): boolean {
   try {
@@ -125,8 +125,8 @@ export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Add download</DialogTitle>
-          <DialogDescription>Paste a link to a file or a video page. Its details appear before it starts.</DialogDescription>
+          <DialogTitle>{t("add.title")}</DialogTitle>
+          <DialogDescription>{t("add.description")}</DialogDescription>
         </DialogHeader>
         <form
           className="grid gap-4"
@@ -136,7 +136,7 @@ export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
           }}
         >
           <div className="grid gap-2">
-            <Label htmlFor="add-url">Link</Label>
+            <Label htmlFor="add-url">{t("details.link")}</Label>
             <Input
               id="add-url"
               autoFocus
@@ -151,27 +151,27 @@ export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
           <div aria-live="polite" className="min-h-5 text-sm">
             {probing && (
               <span className="flex items-center gap-2 text-muted-foreground">
-                <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden /> Checking the link…
+                <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden /> {t("add.checking")}
               </span>
             )}
             {probe && video && (
               <dl className="grid grid-cols-[6rem_1fr] gap-x-3 gap-y-1">
-                <dt className="text-muted-foreground">Video</dt>
+                <dt className="text-muted-foreground">{t("category.video")}</dt>
                 <dd className="flex items-center gap-1.5">
-                  <Film className="size-4 shrink-0" aria-hidden /> Best available quality
+                  <Film className="size-4 shrink-0" aria-hidden /> {t("add.best")}
                 </dd>
-                <dt className="text-muted-foreground">Size</dt>
-                <dd className="tabular-nums">{probe.size === null ? "Unknown" : `about ${formatBytes(probe.size)}`}</dd>
+                <dt className="text-muted-foreground">{t("list.size")}</dt>
+                <dd className="tabular-nums">{probe.size === null ? t("common.unknown") : t("add.about", { size: formatBytes(probe.size) })}</dd>
               </dl>
             )}
             {probe && !video && (
               <dl className="grid grid-cols-[6rem_1fr] gap-x-3 gap-y-1">
-                <dt className="text-muted-foreground">Size</dt>
+                <dt className="text-muted-foreground">{t("list.size")}</dt>
                 <dd className="tabular-nums">{formatBytes(probe.size)}</dd>
-                <dt className="text-muted-foreground">Category</dt>
-                <dd>{categoryLabel[probe.category]}</dd>
-                <dt className="text-muted-foreground">Pause</dt>
-                <dd>{probe.resumable ? "Can be paused and resumed" : "Not possible"}</dd>
+                <dt className="text-muted-foreground">{t("add.category")}</dt>
+                <dd>{categoryLabel(probe.category)}</dd>
+                <dt className="text-muted-foreground">{t("common.pause")}</dt>
+                <dd>{probe.resumable ? t("add.canPause") : t("add.notPossible")}</dd>
               </dl>
             )}
           </div>
@@ -180,18 +180,17 @@ export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
             <p role="note" className="flex gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
               <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
               <span>
-                This server does not support resuming. This download <strong>cannot be paused or resumed</strong>:
-                stopping it, quitting the app or losing the connection for good means starting over.
+                <strong>{t("add.noResumeTitle")}</strong> {t("add.noResume")}
               </span>
             </p>
           )}
 
           <div className="grid gap-2">
-            <Label htmlFor="add-name">File name</Label>
+            <Label htmlFor="add-name">{t("add.fileName")}</Label>
             <Input id="add-name" value={name} onChange={(e) => setName(e.target.value)} disabled={!probe} spellCheck={false} />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="add-folder">Save in folder</Label>
+            <Label htmlFor="add-folder">{t("add.saveIn")}</Label>
             <div className="flex gap-2">
               <Input
                 id="add-folder"
@@ -203,11 +202,11 @@ export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
                 spellCheck={false}
               />
               <Button type="button" variant="outline" onClick={() => void choose()}>
-                <FolderOpen aria-hidden /> {t("choose")}
+                <FolderOpen aria-hidden /> {t("common.choose")}
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              If a file with this name is already there, the new one is saved as “name (1)”. Nothing is overwritten.
+              {t("add.noOverwrite")}
             </p>
           </div>
 
@@ -220,15 +219,15 @@ export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
           <DialogFooter>
             {video ? (
               <Button type="submit" disabled={!ready}>
-                Download
+                {t("add.download")}
               </Button>
             ) : (
               <>
                 <Button type="button" variant="outline" disabled={!ready} onClick={() => void add(false)}>
-                  Download later
+                  {t("add.later")}
                 </Button>
                 <Button type="submit" disabled={!ready}>
-                  Download now
+                  {t("add.now")}
                 </Button>
               </>
             )}

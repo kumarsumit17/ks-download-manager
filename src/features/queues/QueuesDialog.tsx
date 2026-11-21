@@ -14,7 +14,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { t } from "@/lib/text";
+import { t } from "@/lib/i18n";
 import { api, message } from "@/features/downloads/api";
 import type { Download, Queue } from "@/features/downloads/types";
 
@@ -81,16 +81,16 @@ export function QueuesDialog({ open, onOpenChange, queues, downloads, onStart, o
                       className="h-8"
                     />
                     <Button type="submit" size="sm">
-                      {t("save")}
+                      {t("common.save")}
                     </Button>
                     <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(null)}>
-                      {t("cancel")}
+                      {t("common.cancel")}
                     </Button>
                   </form>
                 ) : (
                   <>
                     <span className="flex-1 truncate text-sm">{q.name}</span>
-                    <span className="text-xs tabular-nums text-muted-foreground">{t("downloadsCount", { n: count(q.id) })}</span>
+                    <span className="text-xs tabular-nums text-muted-foreground">{t("downloadsCount", { count: count(q.id) })}</span>
                     <Button size="sm" variant="ghost" onClick={() => onStart(q.id)} aria-label={`${t("start")}: ${q.name}`}>
                       <Play aria-hidden /> {t("start")}
                     </Button>
@@ -103,8 +103,8 @@ export function QueuesDialog({ open, onOpenChange, queues, downloads, onStart, o
                           size="icon"
                           variant="ghost"
                           className="size-8"
-                          aria-label={`${t("rename")}: ${q.name}`}
-                          title={t("rename")}
+                          aria-label={`${t("common.rename")}: ${q.name}`}
+                          title={t("common.rename")}
                           onClick={() => setEditing({ id: q.id as number, name: q.name })}
                         >
                           <Pencil aria-hidden />
@@ -113,8 +113,8 @@ export function QueuesDialog({ open, onOpenChange, queues, downloads, onStart, o
                           size="icon"
                           variant="ghost"
                           className="size-8"
-                          aria-label={`${t("delete")}: ${q.name}`}
-                          title={t("delete")}
+                          aria-label={`${t("common.delete")}: ${q.name}`}
+                          title={t("common.delete")}
                           onClick={() => setDeleting({ id: q.id as number, name: q.name })}
                         >
                           <Trash2 aria-hidden />
@@ -151,7 +151,7 @@ export function QueuesDialog({ open, onOpenChange, queues, downloads, onStart, o
 
           <DialogFooter>
             <Button variant="outline" onClick={() => onOpenChange(false)}>
-              {t("close")}
+              {t("common.close")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -164,14 +164,14 @@ export function QueuesDialog({ open, onOpenChange, queues, downloads, onStart, o
             <AlertDialogDescription>{t("deleteQueueText")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (deleting) void attempt(api.deleteQueue(deleting.id));
                 setDeleting(null);
               }}
             >
-              {t("delete")}
+              {t("common.delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

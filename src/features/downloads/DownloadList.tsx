@@ -12,30 +12,25 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
-import { t } from "@/lib/text";
-import { CANNOT_PAUSE, type Download, type Queue, type Status, canPause, canResume, cannotPause, isMkvVideo } from "./types";
+import { msgText, t } from "@/lib/i18n";
+import { cannotPauseText, type Download, type Queue, type Status, canPause, canResume, cannotPause, isMkvVideo } from "./types";
 import { formatBytes, formatDate, formatSpeed, formatTimeLeft } from "./format";
 
 type SortKey = "name" | "size" | "status" | "speed" | "timeLeft" | "addedAt";
 
-const columns: { key: SortKey; label: string; className: string }[] = [
-  { key: "name", label: "Name", className: "w-auto" },
-  { key: "size", label: "Size", className: "w-24 text-right" },
-  { key: "status", label: "Status", className: "w-48" },
-  { key: "speed", label: "Speed", className: "w-28 text-right" },
-  { key: "timeLeft", label: "Time left", className: "w-24 text-right" },
-  { key: "addedAt", label: "Date added", className: "w-44" },
+// Functions, not constants: the labels are looked up in the current language.
+const columns = (): { key: SortKey; label: string; className: string }[] => [
+  { key: "name", label: t("list.name"), className: "w-auto" },
+  { key: "size", label: t("list.size"), className: "w-24 text-right" },
+  { key: "status", label: t("list.status"), className: "w-48" },
+  { key: "speed", label: t("list.speed"), className: "w-28 text-right" },
+  { key: "timeLeft", label: t("list.timeLeft"), className: "w-24 text-right" },
+  { key: "addedAt", label: t("list.added"), className: "w-44" },
 ];
 
-const statusLabel: Record<Status, string> = {
-  downloading: "Downloading",
-  waiting: t("waiting"),
-  paused: "Paused",
-  queued: "Queued",
-  finished: "Finished",
-  failed: "Failed",
-  interrupted: "Interrupted",
-};
+export function statusLabel(s: Status): string {
+  return s === "waiting" ? t("waiting") : t(`status.${s as Exclude<Status, "waiting">}`);
+}
 
 /** What the row menu (and double-click) can do; each acts on the download's id. */
 export interface RowActions {
@@ -122,7 +117,7 @@ export function DownloadList({ downloads, selectedId, onSelect, actions, queues,
     <div className="min-h-0 flex-1 overflow-auto">
       <table
         role="grid"
-        aria-label="Downloads"
+        aria-label={t("list.label")}
         aria-activedescendant={selectedId ? rowId(selectedId) : undefined}
         tabIndex={0}
         onKeyDown={onKey}
@@ -130,7 +125,7 @@ export function DownloadList({ downloads, selectedId, onSelect, actions, queues,
       >
         <thead className="sticky top-0 z-10 bg-background">
           <tr className="border-b">
-            {columns.map((c) => {
+            {columns().map((c) => {
               const active = sort.key === c.key;
               return (
                 <th
@@ -176,14 +171,14 @@ export function DownloadList({ downloads, selectedId, onSelect, actions, queues,
                   <span className="flex items-center gap-1.5">
                     <span className="truncate">{d.name}</span>
                     {cannotPause(d) && (
-                      <span title={CANNOT_PAUSE} className="flex shrink-0 items-center gap-1 text-xs text-amber-700 dark:text-amber-300">
+                      <span title={cannotPauseText()} className="flex shrink-0 items-center gap-1 text-xs text-amber-700 dark:text-amber-300">
                         <Ban className="size-3.5" aria-hidden />
-                        Can't pause
+                        {t("list.cannotPause")}
                       </span>
                     )}
                     {isMkvVideo(d) && (
-                      <span className="shrink-0 rounded border px-1 text-xs text-muted-foreground" title="Saved as MKV to keep the best quality without re-encoding.">
-                        MKV · plays in VLC or IINA
+                      <span className="shrink-0 rounded border px-1 text-xs text-muted-foreground" title={t("list.mkvHint")}>
+                        {t("list.mkv")}
                       </span>
                     )}
                   </span>
@@ -192,27 +187,27 @@ export function DownloadList({ downloads, selectedId, onSelect, actions, queues,
                 <td className="px-3">
                   {d.status === "downloading" && d.merging ? (
                     <div className="flex items-center gap-2">
-                      <div role="progressbar" aria-label="Joining video and audio" className="progress-indeterminate h-1.5 flex-1 overflow-hidden rounded-full bg-muted" />
-                      <span className="w-14 text-xs text-muted-foreground">Merging…</span>
+                      <div role="progressbar" aria-label={t("list.joining")} className="progress-indeterminate h-1.5 flex-1 overflow-hidden rounded-full bg-muted" />
+                      <span className="w-14 text-xs text-muted-foreground">{t("list.merging")}</span>
                     </div>
                   ) : d.status === "downloading" && d.size === null ? (
                     <div className="flex items-center gap-2">
-                      <div role="progressbar" aria-label="Downloading, size unknown" className="progress-indeterminate h-1.5 flex-1 overflow-hidden rounded-full bg-muted" />
+                      <div role="progressbar" aria-label={t("list.sizeUnknown")} className="progress-indeterminate h-1.5 flex-1 overflow-hidden rounded-full bg-muted" />
                       <span className="w-14 text-xs text-muted-foreground">{formatBytes(d.received)}</span>
                     </div>
                   ) : d.status === "downloading" || d.status === "paused" || (d.status === "waiting" && d.received > 0) ? (
                     <div className="flex items-center gap-2">
-                      <Progress value={pct} className="h-1.5 flex-1" aria-label={`${statusLabel[d.status]} ${Math.round(pct)}%`} />
+                      <Progress value={pct} className="h-1.5 flex-1" aria-label={t("list.progress", { status: statusLabel(d.status), percent: Math.round(pct) })} />
                       <span className="w-14 text-xs tabular-nums text-muted-foreground">
-                        {d.status === "downloading" ? `${Math.round(pct)}%` : statusLabel[d.status]}
+                        {d.status === "downloading" ? `${Math.round(pct)}%` : statusLabel(d.status)}
                       </span>
                     </div>
                   ) : (
                     <span
-                      title={d.error ?? undefined}
+                      title={d.error ? msgText(d.error) : undefined}
                       className={cn("text-xs", d.status === "failed" ? "text-destructive" : "text-muted-foreground")}
                     >
-                      {statusLabel[d.status]}
+                      {statusLabel(d.status)}
                     </span>
                   )}
                 </td>
@@ -225,24 +220,24 @@ export function DownloadList({ downloads, selectedId, onSelect, actions, queues,
         </tbody>
       </table>
       {loaded && rows.length === 0 && (
-        <p className="p-8 text-center text-sm text-muted-foreground">No downloads here yet.</p>
+        <p className="p-8 text-center text-sm text-muted-foreground">{t("list.empty")}</p>
       )}
     </div>
     </ContextMenuTrigger>
     {selected && (
       <ContextMenuContent className="w-52">
         <ContextMenuItem disabled={selected.status !== "finished"} onSelect={() => actions.open(selected)}>
-          <ExternalLink aria-hidden /> Open
+          <ExternalLink aria-hidden /> {t("common.open")}
         </ContextMenuItem>
         <ContextMenuItem onSelect={() => actions.openFolder(selected)}>
-          <FolderOpen aria-hidden /> Open folder
+          <FolderOpen aria-hidden /> {t("common.openFolder")}
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem disabled={!canResume(selected)} onSelect={() => actions.resume(selected)}>
-          <Play aria-hidden /> Resume
+          <Play aria-hidden /> {t("common.resume")}
         </ContextMenuItem>
         <ContextMenuItem disabled={!canPause(selected)} onSelect={() => actions.pause(selected)}>
-          <Pause aria-hidden /> {cannotPause(selected) ? "Pause (not possible)" : "Pause"}
+          <Pause aria-hidden /> {cannotPause(selected) ? t("list.pauseNotPossible") : t("common.pause")}
         </ContextMenuItem>
         <ContextMenuSub>
           <ContextMenuSubTrigger>
@@ -258,11 +253,11 @@ export function DownloadList({ downloads, selectedId, onSelect, actions, queues,
           </ContextMenuSubContent>
         </ContextMenuSub>
         <ContextMenuItem onSelect={() => actions.copyLink(selected)}>
-          <Copy aria-hidden /> Copy link
+          <Copy aria-hidden /> {t("list.copyLink")}
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem variant="destructive" onSelect={() => actions.remove(selected)}>
-          <Trash2 aria-hidden /> Delete
+          <Trash2 aria-hidden /> {t("common.delete")}
         </ContextMenuItem>
       </ContextMenuContent>
     )}

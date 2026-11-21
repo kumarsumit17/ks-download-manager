@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { isMsg, msgText, t } from "@/lib/i18n";
 import type { Active, Category, DownloadRecord, ProbeView, Queue, Tick } from "./types";
 
 export type ComponentUpdate =
@@ -14,6 +15,8 @@ export interface Settings {
   speedLimit: number | null;
   folders: Record<Category, string | null>;
   preferMp4: boolean;
+  /** "system", "en" or "hi". */
+  language: string;
 }
 
 /** A leftover download file or temp folder found by the last scan. */
@@ -76,7 +79,9 @@ export function onQuitRequested(f: (a: Active) => void): Promise<UnlistenFn> {
   return listen<Active>("app:quit-requested", (e) => f(e.payload));
 }
 
-/** Rust commands reject with a plain message. */
+/** Rust commands reject with a message code and parameters, shown in the interface
+ * language. Anything else (a browser error) falls back to the shared "went wrong" text. */
 export function message(e: unknown): string {
-  return typeof e === "string" ? e : e instanceof Error ? e.message : String(e);
+  if (isMsg(e)) return msgText(e);
+  return t("common.error.generic");
 }

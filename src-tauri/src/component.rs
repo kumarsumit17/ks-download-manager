@@ -18,6 +18,9 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
 use engine::{CancelToken, DownloadOptions};
+
+use crate::msg;
+use crate::msg::Msg;
 use ks_utility::atomic::write_atomic;
 use serde::Serialize;
 
@@ -53,32 +56,32 @@ pub fn current(dir: &Path) -> Option<PathBuf> {
 }
 
 /// Checks for a newer yt-dlp and installs it. Errors are short sentences for the user.
-pub async fn update(tools: &Tools) -> Result<Update, String> {
-    let installed = tools.version(&tools.ytdlp()).await.ok_or("The video component does not start.")?;
-    let release = engine::fetch_text(LATEST, 1 << 20).await.map_err(|e| format!("Could not check for updates: {e}."))?;
-    let tag = latest_tag(&release).ok_or("Could not read the latest version.")?;
+pub async fn update(tools: &Tools) -> Result<Update, Msg> {
+    let installed = tools.version(&tools.ytdlp()).await.ok_or_else(|| msg!("update.noStart"))?;
+    let release = engine::fetch_text(LATEST, 1 << 20).await.map_err(|e| msg!("update.check", detail = e))?;
+    let tag = latest_tag(&release).ok_or_else(|| msg!("update.version"))?;
     if !newer(&tag, &installed) {
         return Ok(Update::UpToDate { version: installed });
     }
     let base = format!("https://github.com/yt-dlp/yt-dlp/releases/download/{tag}");
     let sums = engine::fetch_text(&format!("{base}/SHA2-256SUMS"), 1 << 16)
         .await
-        .map_err(|e| format!("Could not download the checksums: {e}."))?;
-    let expected = expected_hash(&sums, ASSET).ok_or("The release has no checksum for this system.")?;
+        .map_err(|e| msg!("update.checksums", detail = e))?;
+    let expected = expected_hash(&sums, ASSET).ok_or_else(|| msg!("update.noChecksum"))?;
 
     let dir = &tools.component_dir;
-    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(dir).map_err(|e| msg!("update.install", detail = e))?;
     let zip = dir.join(ASSET);
     let _ = engine::discard(&zip).await;
     let _ = std::fs::remove_file(&zip);
     let options = DownloadOptions { cancel: CancelToken::new(), connections: 4, ..DownloadOptions::default() };
     engine::download(&format!("{base}/{ASSET}"), &zip, options)
         .await
-        .map_err(|e| format!("Could not download the update: {e}."))?;
-    let got = sha256(&zip).await.ok_or("Could not check the download.")?;
+        .map_err(|e| msg!("update.download", detail = e))?;
+    let got = sha256(&zip).await.ok_or_else(|| msg!("update.hash"))?;
     if got != expected {
         let _ = std::fs::remove_file(&zip);
-        return Err("The download was damaged (checksum mismatch). Nothing was changed.".into());
+        return Err(msg!("update.damaged"));
     }
     let unpack = dir.join(format!(".{tag}.unpacking"));
     let _ = std::fs::remove_dir_all(&unpack);
@@ -87,12 +90,12 @@ pub async fn update(tools: &Tools) -> Result<Update, String> {
     let exe = unpack.join(EXE);
     if tools.version(&exe).await.as_deref() != Some(tag.as_str()) {
         let _ = std::fs::remove_dir_all(&unpack);
-        return Err("The new version does not start. Nothing was changed.".into());
+        return Err(msg!("update.newNoStart"));
     }
     let target = dir.join(&tag);
     let _ = std::fs::remove_dir_all(&target);
-    std::fs::rename(&unpack, &target).map_err(|e| e.to_string())?;
-    write_atomic(&dir.join("current"), tag.as_bytes()).map_err(|e| e.to_string())?;
+    std::fs::rename(&unpack, &target).map_err(|e| msg!("update.install", detail = e))?;
+    write_atomic(&dir.join("current"), tag.as_bytes()).map_err(|e| msg!("update.install", detail = e))?;
     tools.set_ytdlp(target.join(EXE));
     // Older updates are no longer needed.
     if let Ok(entries) = std::fs::read_dir(dir) {
@@ -135,7 +138,7 @@ async fn sha256(file: &Path) -> Option<String> {
     text.split_whitespace().find(|w| w.len() == 64 && w.chars().all(|c| c.is_ascii_hexdigit())).map(str::to_ascii_lowercase)
 }
 
-async fn unzip(zip: &Path, into: &Path) -> Result<(), String> {
+async fn unzip(zip: &Path, into: &Path) -> Result<(), Msg> {
     #[cfg(not(target_os = "windows"))]
     let status = tokio::process::Command::new("/usr/bin/ditto").args(["-x", "-k"]).arg(zip).arg(into).status().await;
     #[cfg(target_os = "windows")]
@@ -145,7 +148,7 @@ async fn unzip(zip: &Path, into: &Path) -> Result<(), String> {
     };
     match status {
         Ok(s) if s.success() => Ok(()),
-        _ => Err("Could not unpack the update.".into()),
+        _ => Err(msg!("update.unpack")),
     }
 }
 

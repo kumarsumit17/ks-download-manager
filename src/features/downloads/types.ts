@@ -1,3 +1,4 @@
+import { t, type Msg } from "@/lib/i18n";
 export type Category = "video" | "audio" | "images" | "other";
 export type Kind = "file" | "video";
 export type Status = "queued" | "downloading" | "waiting" | "paused" | "finished" | "failed" | "interrupted";
@@ -18,7 +19,7 @@ export interface DownloadRecord {
   received: number;
   /** The server supports resuming; otherwise the download cannot be paused. */
   resumable: boolean;
-  error: string | null;
+  error: Msg | null;
   /** What can be offered for the error: "videoOutdated" shows the update action. */
   errorCode: string | null;
   addedAt: number;
@@ -120,5 +121,5 @@ export function cannotPause(d: Download): boolean {
   return d.status === "downloading" && !d.resumable;
 }
 
-export const CANNOT_PAUSE =
-  "This server does not support resuming, so this download cannot be paused or resumed. Stopping it loses what it has downloaded.";
+/** Why a running download cannot be paused, in the interface language. */
+export const cannotPauseText = () => t("download.cannotPause");

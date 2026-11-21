@@ -5,6 +5,8 @@
 
 use std::path::Path;
 
+use crate::msg::Msg;
+
 /// The script never changes; only its arguments do.
 #[cfg(target_os = "macos")]
 const SCRIPT: &[&str] = &[
@@ -27,7 +29,7 @@ const SCRIPT: &[&str] = &[
 
 /// Shows the picker and returns the chosen folder, or `None` when the user cancels.
 #[cfg(target_os = "macos")]
-pub async fn pick_folder(prompt: &str, start: Option<&Path>) -> Result<Option<String>, String> {
+pub async fn pick_folder(prompt: &str, start: Option<&Path>) -> Result<Option<String>, Msg> {
     let mut c = tokio::process::Command::new("/usr/bin/osascript");
     for line in SCRIPT {
         c.arg("-e").arg(line);
@@ -37,16 +39,16 @@ pub async fn pick_folder(prompt: &str, start: Option<&Path>) -> Result<Option<St
     if let Some(dir) = start.filter(|d| d.is_dir()) {
         c.arg(dir);
     }
-    let out = c.output().await.map_err(|e| format!("Could not open the folder picker: {e}."))?;
+    let out = c.output().await.map_err(|e| msg!("error.picker", detail = e))?;
     if !out.status.success() {
-        return Err("Could not open the folder picker.".into());
+        return Err(msg!("error.picker", detail = "-"));
     }
     let chosen = String::from_utf8_lossy(&out.stdout).trim_end_matches(['\n', '\r']).to_owned();
     Ok(clean(&chosen))
 }
 
 #[cfg(windows)]
-pub async fn pick_folder(prompt: &str, start: Option<&Path>) -> Result<Option<String>, String> {
+pub async fn pick_folder(prompt: &str, start: Option<&Path>) -> Result<Option<String>, Msg> {
     // Untested. The values reach the script only as environment variables.
     const SCRIPT: &str = "Add-Type -AssemblyName System.Windows.Forms; \
         $d = New-Object System.Windows.Forms.FolderBrowserDialog; \
@@ -59,16 +61,16 @@ pub async fn pick_folder(prompt: &str, start: Option<&Path>) -> Result<Option<St
         .env("KSDM_START", start.map(|p| p.as_os_str().to_owned()).unwrap_or_default())
         .output()
         .await
-        .map_err(|e| format!("Could not open the folder picker: {e}."))?;
+        .map_err(|e| msg!("error.picker", detail = e))?;
     if !out.status.success() {
-        return Err("Could not open the folder picker.".into());
+        return Err(msg!("error.picker", detail = "-"));
     }
     Ok(clean(&String::from_utf8_lossy(&out.stdout)))
 }
 
 #[cfg(not(any(target_os = "macos", windows)))]
-pub async fn pick_folder(_prompt: &str, _start: Option<&Path>) -> Result<Option<String>, String> {
-    Err("The folder picker is not available on this system.".into())
+pub async fn pick_folder(_prompt: &str, _start: Option<&Path>) -> Result<Option<String>, Msg> {
+    Err(msg!("error.pickerMissing"))
 }
 
 /// The picker's answer: empty means cancelled; a trailing slash is dropped ("/a/b/").

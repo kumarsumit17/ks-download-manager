@@ -72,19 +72,18 @@ pub struct Reply {
     pub ok: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<u64>,
-    /// A message code for the extension's own language files (`app_not_found`, …).
+    /// A message code for the extension's own language files (`app_not_found`, …). No
+    /// sentence is sent: the extension shows the code's text in the browser's language.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
 }
 
 impl Reply {
     pub fn ok(id: Option<u64>) -> Self {
-        Self { ok: true, id, code: None, error: None }
+        Self { ok: true, id, code: None }
     }
-    pub fn err(code: &str, error: impl Into<String>) -> Self {
-        Self { ok: false, id: None, code: Some(code.into()), error: Some(error.into()) }
+    pub fn err(code: &str) -> Self {
+        Self { ok: false, id: None, code: Some(code.into()) }
     }
 }
 
@@ -95,18 +94,18 @@ pub fn validate(r: &Request) -> Result<(), Reply> {
         Request::Ping { v } | Request::Show { v } | Request::Add { v, .. } => *v,
     };
     if v != 1 {
-        return Err(Reply::err("bad_request", "Unsupported message version."));
+        return Err(Reply::err("bad_request"));
     }
     if let Request::Add { url, .. } = r {
         if url.len() > 2048 {
-            return Err(Reply::err("bad_url", "The link is too long."));
+            return Err(Reply::err("bad_url"));
         }
         let lower = url.to_ascii_lowercase();
         let rest = lower.strip_prefix("https://").or_else(|| lower.strip_prefix("http://"));
-        let Some(rest) = rest else { return Err(Reply::err("bad_url", "Only http and https links can be downloaded.")) };
+        let Some(rest) = rest else { return Err(Reply::err("bad_url")) };
         let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
         if authority.is_empty() || authority.contains('@') || url.chars().any(char::is_control) {
-            return Err(Reply::err("bad_url", "This link cannot be downloaded."));
+            return Err(Reply::err("bad_url"));
         }
     }
     Ok(())
@@ -162,12 +161,12 @@ pub fn serve_host(input: &mut impl Read, output: &mut impl Write, forward: &dyn 
             Ok(Some(f)) => f,
             Ok(None) => return 0,
             Err(_) => {
-                let _ = reply(output, &Reply::err("bad_request", "The message could not be read."));
+                let _ = reply(output, &Reply::err("bad_request"));
                 return 1;
             }
         };
         let answer = match serde_json::from_slice::<Request>(&frame) {
-            Err(_) => Reply::err("bad_request", "The message was not understood."),
+            Err(_) => Reply::err("bad_request"),
             Ok(req) => match validate(&req) {
                 Err(r) => r,
                 Ok(()) => forward(&req),
@@ -189,10 +188,10 @@ fn forward(socket: &Path, req: &Request) -> Reply {
         return r;
     }
     if matches!(req, Request::Ping { .. }) {
-        return Reply::err("app_not_running", "The app is not running.");
+        return Reply::err("app_not_running");
     }
     if !start_app() {
-        return Reply::err("app_not_found", "KS Download Manager could not be started. Is it installed?");
+        return Reply::err("app_not_found");
     }
     let deadline = Instant::now() + START_WAIT;
     while Instant::now() < deadline {
@@ -201,7 +200,7 @@ fn forward(socket: &Path, req: &Request) -> Reply {
             return r;
         }
     }
-    Reply::err("app_not_found", "KS Download Manager did not start in time.")
+    Reply::err("app_not_found")
 }
 
 /// Starts the app the way Finder does, through LaunchServices, so it is not a child of
@@ -426,7 +425,7 @@ async fn serve_with(listener: std::os::unix::net::UnixListener, path: PathBuf, h
                 _ => return, // too slow, cut short or failed: the connection is closed
             }
             let answer = match serde_json::from_str::<Request>(line.trim()) {
-                Err(_) => Reply::err("bad_request", "The message was not understood."),
+                Err(_) => Reply::err("bad_request"),
                 Ok(req) => match validate(&req) {
                     Err(r) => r,
                     Ok(()) => handler.handle(req).await,
