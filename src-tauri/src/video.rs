@@ -46,6 +46,8 @@ pub struct Tools {
     pub component_dir: PathBuf,
     /// Settings that change the format choice (Part 3: "prefer MP4").
     prefer_mp4: Mutex<bool>,
+    /// The speed limit in bytes per second, passed as `--limit-rate` to each new run.
+    rate_limit: Mutex<Option<u64>>,
 }
 
 impl Tools {
@@ -62,6 +64,7 @@ impl Tools {
             cache: data.join("yt-dlp-cache"),
             component_dir,
             prefer_mp4: Mutex::new(false),
+            rate_limit: Mutex::new(None),
         }
     }
 
@@ -73,13 +76,25 @@ impl Tools {
         *self.ytdlp.lock().unwrap_or_else(|e| e.into_inner()) = path;
     }
 
-    #[cfg_attr(not(test), allow(dead_code))] // The settings screen sets it (Stage 5, Part 3).
     pub fn set_prefer_mp4(&self, on: bool) {
         *self.prefer_mp4.lock().unwrap_or_else(|e| e.into_inner()) = on;
     }
 
     fn prefer_mp4(&self) -> bool {
         *self.prefer_mp4.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// An approximation of the shared limit: yt-dlp paces each run on its own, so running
+    /// videos and files together can exceed it, and a change applies from the next run.
+    pub fn set_rate_limit(&self, bytes_per_second: Option<u64>) {
+        *self.rate_limit.lock().unwrap_or_else(|e| e.into_inner()) = bytes_per_second;
+    }
+
+    fn rate_args(&self) -> Vec<OsString> {
+        match *self.rate_limit.lock().unwrap_or_else(|e| e.into_inner()) {
+            Some(r) if r > 0 => vec!["--limit-rate".into(), r.to_string().into()],
+            _ => Vec::new(),
+        }
     }
 
     /// The arguments every run gets: no user config, plugins or downloaded components, our
@@ -183,6 +198,7 @@ impl Tools {
             .map(OsString::from),
         );
         args.extend(["-P".into(), home, "-P".into(), tmp]);
+        args.extend(self.rate_args());
         let mut c = self.command(args, url);
         let mut child = c.spawn().map_err(|e| VideoError::Start(e.to_string()))?;
         let stdout = child.stdout.take().expect("piped");

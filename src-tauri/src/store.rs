@@ -23,6 +23,8 @@ pub enum Status {
     /// Added with "Download later"; never started.
     Queued,
     Downloading,
+    /// Wants to run and starts when a slot is free (the cap on active downloads).
+    Waiting,
     /// Stopped by the user; the partial file and its range map are on disk.
     Paused,
     Finished,
@@ -68,6 +70,17 @@ pub struct Record {
     pub temp: Option<String>,
     /// Milliseconds since the Unix epoch.
     pub added_at: u64,
+    /// The queue it belongs to; `None` is the main queue.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queue: Option<u64>,
+}
+
+/// A queue the user made (the main queue is built in and has no entry).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Queue {
+    pub id: u64,
+    pub name: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -78,12 +91,16 @@ struct OnDisk {
     #[serde(default)]
     next_id: Option<u64>,
     downloads: Vec<Record>,
+    /// In sidebar order.
+    #[serde(default)]
+    queues: Vec<Queue>,
 }
 
 /// The saved list and the next free ID (never below every ID in the list).
 pub struct Saved {
     pub downloads: Vec<Record>,
     pub next_id: u64,
+    pub queues: Vec<Queue>,
 }
 
 pub fn path(data_dir: &Path) -> PathBuf {
@@ -100,15 +117,22 @@ pub fn load(file: &Path) -> Vec<Record> {
 pub fn load_all(file: &Path) -> Saved {
     let text = match fs::read_to_string(file) {
         Ok(t) => t,
-        Err(e) if e.kind() == ErrorKind::NotFound => return Saved { downloads: Vec::new(), next_id: 1 },
-        Err(_) => return Saved { downloads: set_aside(file), next_id: 1 },
+        Err(e) if e.kind() == ErrorKind::NotFound => return Saved { downloads: Vec::new(), next_id: 1, queues: Vec::new() },
+        Err(_) => return Saved { downloads: set_aside(file), next_id: 1, queues: Vec::new() },
     };
     match serde_json::from_str::<OnDisk>(&text) {
         Ok(d) if d.version == VERSION => {
             let after_list = d.downloads.iter().map(|r| r.id).max().unwrap_or(0) + 1;
-            Saved { next_id: d.next_id.unwrap_or(0).max(after_list), downloads: d.downloads }
+            let mut downloads = d.downloads;
+            // A download naming a queue that is not there belongs to the main queue.
+            for r in &mut downloads {
+                if r.queue.is_some_and(|q| !d.queues.iter().any(|x| x.id == q)) {
+                    r.queue = None;
+                }
+            }
+            Saved { next_id: d.next_id.unwrap_or(0).max(after_list), downloads, queues: d.queues }
         }
-        _ => Saved { downloads: set_aside(file), next_id: 1 },
+        _ => Saved { downloads: set_aside(file), next_id: 1, queues: Vec::new() },
     }
 }
 
@@ -119,11 +143,12 @@ fn set_aside(file: &Path) -> Vec<Record> {
 
 /// Replaces the saved list atomically: write `downloads.json.tmp`, sync it, rename it
 /// over `downloads.json`, then sync the folder so the rename itself is durable.
-pub fn save(file: &Path, downloads: &[Record], next_id: u64) -> std::io::Result<()> {
+pub fn save(file: &Path, downloads: &[Record], next_id: u64, queues: &[Queue]) -> std::io::Result<()> {
     if let Some(dir) = file.parent() {
         fs::create_dir_all(dir)?;
     }
-    let json = serde_json::to_vec_pretty(&OnDisk { version: VERSION, next_id: Some(next_id), downloads: downloads.to_vec() })
+    let on_disk = OnDisk { version: VERSION, next_id: Some(next_id), downloads: downloads.to_vec(), queues: queues.to_vec() };
+    let json = serde_json::to_vec_pretty(&on_disk)
         .map_err(std::io::Error::other)?;
     // One writer: every save runs under the manager's lock.
     write_atomic(file, &json)
@@ -161,6 +186,7 @@ mod tests {
             resumable: true,
             error: None,
             added_at: 1_790_000_000_000,
+            queue: None,
         }
     }
 
@@ -170,10 +196,10 @@ mod tests {
         let file = path(&dir);
         assert!(load(&file).is_empty(), "no file yet");
         let list = vec![record(1), Record { status: Status::Failed, error: Some("x".into()), size: None, ..record(2) }];
-        save(&file, &list, 3).unwrap();
+        save(&file, &list, 3, &[]).unwrap();
         assert_eq!(load(&file), list);
         assert!(!with_suffix(&file, ".tmp").exists(), "temp file renamed away");
-        save(&file, &list[..1], 3).unwrap();
+        save(&file, &list[..1], 3, &[]).unwrap();
         assert_eq!(load(&file), list[..1]);
         fs::remove_dir_all(&dir).unwrap();
     }
@@ -182,10 +208,24 @@ mod tests {
     fn the_next_id_survives_deleting_the_newest_download() {
         let dir = temp_dir();
         let file = path(&dir);
-        save(&file, &[record(1)], 6).unwrap();
+        save(&file, &[record(1)], 6, &[]).unwrap();
         assert_eq!(load_all(&file).next_id, 6, "IDs 2 to 5 were used and deleted");
-        save(&file, &[record(9)], 2).unwrap();
+        save(&file, &[record(9)], 2, &[]).unwrap();
         assert_eq!(load_all(&file).next_id, 10, "never below an ID in the list");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn queues_are_saved_and_a_missing_queue_means_the_main_one() {
+        let dir = temp_dir();
+        let file = path(&dir);
+        let q = vec![Queue { id: 1, name: "Night".into() }];
+        let list = vec![Record { queue: Some(1), ..record(1) }, Record { queue: Some(7), ..record(2) }];
+        save(&file, &list, 3, &q).unwrap();
+        let back = load_all(&file);
+        assert_eq!(back.queues, q);
+        assert_eq!(back.downloads[0].queue, Some(1));
+        assert_eq!(back.downloads[1].queue, None, "queue 7 does not exist");
         fs::remove_dir_all(&dir).unwrap();
     }
 

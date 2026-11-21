@@ -5,9 +5,12 @@
 mod component;
 mod files;
 mod handoff;
+mod leftovers;
 mod manager;
 mod marker;
 mod open;
+mod picker;
+mod settings;
 mod store;
 mod video;
 
@@ -17,7 +20,9 @@ use tauri::window::Color;
 use tauri::{AppHandle, Emitter, Manager as _, RunEvent, State, Theme, WindowEvent};
 
 use manager::{Active, Events, Manager, ProbeView, Tick};
-use store::Record;
+use files::Category;
+use settings::Settings;
+use store::{Queue, Record};
 
 /// Window background before the page paints, matching `--background` in src/index.css.
 fn background(theme: Theme) -> Color {
@@ -39,6 +44,9 @@ impl Events for WindowEvents {
     }
     fn progress(&self, ticks: &[Tick]) {
         let _ = self.0.emit("downloads:progress", ticks);
+    }
+    fn queues(&self, queues: &[Queue]) {
+        let _ = self.0.emit("queues:changed", queues);
     }
 }
 
@@ -101,6 +109,79 @@ fn active_downloads(m: Downloads<'_>) -> Active {
     m.active()
 }
 
+#[tauri::command]
+fn get_settings(m: Downloads<'_>) -> Settings {
+    m.settings()
+}
+
+#[tauri::command]
+fn set_settings(m: Downloads<'_>, settings: Settings) -> Result<Settings, String> {
+    m.inner().set_settings(settings)
+}
+
+/// The save folder the Add dialog starts with for a category.
+#[tauri::command]
+fn category_folder(m: Downloads<'_>, category: Category) -> Option<String> {
+    m.folder_for(category)
+}
+
+/// The system folder picker; `None` when cancelled. `start` is only where it opens.
+#[tauri::command]
+async fn pick_folder(prompt: String, start: Option<String>) -> Result<Option<String>, String> {
+    picker::pick_folder(&prompt, start.as_deref().map(std::path::Path::new)).await
+}
+
+#[tauri::command]
+fn list_queues(m: Downloads<'_>) -> Vec<Queue> {
+    m.queues()
+}
+
+#[tauri::command]
+fn create_queue(m: Downloads<'_>, name: String) -> Result<Queue, String> {
+    m.create_queue(&name)
+}
+
+#[tauri::command]
+fn rename_queue(m: Downloads<'_>, id: u64, name: String) -> Result<(), String> {
+    m.rename_queue(id, &name)
+}
+
+#[tauri::command]
+fn delete_queue(m: Downloads<'_>, id: u64) -> Result<(), String> {
+    m.delete_queue(id)
+}
+
+#[tauri::command]
+fn move_to_queue(m: Downloads<'_>, id: u64, queue: Option<u64>) -> Result<(), String> {
+    m.move_to_queue(id, queue)
+}
+
+#[tauri::command]
+fn start_queue(m: Downloads<'_>, queue: Option<u64>) -> Result<(), String> {
+    m.inner().start_queue(queue)
+}
+
+/// Returns how many downloads kept running because they cannot be paused.
+#[tauri::command]
+fn stop_queue(m: Downloads<'_>, queue: Option<u64>) -> Result<usize, String> {
+    m.stop_queue(queue)
+}
+
+/// The last scan for leftover download files, or a new one (`rescan`, or none yet).
+#[tauri::command]
+async fn leftover_files(m: Downloads<'_>, rescan: bool) -> Result<Vec<leftovers::Item>, String> {
+    match m.leftovers() {
+        Some(items) if !rescan => Ok(items),
+        _ => Ok(m.scan_leftovers().await),
+    }
+}
+
+/// Removes the leftovers the last scan found; the interface asked the user first.
+#[tauri::command]
+async fn remove_leftover_files(m: Downloads<'_>) -> Result<(usize, usize), String> {
+    Ok(m.remove_leftovers().await)
+}
+
 /// "Update video component": installs the newest official yt-dlp, on request only.
 #[tauri::command]
 async fn update_video_component(m: Downloads<'_>) -> Result<component::Update, String> {
@@ -152,12 +233,8 @@ impl handoff::Handler for ExtensionRequests {
                     handoff::Reply::ok(None)
                 }
                 handoff::Request::Add { kind, url, .. } => {
-                    let folder = match self.0.path().download_dir() {
-                        Ok(d) => d.to_string_lossy().into_owned(),
-                        Err(_) => return handoff::Reply::err("add_failed", "No downloads folder."),
-                    };
                     let m = self.0.state::<Arc<Manager>>().inner().clone();
-                    m.add_from_extension(kind, &url, &folder).await
+                    m.add_from_extension(kind, &url).await
                 }
             }
         })
@@ -197,9 +274,20 @@ pub fn run() {
             if let Some(tools) = video_tools(app, &data) {
                 manager.set_video_tools(Arc::new(tools));
             }
+            if let Ok(d) = app.path().download_dir() {
+                manager.set_default_folder(d);
+            }
             // Reads only the range maps of unfinished downloads; nothing starts by itself.
             tauri::async_runtime::block_on(manager.restore());
             app.manage(manager.clone());
+            // Leftover download files: looked for after start-up, never removed by itself.
+            tauri::async_runtime::spawn({
+                let manager = manager.clone();
+                async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    manager.scan_leftovers().await;
+                }
+            });
             #[cfg(unix)]
             if let (Some(listener), Some(path)) = (listener, socket.clone()) {
                 let handler = Arc::new(ExtensionRequests(app.handle().clone()));
@@ -247,6 +335,19 @@ pub fn run() {
             open_folder,
             active_downloads,
             update_video_component,
+            get_settings,
+            set_settings,
+            category_folder,
+            pick_folder,
+            list_queues,
+            create_queue,
+            rename_queue,
+            delete_queue,
+            move_to_queue,
+            start_queue,
+            stop_queue,
+            leftover_files,
+            remove_leftover_files,
             quit,
         ])
         .build(tauri::generate_context!())

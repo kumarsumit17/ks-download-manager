@@ -11,13 +11,15 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ks_utility::file_name::sanitize_file_name;
-use engine::{CancelToken, DownloadOptions, DownloadOutcome, EngineError, ProbeInfo, Progress};
+use engine::{Adaptive, CancelToken, ConnectionBudget, DownloadOptions, DownloadOutcome, EngineError, HostLimits, ProbeInfo, Progress, SpeedLimit};
 use serde::Serialize;
 
 use crate::files::{self, Category};
+use crate::leftovers;
 use crate::marker;
+use crate::settings::{self, Settings};
 use crate::open;
-use crate::store::{self, Kind, Record, Status};
+use crate::store::{self, Kind, Queue, Record, Status};
 use crate::video::{Tools, VideoError, VideoInfo, VideoProgress};
 
 /// How often progress is sent to the interface (4 times a second).
@@ -35,13 +37,15 @@ const INTERRUPTED: &str = "Stopped before it finished, with nothing to resume fr
 /// `Record::error_code` for a failure that the "Update video component" action may fix.
 pub const VIDEO_OUTDATED: &str = "videoOutdated";
 /// Prefix of the hidden folder beside the destination where yt-dlp works.
-const VIDEO_TEMP_PREFIX: &str = ".ksdownload-video-";
+pub(crate) const VIDEO_TEMP_PREFIX: &str = ".ksdownload-video-";
 
 /// Where the manager sends updates; the app sends them to the window as events.
 pub trait Events: Send + Sync {
     fn changed(&self, record: &Record);
     fn removed(&self, id: u64);
     fn progress(&self, ticks: &[Tick]);
+    /// The user's queues changed (created, renamed, deleted).
+    fn queues(&self, queues: &[Queue]);
 }
 
 /// Live numbers for one running download.
@@ -126,6 +130,10 @@ struct Inner {
     records: Vec<Record>,
     running: HashMap<u64, Running>,
     next_id: u64,
+    /// In sidebar order; the main queue is not listed.
+    queues: Vec<Queue>,
+    /// Quitting: nothing more is started.
+    quitting: bool,
 }
 
 pub struct Manager {
@@ -134,6 +142,17 @@ pub struct Manager {
     events: Arc<dyn Events>,
     probes: Mutex<HashMap<String, (Instant, Lookup)>>,
     video: Mutex<Option<Arc<Tools>>>,
+    settings_file: PathBuf,
+    settings: Mutex<Settings>,
+    /// Shared by every download: the connection total, the speed limit, and what each host
+    /// worked with this session.
+    budget: ConnectionBudget,
+    speed: SpeedLimit,
+    hosts: HostLimits,
+    /// The system Downloads folder, for categories without a folder of their own.
+    default_folder: Mutex<Option<PathBuf>>,
+    /// The last scan for leftover download files; `None` before the first.
+    leftovers: Mutex<Option<Vec<leftovers::Found>>>,
 }
 
 fn now_ms() -> u64 {
@@ -227,21 +246,69 @@ fn sentence(e: &EngineError) -> String {
 }
 
 impl Manager {
-    /// Loads the saved list. Call [`Manager::restore`] before showing it.
+    /// Loads the saved list, and the settings from the same folder. Call
+    /// [`Manager::restore`] before showing the list.
     pub fn new(store_file: PathBuf, events: Arc<dyn Events>) -> Arc<Self> {
-        let store::Saved { downloads: records, next_id } = store::load_all(&store_file);
+        let store::Saved { downloads: records, next_id, queues } = store::load_all(&store_file);
+        let settings_file = store_file.with_file_name(settings::FILE_NAME);
+        let s = settings::load(&settings_file);
         Arc::new(Self {
-            inner: Mutex::new(Inner { records, running: HashMap::new(), next_id }),
+            inner: Mutex::new(Inner { records, running: HashMap::new(), next_id, queues, quitting: false }),
             store_file,
             events,
             probes: Mutex::new(HashMap::new()),
             video: Mutex::new(None),
+            settings_file,
+            budget: ConnectionBudget::new(s.total_connections),
+            speed: SpeedLimit::new(s.speed_limit),
+            hosts: HostLimits::default(),
+            settings: Mutex::new(s),
+            default_folder: Mutex::new(None),
+            leftovers: Mutex::new(None),
         })
     }
 
     /// The bundled programs for video downloads (set once at start-up).
     pub fn set_video_tools(&self, tools: Arc<Tools>) {
+        let s = self.settings();
+        tools.set_prefer_mp4(s.prefer_mp4);
+        tools.set_rate_limit(s.speed_limit);
         *self.video.lock().unwrap_or_else(|e| e.into_inner()) = Some(tools);
+    }
+
+    pub fn set_default_folder(&self, folder: PathBuf) {
+        *self.default_folder.lock().unwrap_or_else(|e| e.into_inner()) = Some(folder);
+    }
+
+    pub fn settings(&self) -> Settings {
+        self.settings.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// Checks, saves and applies new settings. Lower limits apply as running connections
+    /// and downloads end; nothing running is stopped.
+    pub fn set_settings(self: &Arc<Self>, new: Settings) -> Result<Settings, String> {
+        let new = new.checked();
+        for folder in new.folders.all() {
+            files::check_folder(folder)?;
+        }
+        settings::save(&self.settings_file, &new).map_err(|e| format!("Could not save the settings: {e}."))?;
+        self.budget.set(new.total_connections);
+        self.speed.set(new.speed_limit);
+        if let Some(tools) = self.video.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+            tools.set_prefer_mp4(new.prefer_mp4);
+            tools.set_rate_limit(new.speed_limit);
+        }
+        *self.settings.lock().unwrap_or_else(|e| e.into_inner()) = new.clone();
+        self.schedule();
+        Ok(new)
+    }
+
+    /// The save folder for a category: its own from Settings, else the system Downloads
+    /// folder.
+    pub fn folder_for(&self, category: Category) -> Option<String> {
+        self.settings().folders.get(category).map(str::to_owned).or_else(|| {
+            self.default_folder.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|p| p.to_string_lossy().into_owned())
+        })
     }
 
     pub fn video_tools(&self) -> Result<Arc<Tools>, String> {
@@ -255,7 +322,7 @@ impl Manager {
     /// Saves the list. Called with the lock held, so saves happen in order; the file is
     /// small and only written on status changes, never per progress tick.
     fn save(&self, inner: &Inner) {
-        if let Err(e) = store::save(&self.store_file, &inner.records, inner.next_id) {
+        if let Err(e) = store::save(&self.store_file, &inner.records, inner.next_id, &inner.queues) {
             eprintln!("could not save the download list: {e}");
         }
     }
@@ -285,7 +352,7 @@ impl Manager {
         for r in &mut inner.records {
             if r.kind == Kind::Video {
                 // yt-dlp continues from its .part files in the temp folder, if they are there.
-                if matches!(r.status, Status::Downloading | Status::Paused | Status::Interrupted) {
+                if matches!(r.status, Status::Downloading | Status::Waiting | Status::Paused | Status::Interrupted) {
                     let temp = own_video_temp(r);
                     r.received = temp.as_deref().map_or(0, temp_bytes);
                     r.status = if temp.is_some() { Status::Paused } else { Status::Queued };
@@ -297,14 +364,16 @@ impl Manager {
             let Some(saved) = found.get(&r.id) else { continue };
             match (r.status, saved) {
                 (Status::Queued | Status::Finished, _) => {}
-                (Status::Downloading | Status::Paused | Status::Interrupted, Some(s)) => {
+                // Was waiting for a slot and never got bytes: nothing starts by itself.
+                (Status::Waiting, None) if r.received == 0 => r.status = Status::Queued,
+                (Status::Downloading | Status::Waiting | Status::Paused | Status::Interrupted, Some(s)) => {
                     r.status = Status::Paused;
                     r.received = s.done_bytes();
                     r.size = Some(s.size);
                     r.resumable = true;
                     r.error = None;
                 }
-                (Status::Downloading | Status::Paused | Status::Interrupted, None) => {
+                (Status::Downloading | Status::Waiting | Status::Paused | Status::Interrupted, None) => {
                     r.status = Status::Interrupted;
                     r.received = 0;
                     r.error = Some(INTERRUPTED.into());
@@ -434,6 +503,7 @@ impl Manager {
                 error: None,
                 temp: None,
                 added_at: now_ms(),
+                queue: None,
             };
             inner.next_id += 1;
             inner.records.push(record.clone());
@@ -471,6 +541,7 @@ impl Manager {
                 error_code: None,
                 temp: None,
                 added_at: now_ms(),
+                queue: None,
             };
             inner.next_id += 1;
             inner.records.push(record.clone());
@@ -486,8 +557,9 @@ impl Manager {
 
     /// A download handed over by the Chrome extension. The link is checked against what
     /// the extension said it is: an image must be an image file, a browser download must be
-    /// a file (not a page), a video must be a video page. Started at once, in `folder`.
-    pub async fn add_from_extension(self: &Arc<Self>, kind: crate::handoff::AddKind, url: &str, folder: &str) -> crate::handoff::Reply {
+    /// a file (not a page), a video must be a video page. Started at once (or waits its
+    /// turn), in its category's folder.
+    pub async fn add_from_extension(self: &Arc<Self>, kind: crate::handoff::AddKind, url: &str) -> crate::handoff::Reply {
         use crate::handoff::{AddKind, Reply};
         let url = url.trim();
         let found = match self.lookup_cached(url).await {
@@ -508,14 +580,79 @@ impl Manager {
                 _ => "This link is not a file.",
             });
         }
-        match self.add(url, "", folder, true).await {
+        let category = match &found {
+            Lookup::Video(_) => Category::Video,
+            Lookup::File(info) => files::category(&files::name_with_type(&info.file_name, info.content_type.as_deref())),
+        };
+        let Some(folder) = self.folder_for(category) else {
+            return Reply::err("add_failed", "No downloads folder.");
+        };
+        match self.add(url, "", &folder, true).await {
             Ok(r) => Reply::ok(Some(r.id)),
             Err(e) => Reply::err("add_failed", e),
         }
     }
 
-    /// Starts or resumes a queued, paused, failed or interrupted download.
+    /// A queued, paused, failed or interrupted download wants to run: it is marked
+    /// Waiting and starts as soon as a slot is free ([`Manager::schedule`]).
     pub fn resume(self: &Arc<Self>, id: u64) -> Result<(), String> {
+        let changed = {
+            let mut inner = self.lock();
+            if inner.running.contains_key(&id) {
+                return Ok(());
+            }
+            let r = inner.records.iter_mut().find(|r| r.id == id).ok_or("No such download.")?;
+            if r.status == Status::Finished {
+                return Err("This download has already finished.".into());
+            }
+            let changed = (r.status != Status::Waiting).then(|| {
+                r.status = Status::Waiting;
+                r.error = None;
+                r.error_code = None;
+                r.clone()
+            });
+            if changed.is_some() {
+                self.save(&inner);
+            }
+            changed
+        };
+        if let Some(r) = changed {
+            self.events.changed(&r);
+        }
+        self.schedule();
+        Ok(())
+    }
+
+    /// Starts waiting downloads while fewer than the active-download cap run: the main
+    /// queue first, then the queues in sidebar order, and within a queue by date added.
+    /// Videos count toward the cap like files.
+    fn schedule(self: &Arc<Self>) {
+        let max = self.settings().max_active;
+        loop {
+            let next = {
+                let inner = self.lock();
+                if inner.quitting || inner.running.len() >= max {
+                    return;
+                }
+                let order = |q: Option<u64>| {
+                    q.map_or(0, |q| inner.queues.iter().position(|x| x.id == q).map_or(usize::MAX, |i| i + 1))
+                };
+                inner
+                    .records
+                    .iter()
+                    .filter(|r| r.status == Status::Waiting && !inner.running.contains_key(&r.id))
+                    .min_by_key(|r| (order(r.queue), r.added_at, r.id))
+                    .map(|r| r.id)
+            };
+            let Some(id) = next else { return };
+            if self.start(id).is_err() {
+                return;
+            }
+        }
+    }
+
+    /// Starts a download now.
+    fn start(self: &Arc<Self>, id: u64) -> Result<(), String> {
         let (cancel, progress, record) = {
             let mut inner = self.lock();
             if inner.running.contains_key(&id) {
@@ -559,6 +696,7 @@ impl Manager {
                 Source::Video(progress) => me.run_video(&record, cancel, progress).await,
             };
             me.finish(id, result).await;
+            me.schedule();
         });
         Ok(())
     }
@@ -583,12 +721,32 @@ impl Manager {
             return Err(RunError::Cancelled);
         }
         let part = files::part(&path);
-        let options = DownloadOptions { cancel, progress, ..DownloadOptions::default() };
-        let outcome = engine::download(&record.url, &part, options).await.map_err(|e| match e {
+        // Names this download as the owner of the `.ksdownload` file, for the leftover-files
+        // cleanup (a range map names the URL only, and not every download has one).
+        let owner = leftovers::owner_file(&part);
+        if let Err(e) = marker::write(&owner, &marker::Marker::new(record.id, &record.url)) {
+            return Err(RunError::Failed(format!("Could not write in the save folder: {e}.")));
+        }
+        let s = self.settings();
+        let options = DownloadOptions {
+            cancel,
+            progress,
+            connections: s.per_download,
+            adaptive: Some(Adaptive { hosts: self.hosts.clone(), ..Adaptive::default() }),
+            budget: Some(self.budget.clone()),
+            speed_limit: Some(self.speed.clone()),
+            ..DownloadOptions::default()
+        };
+        let result = engine::download(&record.url, &part, options).await;
+        if result.is_err() && !part.exists() {
+            let _ = std::fs::remove_file(&owner); // the engine removed a worthless partial file
+        }
+        let outcome = result.map_err(|e| match e {
             EngineError::Cancelled => RunError::Cancelled,
             e => RunError::Failed(sentence(&e)),
         })?;
         self.complete(record.id, &path, &part)?;
+        let _ = std::fs::remove_file(&owner);
         Ok(outcome)
     }
 
@@ -788,7 +946,17 @@ impl Manager {
     /// such a download deletes its partial file, which would lose data without a word.
     pub fn pause(&self, id: u64) -> Result<(), String> {
         let mut inner = self.lock();
-        let resumable = inner.records.iter().find(|r| r.id == id).ok_or("No such download.")?.resumable;
+        let r = inner.records.iter_mut().find(|r| r.id == id).ok_or("No such download.")?;
+        if r.status == Status::Waiting {
+            // Not started yet: it stops waiting, keeping what it has.
+            r.status = if r.received > 0 { Status::Paused } else { Status::Queued };
+            let r = r.clone();
+            self.save(&inner);
+            drop(inner);
+            self.events.changed(&r);
+            return Ok(());
+        }
+        let resumable = r.resumable;
         if !resumable {
             return Err(NOT_RESUMABLE.into());
         }
@@ -852,6 +1020,7 @@ impl Manager {
     pub async fn quit(&self) {
         {
             let mut inner = self.lock();
+            inner.quitting = true;
             for run in inner.running.values_mut() {
                 run.stop.get_or_insert(Stop::Quit);
                 run.cancel.cancel();
@@ -861,6 +1030,169 @@ impl Manager {
         while !self.lock().running.is_empty() && Instant::now() < deadline {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
+    }
+
+    // ---- Queues ------------------------------------------------------------------------
+
+    pub fn queues(&self) -> Vec<Queue> {
+        self.lock().queues.clone()
+    }
+
+    fn queues_changed(&self, inner: MutexGuard<'_, Inner>) {
+        self.save(&inner);
+        let queues = inner.queues.clone();
+        drop(inner);
+        self.events.queues(&queues);
+    }
+
+    pub fn create_queue(&self, name: &str) -> Result<Queue, String> {
+        let name = queue_name(name)?;
+        let mut inner = self.lock();
+        if inner.queues.iter().any(|q| q.name.eq_ignore_ascii_case(&name)) {
+            return Err("A queue with this name exists.".into());
+        }
+        let id = inner.queues.iter().map(|q| q.id).max().unwrap_or(0) + 1;
+        let queue = Queue { id, name };
+        inner.queues.push(queue.clone());
+        self.queues_changed(inner);
+        Ok(queue)
+    }
+
+    pub fn rename_queue(&self, id: u64, name: &str) -> Result<(), String> {
+        let name = queue_name(name)?;
+        let mut inner = self.lock();
+        if inner.queues.iter().any(|q| q.id != id && q.name.eq_ignore_ascii_case(&name)) {
+            return Err("A queue with this name exists.".into());
+        }
+        inner.queues.iter_mut().find(|q| q.id == id).ok_or("No such queue.")?.name = name;
+        self.queues_changed(inner);
+        Ok(())
+    }
+
+    /// Deletes a queue; its downloads move to the main queue (nothing is stopped).
+    pub fn delete_queue(&self, id: u64) -> Result<(), String> {
+        let mut inner = self.lock();
+        let i = inner.queues.iter().position(|q| q.id == id).ok_or("No such queue.")?;
+        inner.queues.remove(i);
+        let moved: Vec<Record> = inner
+            .records
+            .iter_mut()
+            .filter(|r| r.queue == Some(id))
+            .map(|r| {
+                r.queue = None;
+                r.clone()
+            })
+            .collect();
+        self.queues_changed(inner);
+        for r in &moved {
+            self.events.changed(r);
+        }
+        Ok(())
+    }
+
+    /// Moves a download to a queue (`None`: the main queue).
+    pub fn move_to_queue(&self, id: u64, queue: Option<u64>) -> Result<(), String> {
+        let mut inner = self.lock();
+        if queue.is_some_and(|q| !inner.queues.iter().any(|x| x.id == q)) {
+            return Err("No such queue.".into());
+        }
+        let r = inner.records.iter_mut().find(|r| r.id == id).ok_or("No such download.")?;
+        r.queue = queue;
+        let r = r.clone();
+        self.save(&inner);
+        drop(inner);
+        self.events.changed(&r);
+        Ok(())
+    }
+
+    /// Every unfinished download of the queue that is not running wants to run.
+    pub fn start_queue(self: &Arc<Self>, queue: Option<u64>) -> Result<(), String> {
+        let ids: Vec<u64> = {
+            let inner = self.lock();
+            if queue.is_some_and(|q| !inner.queues.iter().any(|x| x.id == q)) {
+                return Err("No such queue.".into());
+            }
+            inner
+                .records
+                .iter()
+                .filter(|r| r.queue == queue && matches!(r.status, Status::Queued | Status::Paused | Status::Failed | Status::Interrupted))
+                .map(|r| r.id)
+                .collect()
+        };
+        for id in ids {
+            self.resume(id)?;
+        }
+        Ok(())
+    }
+
+    /// Pauses the queue's running downloads and stops its waiting ones. Downloads that
+    /// cannot be paused (no resume support) keep running; their number is returned.
+    pub fn stop_queue(&self, queue: Option<u64>) -> Result<usize, String> {
+        let ids: Vec<(u64, Status, bool)> = {
+            let inner = self.lock();
+            if queue.is_some_and(|q| !inner.queues.iter().any(|x| x.id == q)) {
+                return Err("No such queue.".into());
+            }
+            inner.records.iter().filter(|r| r.queue == queue).map(|r| (r.id, r.status, r.resumable)).collect()
+        };
+        let mut kept = 0;
+        for (id, status, resumable) in ids {
+            match status {
+                Status::Waiting => self.pause(id)?,
+                Status::Downloading if resumable => self.pause(id)?,
+                Status::Downloading => kept += 1,
+                _ => {}
+            }
+        }
+        Ok(kept)
+    }
+
+    // ---- Leftover download files ---------------------------------------------------------
+
+    /// The only folders looked in: the default save folder, the folders of downloads in
+    /// the list, and the category folders.
+    fn known_folders(&self) -> Vec<PathBuf> {
+        let mut out: Vec<PathBuf> = Vec::new();
+        let mut add = |p: PathBuf| {
+            if !out.contains(&p) {
+                out.push(p);
+            }
+        };
+        if let Some(d) = self.default_folder.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+            add(d);
+        }
+        for f in self.settings().folders.all() {
+            add(PathBuf::from(f));
+        }
+        for r in self.lock().records.iter() {
+            if let Some(parent) = r.path.parent() {
+                add(parent.to_path_buf());
+            }
+        }
+        out
+    }
+
+    /// Looks for leftovers now (run off the critical path at start-up, and on request).
+    pub async fn scan_leftovers(&self) -> Vec<leftovers::Item> {
+        let folders = self.known_folders();
+        let found = leftovers::scan(&folders, &self.list()).await;
+        let items = found.iter().map(leftovers::Item::from).collect();
+        *self.leftovers.lock().unwrap_or_else(|e| e.into_inner()) = Some(found);
+        items
+    }
+
+    /// The last scan's result, if there was one.
+    pub fn leftovers(&self) -> Option<Vec<leftovers::Item>> {
+        self.leftovers.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|f| f.iter().map(leftovers::Item::from).collect())
+    }
+
+    /// Removes what the last scan found (after the user confirmed), each item re-checked
+    /// at this moment, then scans again. Returns how many were removed and kept.
+    pub async fn remove_leftovers(&self) -> (usize, usize) {
+        let found = self.leftovers.lock().unwrap_or_else(|e| e.into_inner()).take().unwrap_or_default();
+        let (removed, kept) = leftovers::remove(&found, &self.list()).await;
+        self.scan_leftovers().await;
+        (removed, kept.len())
     }
 
     /// Reads every running download's progress and sends one batched event.
@@ -943,7 +1275,12 @@ async fn own_partial(url: &str, path: &Path) -> Option<engine::SavedState> {
 /// Deletes the `.ksdownload` file for final name `path` and its range map, if there.
 /// Only downloads in the list use that name, so it is never a file of the user's.
 async fn discard_partial(path: &Path) {
-    let _ = engine::discard(&files::part(path)).await;
+    let part = files::part(path);
+    let _ = engine::discard(&part).await;
+    let owner = leftovers::owner_file(&part);
+    if std::fs::symlink_metadata(&owner).is_ok_and(|m| m.is_file()) {
+        let _ = std::fs::remove_file(owner);
+    }
 }
 
 /// Cleans up after a download leaves the list (it is not running any more).
@@ -973,6 +1310,15 @@ async fn remove_files(record: &Record, delete_file: bool) {
             }
         }
     }
+}
+
+/// A queue name: trimmed, 1 to 60 characters.
+fn queue_name(name: &str) -> Result<String, String> {
+    let name = name.trim();
+    if name.is_empty() || name.chars().count() > 60 {
+        return Err("A queue name needs 1 to 60 characters.".into());
+    }
+    Ok(name.to_owned())
 }
 
 /// "Title.mp4" from a video's title and extension, made safe as a file name.
@@ -1015,6 +1361,9 @@ mod tests {
         fn progress(&self, ticks: &[Tick]) {
             self.0.lock().unwrap().push(format!("progress {}", ticks.len()));
         }
+        fn queues(&self, queues: &[Queue]) {
+            self.0.lock().unwrap().push(format!("queues {}", queues.len()));
+        }
     }
 
     fn temp_dir() -> PathBuf {
@@ -1042,6 +1391,7 @@ mod tests {
             resumable: true,
             error: None,
             added_at: 0,
+            queue: None,
         }
     }
 
@@ -1062,13 +1412,155 @@ mod tests {
 
     fn manager(dir: &Path, records: &[Record]) -> (Arc<Manager>, Arc<Log>) {
         let file = store::path(&dir.join("data"));
-        store::save(&file, records, records.iter().map(|r| r.id).max().unwrap_or(0) + 1).unwrap();
+        store::save(&file, records, records.iter().map(|r| r.id).max().unwrap_or(0) + 1, &[]).unwrap();
         let log = Arc::new(Log::default());
         (Manager::new(file, log.clone()), log)
     }
 
     fn get(m: &Manager, id: u64) -> Record {
         m.list().into_iter().find(|r| r.id == id).unwrap()
+    }
+
+    /// A link that fails at once without any network: nothing listens on port 9 here.
+    fn refused(r: Record) -> Record {
+        Record { url: format!("http://127.0.0.1:9/{}", r.name), ..r }
+    }
+
+    fn with_settings(dir: &Path, s: Settings) {
+        settings::save(&dir.join("data").join(settings::FILE_NAME), &s).unwrap();
+    }
+
+    async fn wait_until(m: &Manager, done: impl Fn(&[Record]) -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !done(&m.list()) {
+            assert!(Instant::now() < deadline, "timed out: {:?}", m.list().iter().map(|r| (r.id, r.status)).collect::<Vec<_>>());
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn waiting_downloads_start_in_queue_order_within_the_cap() {
+        let dir = temp_dir();
+        with_settings(&dir, Settings { max_active: 1, ..Settings::default() });
+        let records = [
+            Record { queue: Some(1), added_at: 1, ..refused(record(1, &dir, "a.zip", Status::Queued)) },
+            Record { added_at: 3, ..refused(record(2, &dir, "b.zip", Status::Queued)) },
+            Record { added_at: 2, ..refused(record(3, &dir, "c.zip", Status::Queued)) },
+        ];
+        let file = store::path(&dir.join("data"));
+        store::save(&file, &records, 4, &[Queue { id: 1, name: "Later".into() }]).unwrap();
+        let log = Arc::new(Log::default());
+        let m = Manager::new(file, log.clone());
+        for id in [1, 2, 3] {
+            m.resume(id).unwrap();
+            let running = m.list().iter().filter(|r| r.status == Status::Downloading).count();
+            assert!(running <= 1, "never more than the cap");
+        }
+        wait_until(&m, |l| l.iter().all(|r| r.status == Status::Failed)).await;
+        let mut started: Vec<String> = log.0.lock().unwrap().iter().filter(|e| e.ends_with("Downloading")).cloned().collect();
+        started.dedup(); // a start and the probe result each send the record
+        // 1 started at once (it was the only one waiting); then the main queue by date
+        // added (3 before 2).
+        assert_eq!(started, ["changed 1 Downloading", "changed 3 Downloading", "changed 2 Downloading"]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_waiting_download_stops_waiting_when_paused_and_after_a_restart() {
+        let dir = temp_dir();
+        let fresh = Record { received: 0, ..record(1, &dir, "a.zip", Status::Waiting) };
+        let begun = record(2, &dir, "b.zip", Status::Waiting);
+        partial(&begun);
+        let (m, _) = manager(&dir, &[fresh, begun, record(3, &dir, "c.zip", Status::Waiting)]);
+        m.restore().await;
+        assert_eq!(get(&m, 1).status, Status::Queued, "never started: nothing starts by itself");
+        assert_eq!(get(&m, 2).status, Status::Paused, "has a matching range map");
+        assert_eq!(get(&m, 3).status, Status::Interrupted, "had bytes, but no map");
+
+        let mut r = get(&m, 2);
+        r.status = Status::Waiting;
+        m.lock().records[1] = r;
+        m.pause(2).unwrap();
+        assert_eq!(get(&m, 2).status, Status::Paused);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn queues_are_created_renamed_and_deleted_into_the_main_queue() {
+        let dir = temp_dir();
+        let (m, log) = manager(&dir, &[record(1, &dir, "a.zip", Status::Paused)]);
+        let q = m.create_queue("  Night  ").unwrap();
+        assert_eq!(q.name, "Night");
+        assert!(m.create_queue("night").is_err(), "names are unique");
+        assert!(m.create_queue(" ").is_err());
+        m.rename_queue(q.id, "Weekend").unwrap();
+        m.move_to_queue(1, Some(q.id)).unwrap();
+        assert!(m.move_to_queue(1, Some(99)).is_err());
+        assert_eq!(get(&m, 1).queue, Some(q.id));
+        m.delete_queue(q.id).unwrap();
+        assert_eq!(get(&m, 1).queue, None, "moved to the main queue");
+        assert!(m.queues().is_empty());
+        // Saved with the list.
+        let saved = store::load_all(&store::path(&dir.join("data")));
+        assert!(saved.queues.is_empty() && saved.downloads[0].queue.is_none());
+        assert!(log.0.lock().unwrap().iter().any(|e| e == "queues 1"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn stopping_a_queue_ends_its_waiting() {
+        let dir = temp_dir();
+        let (m, _) = manager(&dir, &[
+            Record { queue: None, ..record(1, &dir, "a.zip", Status::Waiting) },
+            Record { received: 0, ..record(2, &dir, "b.zip", Status::Waiting) },
+        ]);
+        assert_eq!(m.stop_queue(None).unwrap(), 0);
+        assert_eq!((get(&m, 1).status, get(&m, 2).status), (Status::Paused, Status::Queued));
+        assert!(m.stop_queue(Some(5)).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn settings_are_checked_saved_and_applied() {
+        let dir = temp_dir();
+        let (m, _) = manager(&dir, &[]);
+        let bad = Settings { folders: settings::Folders { video: Some("/no/such/folder".into()), ..Default::default() }, ..Settings::default() };
+        assert!(m.set_settings(bad).is_err(), "a category folder must exist");
+        let s = Settings {
+            max_active: 0,
+            speed_limit: Some(2048),
+            folders: settings::Folders { images: Some(dir.to_string_lossy().into_owned()), ..Default::default() },
+            ..Settings::default()
+        };
+        let saved = m.set_settings(s).unwrap();
+        assert_eq!(saved.max_active, 1);
+        assert_eq!(m.folder_for(Category::Images).as_deref(), Some(dir.to_str().unwrap()));
+        m.set_default_folder(PathBuf::from("/tmp"));
+        assert_eq!(m.folder_for(Category::Audio).as_deref(), Some("/tmp"));
+        assert_eq!(m.speed.get(), Some(2048));
+        assert_eq!(settings::load(&dir.join("data").join(settings::FILE_NAME)), saved);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn leftovers_are_looked_for_only_in_known_folders_and_never_include_the_list() {
+        let dir = temp_dir();
+        let other = temp_dir(); // not known to the app
+        let mine = record(1, &dir, "a.zip", Status::Paused);
+        partial(&mine);
+        let orphan = record(2, &dir, "b.zip", Status::Paused);
+        partial(&orphan);
+        let unknown = record(3, &other, "c.zip", Status::Paused);
+        partial(&unknown);
+        let (m, _) = manager(&dir, std::slice::from_ref(&mine));
+        let items = m.scan_leftovers().await;
+        assert_eq!(items.len(), 1, "{items:?}");
+        assert_eq!(items[0].path, files::part(&orphan.path).to_string_lossy());
+        assert_eq!(m.remove_leftovers().await, (1, 0));
+        assert!(gone(&orphan.path), "removed with its map");
+        assert!(!gone(&mine.path) && !gone(&unknown.path), "the list's and unknown folders' files stay");
+        std::fs::remove_dir_all(&dir).unwrap();
+        std::fs::remove_dir_all(&other).unwrap();
     }
 
     #[tokio::test]
