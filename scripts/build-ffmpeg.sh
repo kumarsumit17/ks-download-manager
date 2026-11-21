@@ -94,7 +94,7 @@ for flag in GPL NONFREE; do
   grep -q "^#define CONFIG_$flag 0$" config.h || { echo "CONFIG_$flag is not 0" >&2; exit 1; }
 done
 
-make -j"$(jobs)" ffmpeg ffprobe >/dev/null
+make -j"$(jobs)" "ffmpeg$EXE" "ffprobe$EXE" >/dev/null
 cp "ffmpeg$EXE" "ffprobe$EXE" "$OUT/"
 $STRIP "$OUT/ffmpeg$EXE" "$OUT/ffprobe$EXE"
 # Licence texts shipped with the binaries.
