@@ -62,6 +62,10 @@ pub struct Record {
     /// What the interface can offer for the error, e.g. `videoOutdated` (an update button).
     #[serde(default)]
     pub error_code: Option<String>,
+    /// A video's temp folder name beside the destination, when it is not the default
+    /// `.ksdownload-video-<id>` (that one was there already and belonged to something else).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temp: Option<String>,
     /// Milliseconds since the Unix epoch.
     pub added_at: u64,
 }
@@ -69,7 +73,17 @@ pub struct Record {
 #[derive(Serialize, Deserialize)]
 struct OnDisk {
     version: u32,
+    /// The ID the next download gets. Kept so a deleted download's ID is never reused
+    /// (its leftover files, if any, keep naming only it).
+    #[serde(default)]
+    next_id: Option<u64>,
     downloads: Vec<Record>,
+}
+
+/// The saved list and the next free ID (never below every ID in the list).
+pub struct Saved {
+    pub downloads: Vec<Record>,
+    pub next_id: u64,
 }
 
 pub fn path(data_dir: &Path) -> PathBuf {
@@ -78,15 +92,23 @@ pub fn path(data_dir: &Path) -> PathBuf {
 
 /// The saved list. A missing file is an empty list; a damaged or newer one is set aside
 /// as `downloads.json.bad` (so it is not overwritten) and the list starts empty.
+#[cfg(test)]
 pub fn load(file: &Path) -> Vec<Record> {
+    load_all(file).downloads
+}
+
+pub fn load_all(file: &Path) -> Saved {
     let text = match fs::read_to_string(file) {
         Ok(t) => t,
-        Err(e) if e.kind() == ErrorKind::NotFound => return Vec::new(),
-        Err(_) => return set_aside(file),
+        Err(e) if e.kind() == ErrorKind::NotFound => return Saved { downloads: Vec::new(), next_id: 1 },
+        Err(_) => return Saved { downloads: set_aside(file), next_id: 1 },
     };
     match serde_json::from_str::<OnDisk>(&text) {
-        Ok(d) if d.version == VERSION => d.downloads,
-        _ => set_aside(file),
+        Ok(d) if d.version == VERSION => {
+            let after_list = d.downloads.iter().map(|r| r.id).max().unwrap_or(0) + 1;
+            Saved { next_id: d.next_id.unwrap_or(0).max(after_list), downloads: d.downloads }
+        }
+        _ => Saved { downloads: set_aside(file), next_id: 1 },
     }
 }
 
@@ -97,11 +119,11 @@ fn set_aside(file: &Path) -> Vec<Record> {
 
 /// Replaces the saved list atomically: write `downloads.json.tmp`, sync it, rename it
 /// over `downloads.json`, then sync the folder so the rename itself is durable.
-pub fn save(file: &Path, downloads: &[Record]) -> std::io::Result<()> {
+pub fn save(file: &Path, downloads: &[Record], next_id: u64) -> std::io::Result<()> {
     if let Some(dir) = file.parent() {
         fs::create_dir_all(dir)?;
     }
-    let json = serde_json::to_vec_pretty(&OnDisk { version: VERSION, downloads: downloads.to_vec() })
+    let json = serde_json::to_vec_pretty(&OnDisk { version: VERSION, next_id: Some(next_id), downloads: downloads.to_vec() })
         .map_err(std::io::Error::other)?;
     // One writer: every save runs under the manager's lock.
     write_atomic(file, &json)
@@ -128,6 +150,7 @@ mod tests {
             id,
             kind: Kind::File,
             error_code: None,
+            temp: None,
             url: format!("https://example.com/{id}.zip"),
             name: format!("{id}.zip"),
             path: PathBuf::from(format!("/tmp/{id}.zip")),
@@ -147,11 +170,22 @@ mod tests {
         let file = path(&dir);
         assert!(load(&file).is_empty(), "no file yet");
         let list = vec![record(1), Record { status: Status::Failed, error: Some("x".into()), size: None, ..record(2) }];
-        save(&file, &list).unwrap();
+        save(&file, &list, 3).unwrap();
         assert_eq!(load(&file), list);
         assert!(!with_suffix(&file, ".tmp").exists(), "temp file renamed away");
-        save(&file, &list[..1]).unwrap();
+        save(&file, &list[..1], 3).unwrap();
         assert_eq!(load(&file), list[..1]);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_next_id_survives_deleting_the_newest_download() {
+        let dir = temp_dir();
+        let file = path(&dir);
+        save(&file, &[record(1)], 6).unwrap();
+        assert_eq!(load_all(&file).next_id, 6, "IDs 2 to 5 were used and deleted");
+        save(&file, &[record(9)], 2).unwrap();
+        assert_eq!(load_all(&file).next_id, 10, "never below an ID in the list");
         fs::remove_dir_all(&dir).unwrap();
     }
 

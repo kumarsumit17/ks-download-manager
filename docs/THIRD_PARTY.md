@@ -69,6 +69,22 @@ Separate programs shipped inside the app, run as child processes, never linked. 
 |---|---|---|---|---|
 | yt-dlp | 2026.10.26 (`yt-dlp_macos.zip`, unpacked build, universal) | Unlicense; bundled Python 3.14 (PSF-2.0) and libraries listed in its `_internal/THIRD_PARTY_LICENSES.txt` (shipped) | Official GitHub release, SHA-256 `20d98fa6…3ef1` from the release's `SHA2-256SUMS`, unmodified | Reading video sites and fetching the streams |
 | ffmpeg, ffprobe | 9.1 | LGPL-2.1-or-later (no GPL or non-free parts; zlib and Secure Transport from the system) | Built by `scripts/build-ffmpeg.sh` from the ffmpeg.org tarball, SHA-256 `1a4d394a…2433`; licence texts and source reference in `licenses/` | Joining video and audio, container fixes |
-| Deno | 2.9.8 | MIT; V8 (BSD-3-Clause), ICU (Unicode) and the Rust crates listed in `licenses/deno-THIRD-PARTY.txt` | Official GitHub release for the target architecture, SHA-256 pinned per architecture | The JavaScript runtime yt-dlp needs for YouTube |
+| Deno | 2.9.8 | MIT; V8 (BSD-3-Clause), ICU (Unicode) and 1,048 Rust crates, with their licence texts in `licenses/deno-THIRD-PARTY.txt` (made by `scripts/deno-notices.mjs`) | Official GitHub release for the target architecture, SHA-256 pinned per architecture | The JavaScript runtime yt-dlp needs for YouTube |
+
+### Publisher signatures (checked 2026-11-21 with GnuPG 2, installed as a development tool)
+
+| What | Signature | Signing key (fingerprint) | Result |
+|---|---|---|---|
+| yt-dlp 2026.10.26 `SHA2-256SUMS` (lists our pinned `yt-dlp_macos.zip` hash `20d98fa6…3ef1`) | `SHA2-256SUMS.sig` from the release | `AC0C BBE6 848D 6A87 3464 AF4E 57CF 6593 3B5A 7581`, "yt-dlp signing key", from `public.key` in the yt-dlp repository at that tag | Good signature |
+| ffmpeg 9.1 tarball (`1a4d394a…2433`) | `ffmpeg-9.1.tar.xz.asc` from ffmpeg.org | `FCF9 86EA 15E6 E293 A564 4F10 B432 2F04 D676 58D8`, "FFmpeg release signing key", from https://ffmpeg.org/ffmpeg-devel.asc | Good signature |
+| Deno 2.9.8 | none published (only `.sha256sum` files next to each zip) | — | Hash only; Deno's macOS binary is also signed and notarised by Deno Land (Team ID `2H4KBF436B`) before we re-sign it |
+
+The keys were fetched from the publishers' own sites (trust on first use); GnuPG reports them as "not certified", which only means nobody in our keyring vouches for them. Compare the fingerprints above when repeating the check.
+
+**When a pin moves** (in a scratch folder, with its own keyring: `export GNUPGHOME=$(mktemp -d)`):
+1. yt-dlp: download `SHA2-256SUMS` and `SHA2-256SUMS.sig` from the new release and `public.key` from the repository at that tag; `gpg --import public.key`; `gpg --verify SHA2-256SUMS.sig SHA2-256SUMS` must say "Good signature" from the fingerprint above (or a key the yt-dlp maintainers announce); copy the `yt-dlp_macos.zip` line into `src-tauri/sidecars.json`.
+2. ffmpeg: download the tarball and its `.asc`, `gpg --import ffmpeg-devel.asc`, `gpg --verify ffmpeg-<v>.tar.xz.asc ffmpeg-<v>.tar.xz`; then put `shasum -a 256` of the tarball in `sidecars.json`.
+3. Deno: take the hash from the release's `.sha256sum` files; rerun `scripts/sidecars.mjs` (it regenerates Deno's licence file).
+4. Record the new versions, fingerprints and results in this table.
 
 Size: about 252 MB for the arm64 app (yt-dlp folder 120 MB, Deno 80 MB, ffmpeg and ffprobe 45 MB).

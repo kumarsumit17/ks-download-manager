@@ -410,6 +410,10 @@ pub enum VideoError {
     /// The site changed and this yt-dlp cannot read it any more.
     Outdated(String),
     SignIn,
+    /// The site temporarily blocks this network ("confirm you're not a bot").
+    Blocked,
+    /// The site refused the stream (HTTP 403) without saying why.
+    Forbidden(String),
     Unavailable,
     Drm,
     Live,
@@ -431,12 +435,16 @@ pub fn classify(stderr: &str) -> VideoError {
         VideoError::NotAVideoSite
     } else if has(&["drm"]) {
         VideoError::Drm
-    } else if has(&["sign in", "log in", "login required", "private video", "members-only", "confirm your age", "not a bot"]) {
+    } else if has(&["not a bot", "unusual traffic", "too many requests", "http error 429"]) {
+        VideoError::Blocked
+    } else if has(&["sign in", "log in", "login required", "private video", "members-only", "confirm your age"]) {
         VideoError::SignIn
     } else if has(&["is live", "live event", "premieres in", "live stream"]) {
         VideoError::Live
-    } else if has(&["unable to extract", "nsig", "signature extraction", "failed to extract", "player response", "http error 403", "requested format is not available", "unable to download api page", "please report this issue"]) {
+    } else if has(&["unable to extract", "nsig", "signature extraction", "failed to extract", "player response", "requested format is not available", "unable to download api page", "please report this issue"]) {
         VideoError::Outdated(short(&line))
+    } else if has(&["http error 403"]) {
+        VideoError::Forbidden(short(&line))
     } else if has(&["video unavailable", "this video is unavailable", "has been removed", "not available in your country", "no longer available", "http error 404"]) {
         VideoError::Unavailable
     } else if line.is_empty() {
@@ -564,10 +572,11 @@ mod tests {
         assert_eq!(e("No suitable extractor found for URL https://example.com/"), VideoError::NotAVideoSite);
         assert_eq!(e("Unsupported URL: https://example.com/"), VideoError::NotAVideoSite);
         assert_eq!(e("[youtube] x: This video is DRM protected"), VideoError::Drm);
-        assert_eq!(e("[youtube] x: Sign in to confirm you're not a bot"), VideoError::SignIn);
+        assert_eq!(e("[youtube] x: Sign in to confirm you're not a bot"), VideoError::Blocked);
+        assert_eq!(e("[youtube] x: Sign in to confirm your age"), VideoError::SignIn);
         assert_eq!(e("[youtube] x: This video is unavailable"), VideoError::Unavailable);
         assert!(matches!(e("[youtube] x: Unable to extract nsig function"), VideoError::Outdated(_)));
-        assert!(matches!(e("unable to download video data: HTTP Error 403: Forbidden"), VideoError::Outdated(_)));
+        assert!(matches!(e("unable to download video data: HTTP Error 403: Forbidden"), VideoError::Forbidden(_)));
         assert!(matches!(e("something new"), VideoError::Other(m) if m == "something new"));
     }
 

@@ -15,6 +15,7 @@ use engine::{CancelToken, DownloadOptions, DownloadOutcome, EngineError, ProbeIn
 use serde::Serialize;
 
 use crate::files::{self, Category};
+use crate::marker;
 use crate::open;
 use crate::store::{self, Kind, Record, Status};
 use crate::video::{Tools, VideoError, VideoInfo, VideoProgress};
@@ -148,6 +149,14 @@ pub fn video_message(e: &VideoError) -> (String, Option<&'static str>) {
             Some(VIDEO_OUTDATED),
         ),
         VideoError::SignIn => ("This video needs a sign-in. Only videos anyone can watch without signing in are supported.".into(), None),
+        VideoError::Blocked => (
+            "The site is temporarily blocking downloads from this network. Try again later, or on another network.".into(),
+            None,
+        ),
+        VideoError::Forbidden(detail) => (
+            format!("The site refused the download ({detail}). It may be blocked in your region or need a sign-in; if it keeps happening, update the video component."),
+            Some(VIDEO_OUTDATED),
+        ),
         VideoError::Unavailable => ("This video is unavailable: private, removed or blocked in your region.".into(), None),
         VideoError::Drm => ("This video is protected by DRM. Protected videos are not supported.".into(), None),
         VideoError::Live => ("Live streams are not supported.".into(), None),
@@ -162,21 +171,41 @@ pub fn video_message(e: &VideoError) -> (String, Option<&'static str>) {
     }
 }
 
-/// The hidden folder beside the destination where yt-dlp writes a video until it is done.
+/// The hidden folder beside the destination where yt-dlp writes a video until it is done:
+/// `.ksdownload-video-<id>`, or the other name recorded in `record.temp`. A recorded name
+/// is used only when it is a single name of ours (a damaged list cannot point elsewhere).
 pub fn video_temp(record: &Record) -> Option<PathBuf> {
-    Some(record.path.parent()?.join(format!("{VIDEO_TEMP_PREFIX}{}", record.id)))
+    let default = format!("{VIDEO_TEMP_PREFIX}{}", record.id);
+    let name = match record.temp.as_deref() {
+        Some(t) if t.starts_with(&default) && !t.contains(['/', '\\']) && t != ".." => t.to_owned(),
+        _ => default,
+    };
+    Some(record.path.parent()?.join(name))
+}
+
+/// The temp folder for this video, if it is there and its marker names this download.
+fn own_video_temp(record: &Record) -> Option<PathBuf> {
+    let dir = video_temp(record)?;
+    marker::of_folder(&dir).filter(|m| m.is_for(record.id, &record.url)).map(|_| dir)
 }
 
 /// Bytes yt-dlp has written so far into a video's temp folder.
 fn temp_bytes(dir: &Path) -> u64 {
-    std::fs::read_dir(dir).map_or(0, |d| d.flatten().filter_map(|e| e.metadata().ok()).filter(|m| m.is_file()).map(|m| m.len()).sum())
+    std::fs::read_dir(dir).map_or(0, |d| {
+        d.flatten()
+            .filter(|e| e.file_name() != marker::IN_FOLDER)
+            .filter_map(|e| e.metadata().ok())
+            .filter(|m| m.is_file())
+            .map(|m| m.len())
+            .sum()
+    })
 }
 
-/// Removes a video's temp folder. Only the folder named for this download, and only a
-/// real folder (a symlink is removed as a link, never followed).
+/// Removes a video's temp folder, only when its marker names this download, and only a
+/// real folder (`own_video_temp` refuses links; `remove_dir_all` never follows links
+/// inside).
 fn remove_video_temp(record: &Record) {
-    let Some(dir) = video_temp(record) else { return };
-    if std::fs::symlink_metadata(&dir).is_ok_and(|m| m.is_dir()) {
+    if let Some(dir) = own_video_temp(record) {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
@@ -200,8 +229,7 @@ fn sentence(e: &EngineError) -> String {
 impl Manager {
     /// Loads the saved list. Call [`Manager::restore`] before showing it.
     pub fn new(store_file: PathBuf, events: Arc<dyn Events>) -> Arc<Self> {
-        let records = store::load(&store_file);
-        let next_id = records.iter().map(|r| r.id).max().unwrap_or(0) + 1;
+        let store::Saved { downloads: records, next_id } = store::load_all(&store_file);
         Arc::new(Self {
             inner: Mutex::new(Inner { records, running: HashMap::new(), next_id }),
             store_file,
@@ -227,7 +255,7 @@ impl Manager {
     /// Saves the list. Called with the lock held, so saves happen in order; the file is
     /// small and only written on status changes, never per progress tick.
     fn save(&self, inner: &Inner) {
-        if let Err(e) = store::save(&self.store_file, &inner.records) {
+        if let Err(e) = store::save(&self.store_file, &inner.records, inner.next_id) {
             eprintln!("could not save the download list: {e}");
         }
     }
@@ -258,7 +286,7 @@ impl Manager {
             if r.kind == Kind::Video {
                 // yt-dlp continues from its .part files in the temp folder, if they are there.
                 if matches!(r.status, Status::Downloading | Status::Paused | Status::Interrupted) {
-                    let temp = video_temp(r).filter(|d| d.is_dir());
+                    let temp = own_video_temp(r);
                     r.received = temp.as_deref().map_or(0, temp_bytes);
                     r.status = if temp.is_some() { Status::Paused } else { Status::Queued };
                     r.error = None;
@@ -404,6 +432,7 @@ impl Manager {
                 received: 0,
                 resumable: info.resumable(),
                 error: None,
+                temp: None,
                 added_at: now_ms(),
             };
             inner.next_id += 1;
@@ -440,6 +469,7 @@ impl Manager {
                 resumable: true,
                 error: None,
                 error_code: None,
+                temp: None,
                 added_at: now_ms(),
             };
             inner.next_id += 1;
@@ -566,12 +596,8 @@ impl Manager {
     /// finished file into place.
     async fn run_video(&self, record: &Record, cancel: CancelToken, progress: VideoProgress) -> Result<u64, RunError> {
         let tools = self.video_tools()?;
-        let temp = video_temp(record).ok_or_else(|| RunError::Failed("The download has no folder.".into()))?;
         files::check_folder(&record.path.parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default())?;
-        if !temp.exists() {
-            std::fs::create_dir(&temp).map_err(|e| RunError::Failed(format!("Could not create the temp folder: {e}.")))?;
-            hide(&temp);
-        }
+        let temp = self.prepare_video_temp(record)?;
         let file = tools.download(&record.url, &temp, cancel, progress).await.map_err(|e| match e {
             VideoError::Cancelled => RunError::Cancelled,
             e => {
@@ -580,8 +606,36 @@ impl Manager {
             }
         })?;
         let (_, bytes) = self.complete_video(record.id, &file)?;
-        remove_video_temp(record);
+        let current = self.lock().records.iter().find(|r| r.id == record.id).cloned();
+        remove_video_temp(current.as_ref().unwrap_or(record));
         Ok(bytes)
+    }
+
+    /// The temp folder to run yt-dlp in. An existing folder is continued in only when its
+    /// marker names this download (same ID and URL). Otherwise, or with no marker, it is
+    /// left alone for the leftover-files cleanup, and a fresh, uniquely named folder is made
+    /// and recorded in `record.temp`.
+    fn prepare_video_temp(&self, record: &Record) -> Result<PathBuf, RunError> {
+        if let Some(dir) = own_video_temp(record) {
+            return Ok(dir);
+        }
+        let folder = record.path.parent().ok_or_else(|| RunError::Failed("The download has no folder.".into()))?;
+        let default = format!("{VIDEO_TEMP_PREFIX}{}", record.id);
+        let name = (0..1000)
+            .map(|n| if n == 0 { default.clone() } else { format!("{default}-{n}") })
+            .find(|n| std::fs::symlink_metadata(folder.join(n)).is_err())
+            .ok_or_else(|| RunError::Failed("Could not create the temp folder.".into()))?;
+        let dir = folder.join(&name);
+        std::fs::create_dir(&dir).map_err(|e| RunError::Failed(format!("Could not create the temp folder: {e}.")))?;
+        hide(&dir);
+        marker::write(&dir.join(marker::IN_FOLDER), &marker::Marker::new(record.id, &record.url))
+            .map_err(|e| RunError::Failed(format!("Could not create the temp folder: {e}.")))?;
+        let mut inner = self.lock();
+        if let Some(r) = inner.records.iter_mut().find(|r| r.id == record.id) {
+            r.temp = (name != default).then_some(name);
+            self.save(&inner);
+        }
+        Ok(dir)
     }
 
     /// Gives a finished video its final name: the title with the extension yt-dlp chose
@@ -594,7 +648,7 @@ impl Manager {
         // From `path`, not `name`: a damaged list cannot ask for a name outside the folder.
         let planned = r.path.file_name().map_or_else(|| "video".into(), |n| n.to_string_lossy().into_owned());
         let ext = file.extension().map_or_else(|| "mp4".into(), |e| e.to_string_lossy().into_owned());
-        let name = sanitize_file_name(&format!("{}.{ext}", stem(&planned)));
+        let name = sanitize_file_name(&format!("{}.{ext}", without_media_extension(&planned)));
         let taken = |p: &Path| inner.records.iter().any(|o| o.id != id && o.path == p);
         let target = files::reserve(&folder, &name, &taken)
             .map_err(|e| RunError::Failed(format!("Downloaded, but could not create the final file: {e}.")))?;
@@ -692,7 +746,7 @@ impl Manager {
             _ => None,
         };
         // A video keeps its place in the temp folder: yt-dlp continues from there.
-        let video_temp = (record.kind == Kind::Video).then(|| video_temp(&record).filter(|d| d.is_dir())).flatten();
+        let video_temp = (record.kind == Kind::Video).then(|| own_video_temp(&record)).flatten();
         let mut inner = self.lock();
         let Some(r) = inner.records.iter_mut().find(|r| r.id == id) else { return };
         match result {
@@ -928,10 +982,12 @@ fn video_name(title: &str, ext: &str) -> String {
     format!("{title}.{ext}")
 }
 
-/// A file name without its last extension.
-fn stem(name: &str) -> &str {
+/// A video's name without a media extension. Only a known media extension is removed, so
+/// a typed name such as "Mr. Smith" keeps its full text.
+fn without_media_extension(name: &str) -> &str {
+    const MEDIA: [&str; 14] = ["mp4", "mkv", "webm", "mov", "m4v", "avi", "flv", "ts", "mp3", "m4a", "opus", "ogg", "aac", "wav"];
     match name.rfind('.') {
-        Some(i) if i > 0 => &name[..i],
+        Some(i) if i > 0 && MEDIA.contains(&name[i + 1..].to_ascii_lowercase().as_str()) => &name[..i],
         _ => name,
     }
 }
@@ -975,6 +1031,7 @@ mod tests {
             id,
             kind: Kind::File,
             error_code: None,
+            temp: None,
             url: format!("https://example.com/{name}"),
             name: name.into(),
             path: dir.join(name),
@@ -1005,7 +1062,7 @@ mod tests {
 
     fn manager(dir: &Path, records: &[Record]) -> (Arc<Manager>, Arc<Log>) {
         let file = store::path(&dir.join("data"));
-        store::save(&file, records).unwrap();
+        store::save(&file, records, records.iter().map(|r| r.id).max().unwrap_or(0) + 1).unwrap();
         let log = Arc::new(Log::default());
         (Manager::new(file, log.clone()), log)
     }
@@ -1221,6 +1278,14 @@ mod tests {
         Record { kind: Kind::Video, url: "https://www.youtube.com/watch?v=x".into(), size: None, received: 0, ..record(id, dir, name, status) }
     }
 
+    /// A video temp folder of `r`'s own, with its marker.
+    fn own_temp(r: &Record) -> PathBuf {
+        let t = video_temp(r).unwrap();
+        std::fs::create_dir(&t).unwrap();
+        marker::write(&t.join(marker::IN_FOLDER), &marker::Marker::new(r.id, &r.url)).unwrap();
+        t
+    }
+
     #[test]
     fn a_finished_video_takes_its_real_extension_and_never_overwrites() {
         let dir = temp_dir();
@@ -1247,8 +1312,7 @@ mod tests {
         let dir = temp_dir();
         let with = video(1, &dir, "a.mp4", Status::Downloading);
         let without = video(2, &dir, "b.mp4", Status::Paused);
-        let temp = video_temp(&with).unwrap();
-        std::fs::create_dir(&temp).unwrap();
+        let temp = own_temp(&with);
         std::fs::write(temp.join("video.f1.mp4.part"), vec![0u8; 700]).unwrap();
         let (m, _) = manager(&dir, &[with, without]);
         m.restore().await;
@@ -1263,8 +1327,7 @@ mod tests {
         let v = video(1, &dir, "clip.mp4", Status::Paused);
         // A file of the user's at the planned name, and another download's temp folder.
         std::fs::write(&v.path, b"precious").unwrap();
-        let temp = video_temp(&v).unwrap();
-        std::fs::create_dir(&temp).unwrap();
+        let temp = own_temp(&v);
         std::fs::write(temp.join("video.mp4.part"), b"x").unwrap();
         let other = dir.join(format!("{VIDEO_TEMP_PREFIX}2"));
         std::fs::create_dir(&other).unwrap();
@@ -1317,12 +1380,76 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    #[tokio::test]
+    async fn a_leftover_temp_folder_of_another_url_is_never_continued_in() {
+        let dir = temp_dir();
+        let v = video(1, &dir, "clip.mp4", Status::Paused);
+        // A folder with this download's default name, left by something else.
+        let old = video_temp(&v).unwrap();
+        std::fs::create_dir(&old).unwrap();
+        std::fs::write(old.join("video.mp4.part"), b"someone else's bytes").unwrap();
+        marker::write(&old.join(marker::IN_FOLDER), &marker::Marker::new(1, "https://other.example/v")).unwrap();
+        // And one with no marker at all, under the next name.
+        let unmarked = dir.join(format!("{VIDEO_TEMP_PREFIX}1-1"));
+        std::fs::create_dir(&unmarked).unwrap();
+        let (m, _) = manager(&dir, std::slice::from_ref(&v));
+        m.restore().await;
+        assert_eq!(get(&m, 1).status, Status::Queued, "not resumable from a folder that is not ours");
+
+        let fresh = m.prepare_video_temp(&get(&m, 1)).unwrap();
+        assert_eq!(fresh, dir.join(format!("{VIDEO_TEMP_PREFIX}1-2")));
+        assert_eq!(std::fs::read(old.join("video.mp4.part")).unwrap(), b"someone else's bytes");
+        assert!(unmarked.exists() && std::fs::read_dir(&unmarked).unwrap().next().is_none());
+        let r = get(&m, 1);
+        assert_eq!(video_temp(&r).unwrap(), fresh);
+        // Deleting the download removes only its own folder.
+        m.delete(1, false).await.unwrap();
+        assert!(!fresh.exists() && old.exists() && unmarked.exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_matching_temp_folder_resumes_as_before() {
+        let dir = temp_dir();
+        let v = video(1, &dir, "clip.mp4", Status::Paused);
+        let own = video_temp(&v).unwrap();
+        std::fs::create_dir(&own).unwrap();
+        marker::write(&own.join(marker::IN_FOLDER), &marker::Marker::new(1, &v.url)).unwrap();
+        std::fs::write(own.join("video.f1.mp4.part"), vec![0u8; 500]).unwrap();
+        let (m, _) = manager(&dir, std::slice::from_ref(&v));
+        m.restore().await;
+        assert_eq!(get(&m, 1).status, Status::Paused);
+        assert_eq!(m.prepare_video_temp(&get(&m, 1)).unwrap(), own);
+        assert_eq!(std::fs::read(own.join("video.f1.mp4.part")).unwrap().len(), 500);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn ids_are_never_reused_after_deleting_the_newest() {
+        let dir = temp_dir();
+        let (m, _) = manager(&dir, &[]);
+        let tools = Arc::new(Tools::new(&dir, &dir, &dir));
+        m.set_video_tools(tools);
+        let info = VideoInfo { title: "A".into(), ext: "mp4".into(), size: None, entries: vec![], is_playlist: false };
+        let first = m.add_video("https://v.example/1", "", dir.to_str().unwrap(), false, &info).unwrap();
+        m.delete(first.id, false).await.unwrap();
+        let second = m.add_video("https://v.example/2", "", dir.to_str().unwrap(), false, &info).unwrap();
+        assert!(second.id > first.id);
+        // Also after a restart.
+        let (again, _) = (Manager::new(store::path(&dir.join("data")), Arc::new(Log::default())), ());
+        let third = again.add_video("https://v.example/3", "", dir.to_str().unwrap(), false, &info).unwrap();
+        assert!(third.id > second.id);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     #[test]
     fn video_names_are_safe() {
         assert_eq!(video_name("a/b: c?", "mkv"), "a_b_ c_.mkv");
         assert_eq!(video_name("x", ""), "x.mp4");
-        assert_eq!(stem("Title.mp4"), "Title");
-        assert_eq!(stem(".hidden"), ".hidden");
+        assert_eq!(without_media_extension("Title.mp4"), "Title");
+        assert_eq!(without_media_extension("Mr. Smith"), "Mr. Smith", "a dot is not always an extension");
+        assert_eq!(without_media_extension("v1.2 release.MKV"), "v1.2 release");
+        assert_eq!(without_media_extension(".hidden"), ".hidden");
         assert_eq!(video_message(&VideoError::NotAVideoSite).0, "This link is a web page, not a file.");
         assert_eq!(video_message(&VideoError::Outdated("x".into())).1, Some(VIDEO_OUTDATED));
     }

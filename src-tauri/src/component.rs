@@ -3,6 +3,11 @@
 //! what the user starts). The bundled copy inside the signed app is never changed; the
 //! new one goes to `<app data>/video-component/<version>/` and a `current` file names it.
 //!
+//! Not marked as downloaded from the internet (no quarantine attribute), deliberately:
+//! macOS would refuse to run a marked program that we have not notarised. The trade-off is
+//! recorded in specs/video-playlists.md ("Updates and 'downloaded from the internet'
+//! marking"). Part 7's marking must keep skipping files written here.
+//!
 //! Integrity: the download is checked against the SHA-256 in the same release's
 //! `SHA2-256SUMS`. A hash from the same place detects a damaged download, not a
 //! deliberately altered release (specs/video-playlists.md, "Updating yt-dlp").

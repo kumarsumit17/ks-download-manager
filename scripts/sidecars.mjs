@@ -77,15 +77,8 @@ const mark = (name, hash) => writeFileSync(stamp(name), hash);
     // Deno's own licence, and the list of the Rust crates built into it at this tag.
     const raw = `https://raw.githubusercontent.com/denoland/deno/v${version}`;
     await fetchTo(`${raw}/LICENSE.md`, join(licences, "deno-LICENSE.md"));
-    const lock = await (await fetch(`${raw}/Cargo.lock`)).text();
-    const crates = [...lock.matchAll(/\[\[package\]\]\nname = "([^"]+)"\nversion = "([^"]+)"/g)].map((m) => `${m[1]} ${m[2]}`);
-    writeFileSync(
-      join(licences, "deno-THIRD-PARTY.txt"),
-      `Deno ${version} (MIT, see deno-LICENSE.md) is built from these Rust crates, each under its own\n` +
-        `licence (published with the crate on crates.io), and includes V8 (BSD-3-Clause) and ICU\n` +
-        `(Unicode licence). Source: https://github.com/denoland/deno/tree/v${version}\n\n` +
-        crates.join("\n") + "\n",
-    );
+    // Licence texts of everything Deno is built from (scripts/deno-notices.mjs).
+    execFileSync("node", [join(root, "scripts/deno-notices.mjs"), version, join(licences, "deno-THIRD-PARTY.txt")], { stdio: "inherit" });
     mark(`deno-${triple}`, pin.sha256);
   }
 }

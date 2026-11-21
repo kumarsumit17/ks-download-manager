@@ -20,9 +20,18 @@ YT="$APP/Contents/Resources/yt-dlp"
 # Every Mach-O file in it (Python, its extension modules and libraries), each as a plain
 # file: PyInstaller's Python.framework is not a well-formed bundle, so it is not signed as
 # one. Then the yt-dlp program itself.
-find "$YT" -type f ! -name yt-dlp_macos -print | while IFS= read -r f; do
-  if file -b "$f" | grep -q "^Mach-O"; then sign "$f" 2>/dev/null || echo "not signed (malformed framework copy, see docs/decisions-stage5.md): $f" >&2; fi
-done
+LIST=$(mktemp)
+find "$YT" -type f ! -name yt-dlp_macos -print > "$LIST"
+UNSIGNED=0
+while IFS= read -r f; do
+  if file -b "$f" | grep -q "^Mach-O"; then
+    if ! sign "$f" 2>/dev/null; then
+      UNSIGNED=$((UNSIGNED + 1))
+      echo "not signed (malformed framework copy, see docs/decisions-stage5.md): $f" >&2
+    fi
+  fi
+done < "$LIST"
+rm -f "$LIST"
 if [ "$ID" = "-" ]; then
   sign --entitlements "$HERE/src-tauri/yt-dlp-adhoc.entitlements.plist" "$YT/yt-dlp_macos"
 else
@@ -36,4 +45,4 @@ sign "$APP/Contents/MacOS/ffmpeg" "$APP/Contents/MacOS/ffprobe"
 # Seal the app again over the re-signed contents.
 sign --entitlements "$HERE/src-tauri/entitlements.plist" "$APP"
 codesign --verify --deep --strict "$APP"
-echo "signed: $APP ($ID)"
+echo "signed: $APP ($ID); files that could not be signed: $UNSIGNED"

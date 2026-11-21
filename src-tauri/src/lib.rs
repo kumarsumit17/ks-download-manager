@@ -6,6 +6,7 @@ mod component;
 mod files;
 mod handoff;
 mod manager;
+mod marker;
 mod open;
 mod store;
 mod video;
