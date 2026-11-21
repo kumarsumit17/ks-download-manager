@@ -43,5 +43,5 @@ test("the notes match how the files were signed", () => {
   assert.match(signed, /windows-x64-setup-beta\.exe/);
   assert.throws(() => notes(CL, "0.1.0", "maybe"), /unknown macOS signing/);
   // The real changelog has the section for the first release.
-  assert.ok(changelogSection(readFileSync(join(root, "CHANGELOG.md"), "utf8"), "0.1.0").length > 0);
+  assert.ok(changelogSection(readFileSync(join(root, "CHANGELOG.md"), "utf8"), "0.1.1").length > 0);
 });

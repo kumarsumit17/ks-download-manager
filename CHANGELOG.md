@@ -4,7 +4,9 @@ All notable changes to KS Download Manager. The layout follows [Keep a Changelog
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-11-21
+## [0.1.1] - 2026-11-21
+
+v0.1.0 was tagged but never released: its tag points to a commit whose changelog section was not yet dated, so the release workflow stopped before building anything. The tag is kept as it is; this is the same content, released as 0.1.1.
 
 The first public release: macOS (Apple silicon and Intel) and the Chrome extension, plus a Windows installer as a **beta, untested by hand** (its automated tests pass on Windows Server 2025 in CI; no person has run it on a Windows PC yet).
 

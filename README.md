@@ -9,7 +9,7 @@ A free download manager for images, audio and video, built for speed: each file 
 | **Platform** | Windows · macOS (desktop) |
 | **Tech stack** | Rust (download engine) · Tauri (desktop shell) · TypeScript + React with shadcn/ui and Lucide icons (interface) |
 | **Chrome extension** | TypeScript, Manifest V3, in `extension/` (loaded unpacked, not on the Chrome Web Store) |
-| **Status** | First release (v0.1.0): macOS and the Chrome extension; Windows as a beta, untested by hand. See [stages](specs/stages.md) and the [changelog](CHANGELOG.md) |
+| **Status** | First release (v0.1.1; v0.1.0 was tagged but never released): macOS and the Chrome extension; Windows as a beta, untested by hand. See [stages](specs/stages.md) and the [changelog](CHANGELOG.md) |
 
 ## Features
 

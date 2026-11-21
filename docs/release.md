@@ -26,7 +26,7 @@ gh secret set APPLE_CERTIFICATE_PASSWORD -R kumarsumit17/ks-download-manager   #
 rm cert.p12 cert.txt
 ```
 
-Whether a release is signed is decided by the secrets that exist **when the tag is pushed**. For v0.1.0: ad hoc unless the six secrets are set by then.
+Whether a release is signed is decided by the secrets that exist **when the tag is pushed**. For v0.1.1, the first release: ad hoc unless the six secrets are set by then (none were).
 
 The Windows installer (beta, phase B; built by the `windows` job, switched on in the `version` job's outputs) is unsigned in its first release; the intended route afterwards is SignPath Foundation (draft policy: `docs/code-signing-policy.md`). Not set up yet.
 
@@ -37,27 +37,30 @@ Work happens on a branch (`release-setup` for the release work), is merged into 
 Before tagging, CI (`.github/workflows/ci.yml`) must be green on `main`.
 
 ```bash
-# 0. Date the changelog section on the work branch: "## [0.1.0] - unreleased" -> "## [0.1.0] - YYYY-MM-DD"
-git switch release-setup
+# 0. Date the changelog section on the work branch: "## [X.Y.Z] - unreleased" -> "## [X.Y.Z] - YYYY-MM-DD"
+git switch <work branch>
 #    edit CHANGELOG.md, then:
-git commit -am "docs: changelog for v0.1.0"
-git push origin release-setup              # wait for CI to pass on the branch
+git commit -am "docs: date vX.Y.Z in the changelog"
+git push origin <work branch>              # wait for CI to pass on the branch
 
-# 1. release-setup into dev
+# 1. The work branch into dev (fast-forward only)
 git switch dev
 git pull --ff-only origin dev
-git merge --no-ff release-setup -m "Merge branch 'release-setup' into dev"
+git merge --ff-only <work branch>
 git push origin dev                        # wait for CI to pass on dev
 
 # 2. dev into main
 git switch main
 git pull --ff-only origin main
-git merge --no-ff dev -m "Merge branch 'dev' into main"
+git merge --ff-only dev
 git push origin main                       # wait for CI to pass on main
 
-# 3. Tag main and push only the tag
-git tag -a v0.1.0 -m "v0.1.0"
-git push origin v0.1.0
+# 3. Check what will be tagged: on origin/main, with the dated section; then tag it and push only the tag
+git fetch origin
+git merge-base --is-ancestor main origin/main && git diff --quiet main origin/main
+git show main:CHANGELOG.md | grep -E '^## \[X\.Y\.Z\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$'
+git tag -a vX.Y.Z -m "vX.Y.Z" main
+git push origin vX.Y.Z
 ```
 
 Check before step 3 that you are on `main` and it matches `origin/main` (`git status -sb` shows `## main...origin/main` with nothing ahead or behind).
@@ -85,10 +88,10 @@ Read the notes: they must say "signed with a Developer ID and notarised" only if
 
 ## 5. Publishing
 
-Only when every check in section 4 has passed: open the draft, choose **Edit**, then **Publish release**. Or: `gh release edit v0.1.0 --draft=false -R kumarsumit17/ks-download-manager`.
+Only when every check in section 4 has passed: open the draft, choose **Edit**, then **Publish release**. Or: `gh release edit vX.Y.Z --draft=false -R kumarsumit17/ks-download-manager`.
 
 ## 6. When something fails
 
-- **A build job fails** (no draft yet): read the log (`gh run view <run id> --log-failed`), fix on a branch, merge through `dev` into `main` as in section 2, and tag a **new** version (`v0.1.1`). Or, if nothing was published and the tag only failed in CI because of the runner, re-run the failed jobs from the Actions page: the same tag builds the same commit.
+- **A build job fails** (no draft yet): read the log (`gh run view <run id> --log-failed`), fix on a branch, merge through `dev` into `main` as in section 2, and tag a **new** version (the next PATCH). Or, if nothing was published and the tag only failed in CI because of the runner, re-run the failed jobs from the Actions page: the same tag builds the same commit.
 - **A run is re-run on the same tag:** the `release` job replaces an existing **draft** for that tag. It never touches a published release; it fails instead.
-- **A hand check fails on the draft:** delete the draft (`gh release delete v0.1.0 -R kumarsumit17/ks-download-manager --yes`, which keeps the tag), fix, and release a new version. Tags that were pushed are never moved or deleted.
+- **A hand check fails on the draft:** delete the draft (`gh release delete vX.Y.Z -R kumarsumit17/ks-download-manager --yes`, which keeps the tag), fix, and release a new version. Tags that were pushed are never moved or deleted. Example: v0.1.0 was pushed on a commit with an undated changelog section; the `version` job refused it, the tag stayed, and the release became v0.1.1.
