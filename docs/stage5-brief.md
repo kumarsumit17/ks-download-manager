@@ -4,9 +4,15 @@ Everything a fresh session needs to continue Stage 5 (Final) of ks-download-mana
 
 ## 1. Run rules
 
-- **Parts in order:** first the Part 2 review fixes (section 3a, its own commit), then Parts 3, 4, 5, 6, 7, then full testing and the review file. One part per session: when a part is done, run the **Done means** checks (below) and `graphify update .`, commit locally, then report **"Part N is done"** in bold with a short summary and stop. The owner runs `/clear` and starts the next part.
-- **Within a part, do not stop to ask.** When a decision is open, take the option closest to the specs and to this brief, and record it in `docs/decisions-stage5.md` with the reason and the alternative. Stop only if continuing would risk losing the owner's data or breaking the repository. If a part cannot be finished, finish what you can, mark the rest **Not done** in the decisions log, and still report the part.
-- **Commits:** local only, never push (not this repo, not ks-utility, not the workspace). One or more commits per part, Conventional Commits. **No Claude attribution:** no `Co-Authored-By: Claude`, no `Claude-Session:`, no "Generated with Claude Code" lines. The owner is the only author.
+- **Parts in order, in one go (owner, after the Part 4 review):** Parts 5, 6 and 7, then full testing, then `stage5-final-review.md`, without stopping between parts. The owner does not run `/clear` between parts.
+- **At the start of each part,** read this brief and `docs/decisions-stage5.md` again, so nothing is lost if the session's context is compacted.
+- **When a part is done:** run the **Done means** checks (below) and `graphify update .`, commit locally, add a short **"Part N is done"** section to `docs/decisions-stage5.md` with the commits and the check results, and continue with the next part.
+- **Do not ask the owner questions.** When a decision is open, take the option closest to the specs and to this brief, and record it in `docs/decisions-stage5.md` with the reason and the alternative. If a part cannot be finished, finish what you can, mark the rest **Not done** there, and continue.
+- **Stop only** if continuing would risk losing the owner's data or breaking a repository, and then say exactly what stopped you.
+- **Commits:** ks-download-manager and the workspace repo: local only, never push. One or more commits per part, Conventional Commits.
+- **ks-utility may be pushed** (owner, after the Part 4 review): only the `main` branch and new version tags. Never force-push, never move or delete a tag, never push any other repo. Record each push in `docs/decisions-stage5.md`. No more stopping to ask for a push before re-pinning.
+- **The history rewrite stays deferred** (section 6): do not start it.
+- **Finish** by telling the owner to paste into Claude Cowork: "Follow the instructions in stage5-final-review.md." **No Claude attribution:** no `Co-Authored-By: Claude`, no `Claude-Session:`, no "Generated with Claude Code" lines. The owner is the only author.
 - **Never commit** `stage5-plan-review.md` (untracked, kept as the style example for the final review file), `src-tauri/binaries/` or `extension/dist/` (both git-ignored).
 - **Pre-approved:** the yt-dlp, ffmpeg/ffprobe and Deno binaries; tokio features; Zustand and TanStack Table/Virtual **only if** justified in the decisions log; GnuPG (Homebrew) as a development tool. **Anything else third-party: do not add it.** Write it ourselves (generic code in ks-utility), or leave the item undone and list it.
 - **Rules for the whole stage:**
@@ -14,7 +20,7 @@ Everything a fresh session needs to continue Stage 5 (Final) of ks-download-mana
   - The clean room is unchanged ([specs/clean-room.md](../specs/clean-room.md), [specs/ui.md](../specs/ui.md#references)): our own UI and icons, no code, assets, screenshots or wording from any download manager. Extension site rules come from observing the pages, never from another extension's code.
   - No hard-coded interface text anywhere once Part 4 lands: every string goes behind a key. New text added in Parts 3 and 5–7 needs both languages.
   - Out of scope: torrents.
-- **Generic code goes to ks-utility** (`../ks-utility`, its own repo): commit there, do not push, then move the pin here in its own commit.
+- **Generic code goes to ks-utility** (`../ks-utility`, its own repo): commit there, tag a new version, push `main` and the new tag, then move the pin here in its own commit (normal fetch: `npm install`, `cargo check`, both lock files name the tag's commit).
 - **No code moves during Stage 5:** do not move code into `shared/` or the platform folders (`desktop/mac/`, `desktop/windows/`, …). That is a separate, later stage (owner, Part 3 review).
 
 ### Done means (every part)
@@ -44,7 +50,7 @@ Other local, unpushed commits:
 - ks-utility `a1d12b9`: docs: pin by version tag, versioning rules (`specs/usage.md`, rules, overview, README, CLAUDE.md).
 - KS-Suite workspace repo `6e17e8b`: docs: pin ks-utility by version tag, versioning rules (workspace `CLAUDE.md`, `specs/cross-repo.md`, `specs/log.md`).
 
-**Part 4 status:** Part 3 review fixes committed (`bc67b18`). ks-utility side of Part 4 committed (`6ea7fb4`) and tagged `v0.2.0` locally; workspace `CLAUDE.md` updated (`0b37916`). Pinned to `v0.2.0` (`77a1cfb`). App-side Part 4 work committed. ks-utility `v0.2.1` (fix: the language-file command inside `node_modules`, plus new Hindi terms) committed and tagged locally. Owner pushed `v0.2.1`; pinned in `b4c4908`; `npm run test:lang` wired. **Part 4 is done.** Next: Part 5 (playlists). Decisions so far: `docs/decisions-stage5.md`, "Part 4".
+**Part 4 status:** Part 3 review fixes committed (`bc67b18`). ks-utility side of Part 4 committed (`6ea7fb4`) and tagged `v0.2.0` locally; workspace `CLAUDE.md` updated (`0b37916`). Pinned to `v0.2.0` (`77a1cfb`). App-side Part 4 work committed. ks-utility `v0.2.1` (fix: the language-file command inside `node_modules`, plus new Hindi terms) committed and tagged locally. Owner pushed `v0.2.1`; pinned in `b4c4908`; `npm run test:lang` wired. **Part 4 is done.** After the Part 4 review: owner's Hindi wording (ks-utility `v0.2.2`) and the crash-test fix, then Part 5 (playlists). Decisions so far: `docs/decisions-stage5.md`, "Part 4".
 
 Part 1 is "approved with changes" (done in `1c8e5cf`). Part 2 is "approved with changes" (done in `c1afa7c`). Part 3 (`ef4373a`, `7a7b9af`, `4956ff8`) is "approved with small changes": reservation markers, per-item leftover removal, the video speed-limit note (recorded in the decisions log).
 
