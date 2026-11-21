@@ -1,5 +1,6 @@
 # 2026-11-21
 
+* **Update**: `ks-utility` pin moved from `v0.1.0` (`f772fa8`) to `v0.2.0` (`6ea7fb4`): language support (format, shared English and Hindi catalogue, translator, language rule, check), message codes, token bucket, media-type extensions, locale-aware formatting.
 * **Update**: [UI direction](ui.md), Part 3 review: empty reservation files carry an ownership marker and orphaned ones are listed as leftovers; leftover items are ticked one by one and Remove removes only the ticked ones; Settings says beside the speed limit that videos pace themselves.
 * **Update**: [UI direction](ui.md), Part 3: Waiting status and the active-download limit, queues, category save folders, folder picker, Settings, leftover download files; Zustand not added.
 * **Update**: [Video and playlist downloads](video-playlists.md), Part 3: videos count toward the active limit, `--limit-rate` as an approximate speed limit, Prefer MP4 in Settings, leftover temp folders.
