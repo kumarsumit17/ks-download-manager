@@ -208,3 +208,10 @@ Nits (all done, `64345f6` unless noted):
 - **Typed video names** keep their full text; only a known media extension is replaced by the real one ("Mr. Smith" → "Mr. Smith.mp4").
 - **`sign-macos.sh`** counts the files it could not sign and prints the total (1 for this yt-dlp build: the malformed framework copy).
 - **For Part 7:** the yt-dlp update is explicitly exempt from quarantine marking; the trade-off is written in `specs/video-playlists.md` and in `component.rs`.
+
+## History rewrite (brief section 6), 2026-11-21
+
+- **What changed:** only commit messages. `Co-Authored-By: Claude`, `Claude-Session:` and "Generated with Claude Code" lines were removed with `git filter-branch --msg-filter`, one run over all branches of each repo. Trees, authors, dates and subjects are unchanged. Mirror backups (never deleted): `history-rewrite-backup-2026-11-21/` next to the `KS-Suite` folder.
+- **ks-utility:** 12 commits on `main`; the owner pushed `main` and the tags. This is the one time its tags moved (recorded in its `specs/usage.md`). Old → new: `v0.1.0` `f772fa8` → `4118c1e`, `v0.2.0` `6ea7fb4` → `58ccb47`, `v0.2.1` `a5aa8e7` → `56dc4dc`, `v0.2.2` `70e9f2b` → `8a6f96b`, `v0.2.3` `96741cd` → `4dbf50d`, `v0.2.4` `40cb924` → `d671427`; also `ced399c` → `543eee8`, `370fe5f` → `24bd2ba`, `a1d12b9` → `6f07bd7`, `830f22b` → `30d1ebf`.
+- **This repo:** `main` (8), `dev` (65) and `release-setup` (74) in one run; 25 messages changed. Both lock files now name `d671427` for `v0.2.4`; `docs/THIRD_PARTY.md` and `specs/log.md` use the new IDs.
+- **Older IDs left as written:** this log, `docs/stage5-brief.md` and `stage5-final-review.md` are records of the time and keep the IDs from before the rewrite; use the list above to translate them. App commit IDs quoted anywhere before this entry are pre-rewrite too.

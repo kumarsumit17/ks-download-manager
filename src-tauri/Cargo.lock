@@ -1932,7 +1932,7 @@ dependencies = [
 [[package]]
 name = "ks-utility"
 version = "0.0.0"
-source = "git+https://github.com/kumarsumit17/ks-utility?tag=v0.2.4#40cb92490d959e105704e9c8d7cacf57afa44b72"
+source = "git+https://github.com/kumarsumit17/ks-utility?tag=v0.2.4#d671427978652af4dea27f86e8f93878d8a14c93"
 
 [[package]]
 name = "libappindicator"
