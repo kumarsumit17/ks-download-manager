@@ -19,6 +19,7 @@
   "err_bad_url": { "message": "Link not supported" },
   "err_bad_request": { "message": "Not understood" },
   "err_wrong_kind": { "message": "Not a file" },
+  "err_playlist": { "message": "Add playlists in the app" },
   "err_lookup_failed": { "message": "Not available" },
   "err_add_failed": { "message": "Could not add" },
   "err_videoOutdated": { "message": "Update the app's video component" },

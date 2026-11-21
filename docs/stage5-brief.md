@@ -26,11 +26,11 @@ Everything a fresh session needs to continue Stage 5 (Final) of ks-download-mana
 ### Done means (every part)
 - `npm run build` succeeds.
 - In `src-tauri/`: `cargo test -q`, and `cargo clippy -q --all-targets -- -D warnings` with no output.
-- `npm run test:extension` and `npm run build:extension` succeed, and from Part 4 on `npm run test:lang` (the language-file check).
+- `npm run test:extension` and `npm run build:extension` succeed, and from Part 4 on `npm run test:lang` (the language-file check), from Part 5 on `npm run test:ui` (the interface's plain helpers).
 - Any new dependency or binary is in `docs/THIRD_PARTY.md` in the same commit. Specs changed → a line in `specs/log.md`; new spec → listed in `specs/index.md`.
 
 ### Practical notes
-- **Never use `cd` in a command** (owner): a setting on this machine blocks reads outside the working directories, so every `cd` needs the owner's manual approval. Run everything from the repository root with paths relative to it, and use each tool's own folder option: `cargo … --manifest-path src-tauri/Cargo.toml` (`-p engine` for the engine), `npm --prefix <folder> …`, `git -C <folder> …`. For ks-utility, use its full path with the same options (`git -C /Users/…/KS-Suite/ks-utility`, `npm --prefix /Users/…/KS-Suite/ks-utility test`).
+- **Prefer no `cd` in commands** (owner): a setting on this machine once blocked reads outside the working directories, so every `cd` needed the owner's approval. The block is now off (owner, same day), so `cd`, variables and scripts run without approval, but folder options keep commands independent of the shell's folder. Run everything from the repository root with paths relative to it, and use each tool's own folder option: `cargo … --manifest-path src-tauri/Cargo.toml` (`-p engine` for the engine), `npm --prefix <folder> …`, `git -C <folder> …`. For ks-utility, use its full path with the same options (`git -C /Users/…/KS-Suite/ks-utility`, `npm --prefix /Users/…/KS-Suite/ks-utility test`).
 - Prefix cargo with `export PATH="$HOME/.cargo/bin:$PATH"`.
 - `npm run sidecars` fetches yt-dlp and Deno, builds ffmpeg (already done on this Mac, cached in `src-tauri/binaries/`); `cargo build` copies them next to `target/debug/`.
 - Real end-to-end tests without touching the owner's data: run the debug app as `HOME=<scratch>/home target/debug/ks-download-manager`, then send Chrome-style framed messages to `target/debug/ks-download-manager chrome-extension://ikplfdbdfikcokpegkapjdedlgifmkbe/` (a 4-byte native-order length, then JSON). With a long scratch path, the socket falls back to `/tmp/ksdm-<uid>/ext.sock`; remove it afterwards. The manager also has an ignored network test: `cargo test real_video -- --ignored`.

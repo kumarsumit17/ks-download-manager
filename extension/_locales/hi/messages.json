@@ -19,6 +19,7 @@
   "err_bad_url": {"message": "इस लिंक से डाउनलोड नहीं हो सकता"},
   "err_bad_request": {"message": "समझ नहीं आया"},
   "err_wrong_kind": {"message": "यह फ़ाइल नहीं है"},
+  "err_playlist": {"message": "प्लेलिस्ट ऐप में जोड़ें"},
   "err_lookup_failed": {"message": "उपलब्ध नहीं है"},
   "err_add_failed": {"message": "जोड़ा नहीं जा सका"},
   "err_videoOutdated": {"message": "ऐप का वीडियो कंपोनेंट अपडेट करें"},

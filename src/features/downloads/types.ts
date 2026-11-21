@@ -25,6 +25,32 @@ export interface DownloadRecord {
   addedAt: number;
   /** The queue it belongs to; absent or null for the main queue. */
   queue?: number | null;
+  /** The playlist it was added from: its rows are grouped under the playlist's title. */
+  playlist?: PlaylistRef | null;
+}
+
+/** Rust's `store::PlaylistRef`. `index` is the position in the playlist, from 1. */
+export interface PlaylistRef {
+  id: number;
+  title: string;
+  index: number;
+}
+
+/** One entry of a looked-up playlist (Rust's `manager::EntryView`). */
+export interface PlaylistEntryView {
+  index: number;
+  url: string;
+  title: string;
+  /** Seconds. */
+  duration: number | null;
+  /** Private, removed, region-blocked or a list inside the list: shown, never ticked. */
+  unavailable: boolean;
+  hasThumbnail: boolean;
+}
+
+export interface PlaylistView {
+  title: string;
+  entries: PlaylistEntryView[];
 }
 
 /** A queue the user made; the main queue is built in. */
@@ -65,6 +91,8 @@ export interface ProbeView {
   size: number | null;
   resumable: boolean;
   category: Category;
+  /** Set when the link is a playlist. */
+  playlist?: PlaylistView;
 }
 
 /** A finished video saved as MKV: most players handle it, QuickTime does not. */

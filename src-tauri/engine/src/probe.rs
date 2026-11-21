@@ -107,6 +107,14 @@ fn media_type(headers: &HeaderMap) -> Option<String> {
 /// Fetches a small text resource (at most `max` bytes), for the few non-download requests
 /// the user starts, such as checking for a newer video component.
 pub async fn fetch_text(url: &str, max: usize) -> Result<String, EngineError> {
+    let body = fetch_bytes(url, max).await?;
+    String::from_utf8(body).map_err(|_| EngineError::Network("the reply is not text".into()))
+}
+
+/// Fetches a small resource (at most `max` bytes) into memory, for the few non-download
+/// requests the user starts, such as a playlist's thumbnails. Fails with `TooMuchData` as
+/// soon as the reply passes `max`, so a large reply is never read whole.
+pub async fn fetch_bytes(url: &str, max: usize) -> Result<Vec<u8>, EngineError> {
     let url = parse_url(url)?;
     let client = client()?;
     let mut resp = get(&client, &url).send().await?;
@@ -120,7 +128,7 @@ pub async fn fetch_text(url: &str, max: usize) -> Result<String, EngineError> {
         }
         body.extend_from_slice(&chunk);
     }
-    String::from_utf8(body).map_err(|_| EngineError::Network("the reply is not text".into()))
+    Ok(body)
 }
 
 pub(crate) fn validator(headers: &HeaderMap) -> Option<Validator> {

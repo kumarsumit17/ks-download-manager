@@ -34,6 +34,13 @@ export const api = {
   probe: (url: string) => invoke<ProbeView>("probe_url", { url }),
   add: (url: string, name: string, folder: string, start: boolean) =>
     invoke<DownloadRecord>("add_download", { url, name, folder, start }),
+  /** Adds the ticked entries (position and link, both checked in Rust); returns how many. */
+  addPlaylist: (url: string, folder: string, picks: { index: number; url: string }[], number: boolean, start: boolean) =>
+    invoke<number>("add_playlist", { url, folder, picks, number, start }),
+  resumePlaylist: (playlist: number) => invoke<number>("resume_playlist", { playlist }),
+  pausePlaylist: (playlist: number) => invoke<number>("pause_playlist", { playlist }),
+  /** A playlist entry's thumbnail as image bytes, fetched by Rust. */
+  thumbnail: (url: string, index: number) => invoke<ArrayBuffer>("playlist_thumbnail", { url, index }),
   resume: (id: number) => invoke<void>("resume_download", { id }),
   pause: (id: number) => invoke<void>("pause_download", { id }),
   remove: (id: number, deleteFile: boolean) => invoke<void>("delete_download", { id, deleteFile }),

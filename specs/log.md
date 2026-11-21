@@ -1,5 +1,6 @@
 # 2026-11-21
 
+* **Update**: [Video and playlist downloads](video-playlists.md), Part 5: how a playlist runs (flat lookups, unavailable and nested entries, best quality for all with no quality picker, the playlist folder and numbered names, one row per entry grouped by playlist, the extension refuses playlists). [UI direction](ui.md): the playlist picker, thumbnails through Rust, grouped rows with Resume playlist and Pause playlist. [Chrome extension and hand-off](extension.md): a playlist link is refused with `playlist`.
 * **Update**: `ks-utility` pin moved from `v0.2.1` (`a5aa8e7`) to `v0.2.2` (`70e9f2b`): the owner's Hindi wording for Status (स्टेटस), the temp folder (टेंप फ़ोल्डर) and the system language (सिस्टम की भाषा).
 * **Update**: `ks-utility` pin moved from `v0.2.0` (`6ea7fb4`) to `v0.2.1` (`a5aa8e7`): the language-file command runs from `node_modules`; Hindi terms from this app added to the style guide.
 * **Update**: [UI direction](ui.md), Part 4: Languages section (English and Hindi through ks-utility, keys in `src/locales`, Settings → Language, Rust message codes, Intl formatting, the language-file check, `docs/hindi-review.md`). [Chrome extension and hand-off](extension.md): replies carry only a code; Hindi labels.

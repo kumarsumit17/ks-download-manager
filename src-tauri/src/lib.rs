@@ -21,7 +21,7 @@ use std::sync::Arc;
 use tauri::window::Color;
 use tauri::{AppHandle, Emitter, Manager as _, RunEvent, State, Theme, WindowEvent};
 
-use manager::{Active, Events, Manager, ProbeView, Tick};
+use manager::{Active, Events, Manager, Pick, ProbeView, Tick};
 use files::Category;
 use settings::Settings;
 use store::{Queue, Record};
@@ -73,6 +73,27 @@ async fn probe_url(m: Downloads<'_>, url: String) -> Result<ProbeView, msg::Msg>
 #[tauri::command]
 async fn add_download(m: Downloads<'_>, url: String, name: String, folder: String, start: bool) -> Result<Record, msg::Msg> {
     m.inner().add(&url, &name, &folder, start).await
+}
+
+#[tauri::command]
+async fn add_playlist(m: Downloads<'_>, url: String, folder: String, picks: Vec<Pick>, number: bool, start: bool) -> Result<usize, msg::Msg> {
+    m.inner().add_playlist(&url, &folder, &picks, number, start).await
+}
+
+#[tauri::command]
+fn resume_playlist(m: Downloads<'_>, playlist: u64) -> Result<usize, msg::Msg> {
+    m.inner().resume_playlist(playlist)
+}
+
+#[tauri::command]
+fn pause_playlist(m: Downloads<'_>, playlist: u64) -> Result<usize, msg::Msg> {
+    m.pause_playlist(playlist)
+}
+
+/// Raw image bytes (an `ArrayBuffer` in the page, which turns them into a data URL).
+#[tauri::command]
+async fn playlist_thumbnail(m: Downloads<'_>, url: String, index: u32) -> Result<tauri::ipc::Response, msg::Msg> {
+    m.thumbnail(&url, index).await.map(tauri::ipc::Response::new)
 }
 
 #[tauri::command]
@@ -329,6 +350,10 @@ pub fn run() {
             default_folder,
             probe_url,
             add_download,
+            add_playlist,
+            resume_playlist,
+            pause_playlist,
+            playlist_thumbnail,
             resume_download,
             pause_download,
             delete_download,

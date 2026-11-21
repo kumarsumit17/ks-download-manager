@@ -140,14 +140,14 @@ impl Tools {
     }
 
     /// Looks a link up without downloading: title, final extension, size estimate.
+    /// `--flat-playlist` always: a playlist link then lists its entries at once instead of
+    /// looking every video up first (which can take minutes); a single video is unaffected.
+    /// With `playlist` off, a video link that also names a playlist (`watch?v=…&list=…`)
+    /// is that one video; a playlist link is a playlist either way.
     pub async fn info(&self, url: &str, playlist: bool) -> Result<VideoInfo, VideoError> {
         let mut args = self.format_args();
-        args.push("-J".into());
-        if playlist {
-            args.extend(["--yes-playlist".into(), "--flat-playlist".into()]);
-        } else {
-            args.push("--no-playlist".into());
-        }
+        args.extend(["-J".into(), "--flat-playlist".into()]);
+        args.push(if playlist { "--yes-playlist".into() } else { "--no-playlist".into() });
         let mut c = self.command(args, url);
         let child = c.spawn().map_err(|e| VideoError::Start(e.to_string()))?;
         let output = tokio::time::timeout(INFO_TIMEOUT, collect(child)).await;
@@ -359,6 +359,8 @@ pub struct VideoInfo {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlaylistEntry {
+    /// Position in the playlist, from 1, counting every entry yt-dlp listed.
+    pub index: u32,
     pub url: String,
     pub title: String,
     pub duration: Option<f64>,
@@ -375,7 +377,7 @@ fn parse_info(json: &str) -> Result<VideoInfo, VideoError> {
         let entries = v
             .get("entries")
             .and_then(|e| e.as_array())
-            .map(|a| a.iter().filter_map(parse_entry).collect())
+            .map(|a| a.iter().enumerate().filter_map(|(i, e)| parse_entry(u32::try_from(i + 1).ok()?, e)).collect())
             .unwrap_or_default();
         return Ok(VideoInfo { title, ext: String::new(), size: None, entries, is_playlist: true });
     }
@@ -397,7 +399,7 @@ fn parse_info(json: &str) -> Result<VideoInfo, VideoError> {
     Ok(VideoInfo { title, ext, size: size.map(|s| s as u64), entries: Vec::new(), is_playlist: false })
 }
 
-fn parse_entry(e: &serde_json::Value) -> Option<PlaylistEntry> {
+fn parse_entry(index: u32, e: &serde_json::Value) -> Option<PlaylistEntry> {
     let s = |k: &str| e.get(k).and_then(|x| x.as_str()).map(str::to_owned);
     let url = s("url").or_else(|| s("webpage_url"))?;
     if !(url.starts_with("https://") || url.starts_with("http://")) {
@@ -405,6 +407,7 @@ fn parse_entry(e: &serde_json::Value) -> Option<PlaylistEntry> {
     }
     let title = s("title").unwrap_or_default();
     let unavailable = title.is_empty()
+        || is_nested_list(e)
         || matches!(title.as_str(), "[Private video]" | "[Deleted video]" | "[Unavailable video]")
         || matches!(s("availability").as_deref(), Some("private" | "needs_auth" | "subscriber_only" | "premium_only"));
     let thumbnail = e
@@ -415,7 +418,16 @@ fn parse_entry(e: &serde_json::Value) -> Option<PlaylistEntry> {
         .and_then(|u| u.as_str())
         .map(str::to_owned)
         .or_else(|| s("thumbnail"));
-    Some(PlaylistEntry { url, title, duration: e.get("duration").and_then(|d| d.as_f64()), thumbnail, unavailable })
+    Some(PlaylistEntry { index, url, title, duration: e.get("duration").and_then(|d| d.as_f64()), thumbnail, unavailable })
+}
+
+/// An entry that is itself a list (a channel's "Videos" tab, a playlist inside a playlist).
+/// It is shown but not offered: each entry is downloaded as one video with
+/// `--no-playlist`, and a list cannot be one.
+fn is_nested_list(e: &serde_json::Value) -> bool {
+    let s = |k: &str| e.get(k).and_then(|x| x.as_str()).unwrap_or("");
+    let key = s("ie_key").to_ascii_lowercase();
+    s("_type") == "playlist" || key.ends_with("tab") || key.contains("playlist") || key.contains("channel")
 }
 
 /// Why yt-dlp did not give us a video.
@@ -615,11 +627,17 @@ mod tests {
             r#"{"_type":"playlist","title":"List","entries":[
             {"url":"https://www.youtube.com/watch?v=a","title":"A","duration":61},
             {"url":"https://www.youtube.com/watch?v=b","title":"[Private video]"},
-            {"url":"javascript:alert(1)","title":"bad"}]}"#,
+            {"url":"javascript:alert(1)","title":"bad"},
+            {"_type":"url","ie_key":"YoutubeTab","url":"https://www.youtube.com/@x/videos","title":"Videos"},
+            {"url":"https://www.youtube.com/watch?v=c","title":"C","thumbnails":[{"url":"https://i.ytimg.com/s.jpg"},{"url":"https://i.ytimg.com/l.jpg"}]}]}"#,
         )
         .unwrap();
         assert!(pl.is_playlist);
-        assert_eq!(pl.entries.len(), 2, "only http(s) entries");
+        assert_eq!(pl.entries.len(), 4, "only http(s) entries");
         assert!(!pl.entries[0].unavailable && pl.entries[1].unavailable);
+        assert!(pl.entries[2].unavailable, "a list inside the list is not one video");
+        let idx: Vec<u32> = pl.entries.iter().map(|e| e.index).collect();
+        assert_eq!(idx, [1, 2, 4, 5], "positions count every listed entry");
+        assert_eq!(pl.entries[3].thumbnail.as_deref(), Some("https://i.ytimg.com/l.jpg"), "the largest thumbnail");
     }
 }

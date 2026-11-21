@@ -14,6 +14,8 @@ import { Label } from "@/components/ui/label";
 import { t } from "@/lib/i18n";
 import { api, message } from "./api";
 import { formatBytes } from "./format";
+import { allAvailable } from "./playlist";
+import { PlaylistPicker } from "./PlaylistPicker";
 import type { Category, ProbeView } from "./types";
 
 const categoryLabel = (c: Category) => t(`category.${c}`);
@@ -43,6 +45,9 @@ export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
   const [folderChosen, setFolderChosen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Playlist links: the ticked entries (by position) and the number prefix. */
+  const [ticked, setTicked] = useState<Set<number>>(new Set());
+  const [numbered, setNumbered] = useState(true);
   const probeFor = useRef("");
 
   // Fresh dialog each time. The folder starts as the system Downloads folder and becomes
@@ -55,6 +60,7 @@ export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
     setError(null);
     setBusy(false);
     setFolderChosen(false);
+    setNumbered(true);
     api.defaultFolder().then((d) => setFolder(d), () => {});
   }, [open]);
 
@@ -92,6 +98,7 @@ export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
           if (probeFor.current !== u) return;
           setProbe(p);
           setName(p.name);
+          setTicked(p.playlist ? allAvailable(p.playlist.entries) : new Set());
           setProbing(false);
         },
         (e) => {
@@ -108,8 +115,13 @@ export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const r = await api.add(url.trim(), name, folder, start);
-      onAdded(r.id);
+      if (probe?.playlist) {
+        const picks = probe.playlist.entries.filter((e) => ticked.has(e.index)).map((e) => ({ index: e.index, url: e.url }));
+        await api.addPlaylist(url.trim(), folder, picks, numbered, true);
+      } else {
+        const r = await api.add(url.trim(), name, folder, start);
+        onAdded(r.id);
+      }
       onOpenChange(false);
     } catch (e) {
       setError(message(e));
@@ -118,12 +130,14 @@ export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
     }
   };
 
-  const ready = probe !== null && name.trim() !== "" && folder.trim() !== "" && !busy;
-  const video = probe?.kind === "video";
+  const playlist = probe?.playlist ?? null;
+  const ready =
+    probe !== null && (playlist ? ticked.size > 0 : name.trim() !== "") && folder.trim() !== "" && !busy;
+  const video = probe?.kind === "video" && !playlist;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className={playlist ? "sm:max-w-2xl" : "sm:max-w-lg"}>
         <DialogHeader>
           <DialogTitle>{t("add.title")}</DialogTitle>
           <DialogDescription>{t("add.description")}</DialogDescription>
@@ -176,6 +190,8 @@ export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
             )}
           </div>
 
+          {playlist && <PlaylistPicker url={url.trim()} playlist={playlist} ticked={ticked} onTicked={setTicked} />}
+
           {probe && !probe.resumable && (
             <p role="note" className="flex gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
               <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
@@ -185,10 +201,17 @@ export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
             </p>
           )}
 
-          <div className="grid gap-2">
-            <Label htmlFor="add-name">{t("add.fileName")}</Label>
-            <Input id="add-name" value={name} onChange={(e) => setName(e.target.value)} disabled={!probe} spellCheck={false} />
-          </div>
+          {playlist ? (
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" className="size-4 accent-primary" checked={numbered} onChange={(e) => setNumbered(e.target.checked)} />
+              {t("playlist.number")}
+            </label>
+          ) : (
+            <div className="grid gap-2">
+              <Label htmlFor="add-name">{t("add.fileName")}</Label>
+              <Input id="add-name" value={name} onChange={(e) => setName(e.target.value)} disabled={!probe} spellCheck={false} />
+            </div>
+          )}
           <div className="grid gap-2">
             <Label htmlFor="add-folder">{t("add.saveIn")}</Label>
             <div className="flex gap-2">
@@ -206,7 +229,7 @@ export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              {t("add.noOverwrite")}
+              {playlist ? t("playlist.folderNote", { name }) : t("add.noOverwrite")}
             </p>
           </div>
 
@@ -217,7 +240,11 @@ export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
           )}
 
           <DialogFooter>
-            {video ? (
+            {playlist ? (
+              <Button type="submit" disabled={!ready}>
+                {t("playlist.download", { count: ticked.size })}
+              </Button>
+            ) : video ? (
               <Button type="submit" disabled={!ready}>
                 {t("add.download")}
               </Button>

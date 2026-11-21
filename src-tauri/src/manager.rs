@@ -22,13 +22,20 @@ use crate::msg::Msg;
 use crate::marker;
 use crate::settings::{self, Settings};
 use crate::open;
-use crate::store::{self, Kind, Queue, Record, Status};
-use crate::video::{Tools, VideoError, VideoInfo, VideoProgress};
+use crate::store::{self, Kind, PlaylistRef, Queue, Record, Status};
+use crate::video::{PlaylistEntry, Tools, VideoError, VideoInfo, VideoProgress};
 
 /// How often progress is sent to the interface (4 times a second).
 pub const TICK: Duration = Duration::from_millis(250);
 /// A probe from the Add dialog is reused when the download starts within this time.
 const PROBE_FRESH: Duration = Duration::from_secs(60);
+/// A looked-up playlist is kept this long, for its thumbnails and for adding its entries
+/// while the picker is open.
+const PLAYLIST_FRESH: Duration = Duration::from_secs(30 * 60);
+/// At most this many looked-up playlists are kept.
+const PLAYLISTS_KEPT: usize = 8;
+/// A thumbnail larger than this is not shown.
+const THUMBNAIL_MAX: usize = 1024 * 1024;
 /// How long quitting waits for downloads to save their range maps.
 const QUIT_WAIT: Duration = Duration::from_secs(3);
 /// Weight of the newest sample in the smoothed speeds.
@@ -82,6 +89,55 @@ pub struct ProbeView {
     pub size: Option<u64>,
     pub resumable: bool,
     pub category: Category,
+    /// Set when the link is a playlist: the picker shows these entries.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub playlist: Option<PlaylistView>,
+}
+
+/// A playlist for the picker. Thumbnails are fetched one by one through
+/// [`Manager::thumbnail`], so the page never loads an image from the network itself.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaylistView {
+    pub title: String,
+    pub entries: Vec<EntryView>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntryView {
+    pub index: u32,
+    pub url: String,
+    pub title: String,
+    pub duration: Option<f64>,
+    pub unavailable: bool,
+    pub has_thumbnail: bool,
+}
+
+impl PlaylistView {
+    fn new(info: &VideoInfo) -> Self {
+        let entries = info
+            .entries
+            .iter()
+            .map(|e| EntryView {
+                index: e.index,
+                url: e.url.clone(),
+                title: e.title.clone(),
+                duration: e.duration,
+                unavailable: e.unavailable,
+                has_thumbnail: e.thumbnail.as_deref().is_some_and(|t| t.starts_with("https://")),
+            })
+            .collect();
+        Self { title: info.title.clone(), entries }
+    }
+}
+
+/// One entry the user ticked in the picker: its position and link, both checked against
+/// the looked-up playlist (the link alone is never used to start anything).
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct Pick {
+    pub index: u32,
+    pub url: String,
 }
 
 /// Counts for the quit confirmation.
@@ -111,6 +167,8 @@ enum Source {
 enum Lookup {
     File(ProbeInfo),
     Video(VideoInfo),
+    /// A playlist link; its entries are added through [`Manager::add_playlist`].
+    Playlist(VideoInfo),
 }
 
 struct Running {
@@ -153,6 +211,8 @@ pub struct Manager {
     default_folder: Mutex<Option<PathBuf>>,
     /// The last scan for leftover download files; `None` before the first.
     leftovers: Mutex<Option<Vec<leftovers::Found>>>,
+    /// Playlists looked up for the picker, by link.
+    playlists: Mutex<HashMap<String, (Instant, VideoInfo)>>,
 }
 
 fn now_ms() -> u64 {
@@ -271,6 +331,7 @@ impl Manager {
             settings: Mutex::new(s),
             default_folder: Mutex::new(None),
             leftovers: Mutex::new(None),
+            playlists: Mutex::new(HashMap::new()),
         })
     }
 
@@ -424,7 +485,7 @@ impl Manager {
     async fn probe_cached(&self, url: &str) -> Result<ProbeInfo, Msg> {
         match self.lookup_cached(url).await {
             Ok(Lookup::File(info)) => Ok(info),
-            Ok(Lookup::Video(_)) => Err(msg!("error.videoPage")),
+            Ok(Lookup::Video(_) | Lookup::Playlist(_)) => Err(msg!("error.videoPage")),
             Err((message, _)) => Err(message),
         }
     }
@@ -448,9 +509,7 @@ impl Manager {
     async fn lookup_video(&self, url: &str) -> Result<Lookup, (Msg, Option<&'static str>)> {
         let tools = self.video_tools().map_err(|m| (m, None))?;
         match tools.info(url, false).await {
-            Ok(info) if info.is_playlist => {
-                Err((msg!("error.playlist"), None))
-            }
+            Ok(info) if info.is_playlist => Ok(Lookup::Playlist(info)),
             Ok(info) => Ok(Lookup::Video(info)),
             Err(e) => Err(video_message(&e)),
         }
@@ -465,7 +524,7 @@ impl Manager {
         Ok(match found {
             Lookup::File(info) => {
                 let name = sanitize_file_name(&name_with_type(&info.file_name, info.content_type.as_deref()));
-                ProbeView { kind: Kind::File, category: files::category(&name), name, size: info.size, resumable: info.resumable() }
+                ProbeView { kind: Kind::File, category: files::category(&name), name, size: info.size, resumable: info.resumable(), playlist: None }
             }
             Lookup::Video(info) => ProbeView {
                 kind: Kind::Video,
@@ -473,8 +532,169 @@ impl Manager {
                 size: info.size,
                 resumable: true,
                 category: Category::Video,
+                playlist: None,
             },
+            Lookup::Playlist(info) => {
+                if !info.entries.iter().any(|e| !e.unavailable) {
+                    return Err(msg!("error.playlistEmpty"));
+                }
+                let view = PlaylistView::new(&info);
+                self.keep_playlist(url, info);
+                ProbeView {
+                    kind: Kind::Video,
+                    name: sanitize_file_name(&view.title),
+                    size: None,
+                    resumable: true,
+                    category: Category::Video,
+                    playlist: Some(view),
+                }
+            }
         })
+    }
+
+    fn keep_playlist(&self, url: &str, info: VideoInfo) {
+        let mut kept = self.playlists.lock().unwrap_or_else(|e| e.into_inner());
+        kept.retain(|_, (at, _)| at.elapsed() < PLAYLIST_FRESH);
+        while kept.len() >= PLAYLISTS_KEPT {
+            let Some(oldest) = kept.iter().min_by_key(|(_, (at, _))| *at).map(|(k, _)| k.clone()) else { break };
+            kept.remove(&oldest);
+        }
+        kept.insert(url.to_owned(), (Instant::now(), info));
+    }
+
+    fn kept_playlist(&self, url: &str) -> Option<VideoInfo> {
+        let kept = self.playlists.lock().unwrap_or_else(|e| e.into_inner());
+        kept.get(url).filter(|(at, _)| at.elapsed() < PLAYLIST_FRESH).map(|(_, i)| i.clone())
+    }
+
+    /// The thumbnail of a playlist entry the picker shows, fetched through Rust so the
+    /// page's content policy can stay `img-src 'self' data:`. Only playlists looked up in
+    /// this session, only `https`, at most 1 MB, and only JPEG, PNG, WebP or GIF.
+    pub async fn thumbnail(&self, url: &str, index: u32) -> Result<Vec<u8>, Msg> {
+        let link = self
+            .kept_playlist(url.trim())
+            .and_then(|i| i.entries.into_iter().find(|e| e.index == index))
+            .and_then(|e| e.thumbnail)
+            .filter(|t| t.starts_with("https://"))
+            .ok_or_else(|| msg!("error.thumbnail"))?;
+        let bytes = engine::fetch_bytes(&link, THUMBNAIL_MAX).await.map_err(|_| msg!("error.thumbnail"))?;
+        image_type(&bytes).ok_or_else(|| msg!("error.thumbnail"))?;
+        Ok(bytes)
+    }
+
+    /// Adds the ticked entries of a playlist, each as its own video row grouped under the
+    /// playlist, saved in a folder named after the playlist inside `folder`. With `number`,
+    /// names start with the entry's position ("03 - Title"), so they sort in the
+    /// playlist's order. Entries marked unavailable are never added. Returns how many were
+    /// added.
+    pub async fn add_playlist(self: &Arc<Self>, url: &str, folder: &str, picks: &[Pick], number: bool, start: bool) -> Result<usize, Msg> {
+        let url = url.trim();
+        let info = match self.kept_playlist(url) {
+            Some(i) => i,
+            None => match self.lookup_video(url).await.map_err(|(m, _)| m)? {
+                Lookup::Playlist(i) => i,
+                _ => return Err(msg!("error.notPlaylist")),
+            },
+        };
+        let chosen: Vec<&PlaylistEntry> = info
+            .entries
+            .iter()
+            .filter(|e| !e.unavailable && picks.iter().any(|p| p.index == e.index && p.url == e.url))
+            .collect();
+        if chosen.is_empty() {
+            return Err(msg!("error.nothingSelected"));
+        }
+        let parent = files::check_folder(folder)?;
+        let dir = playlist_folder(&parent, &info.title).map_err(|e| msg!("error.playlistFolder", detail = e))?;
+        let width = info.entries.iter().map(|e| e.index).max().unwrap_or(1).to_string().len().max(2);
+        let records: Vec<Record> = {
+            let mut inner = self.lock();
+            let playlist = inner.next_id;
+            inner.next_id += 1;
+            let added_at = now_ms();
+            let mut out = Vec::new();
+            for e in chosen {
+                let title = if e.title.is_empty() { "video" } else { e.title.as_str() };
+                let base = if number { format!("{:0width$} - {title}", e.index) } else { title.to_owned() };
+                let name = video_name(&base, "");
+                let record = Record {
+                    id: inner.next_id,
+                    kind: Kind::Video,
+                    url: e.url.clone(),
+                    category: Category::Video,
+                    path: dir.join(&name),
+                    name,
+                    status: Status::Queued,
+                    size: None,
+                    received: 0,
+                    resumable: true,
+                    error: None,
+                    error_code: None,
+                    temp: None,
+                    added_at,
+                    queue: None,
+                    playlist: Some(PlaylistRef { id: playlist, title: info.title.clone(), index: e.index }),
+                };
+                inner.next_id += 1;
+                inner.records.push(record.clone());
+                out.push(record);
+            }
+            self.save(&inner);
+            out
+        };
+        for r in &records {
+            self.events.changed(r);
+        }
+        if start {
+            for r in &records {
+                self.resume(r.id)?;
+            }
+        }
+        Ok(records.len())
+    }
+
+    /// The IDs of a playlist's entries, in the playlist's order.
+    fn playlist_entries(&self, playlist: u64) -> Vec<(u64, Status)> {
+        let inner = self.lock();
+        let mut v: Vec<(u32, u64, Status)> = inner
+            .records
+            .iter()
+            .filter_map(|r| r.playlist.as_ref().filter(|p| p.id == playlist).map(|p| (p.index, r.id, r.status)))
+            .collect();
+        v.sort_unstable_by_key(|(index, id, _)| (*index, *id));
+        v.into_iter().map(|(_, id, s)| (id, s)).collect()
+    }
+
+    /// Resumes every entry of a playlist that is queued, paused, failed (retry) or
+    /// interrupted. Returns how many now wait to run.
+    pub fn resume_playlist(self: &Arc<Self>, playlist: u64) -> Result<usize, Msg> {
+        let entries = self.playlist_entries(playlist);
+        if entries.is_empty() {
+            return Err(msg!("error.noSuchDownload"));
+        }
+        let mut n = 0;
+        for (id, status) in entries {
+            if matches!(status, Status::Queued | Status::Paused | Status::Failed | Status::Interrupted) {
+                self.resume(id)?;
+                n += 1;
+            }
+        }
+        Ok(n)
+    }
+
+    /// Pauses every running or waiting entry of a playlist. Returns how many.
+    pub fn pause_playlist(&self, playlist: u64) -> Result<usize, Msg> {
+        let entries = self.playlist_entries(playlist);
+        if entries.is_empty() {
+            return Err(msg!("error.noSuchDownload"));
+        }
+        let mut n = 0;
+        for (id, status) in entries {
+            if matches!(status, Status::Downloading | Status::Waiting) && self.pause(id).is_ok() {
+                n += 1;
+            }
+        }
+        Ok(n)
     }
 
     /// Adds a download to the list, reserving a file name that does not exist yet in
@@ -485,6 +705,7 @@ impl Manager {
         let info = match self.lookup_cached(url).await.map_err(|(m, _)| m)? {
             Lookup::File(info) => info,
             Lookup::Video(video) => return self.add_video(url, name, folder, start, &video),
+            Lookup::Playlist(_) => return Err(msg!("error.playlist")),
         };
         let folder = files::check_folder(folder)?;
         let suggested = name_with_type(&info.file_name, info.content_type.as_deref());
@@ -510,6 +731,7 @@ impl Manager {
                 temp: None,
                 added_at: now_ms(),
                 queue: None,
+                playlist: None,
             };
             inner.next_id += 1;
             inner.records.push(record.clone());
@@ -548,6 +770,7 @@ impl Manager {
                 temp: None,
                 added_at: now_ms(),
                 queue: None,
+                playlist: None,
             };
             inner.next_id += 1;
             inner.records.push(record.clone());
@@ -572,6 +795,9 @@ impl Manager {
             Ok(f) => f,
             Err((_, code)) => return Reply::err(code.unwrap_or("lookup_failed")),
         };
+        if matches!(found, Lookup::Playlist(_)) {
+            return Reply::err("playlist");
+        }
         let fits = match (&found, kind) {
             (Lookup::File(info), AddKind::Image) => {
                 info.content_type.as_deref().is_some_and(|t| t.starts_with("image/"))
@@ -579,12 +805,13 @@ impl Manager {
             }
             (Lookup::File(_), AddKind::File | AddKind::Video) | (Lookup::Video(_), AddKind::Video) => true,
             (Lookup::Video(_), AddKind::Image | AddKind::File) => false,
+            (Lookup::Playlist(_), _) => false,
         };
         if !fits {
             return Reply::err("wrong_kind");
         }
         let category = match &found {
-            Lookup::Video(_) => Category::Video,
+            Lookup::Video(_) | Lookup::Playlist(_) => Category::Video,
             Lookup::File(info) => files::category(&name_with_type(&info.file_name, info.content_type.as_deref())),
         };
         let Some(folder) = self.folder_for(category) else {
@@ -1340,6 +1567,37 @@ fn queue_name(name: &str) -> Result<String, Msg> {
 }
 
 /// "Title.mp4" from a video's title and extension, made safe as a file name.
+/// The folder for a playlist's files: `<parent>/<playlist title>`, made if it is not
+/// there. An existing folder of that name is used (file names inside are never
+/// overwritten); a file or a link with that name is refused, so nothing is written
+/// through a link.
+fn playlist_folder(parent: &Path, title: &str) -> std::io::Result<PathBuf> {
+    let name = sanitize_file_name(title);
+    let name = if name.is_empty() || name == "." || name == ".." { "playlist".to_owned() } else { name };
+    let dir = parent.join(name);
+    match std::fs::symlink_metadata(&dir) {
+        Ok(m) if m.is_dir() => Ok(dir),
+        Ok(_) => Err(std::io::Error::new(std::io::ErrorKind::AlreadyExists, "a file or link has that name")),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => std::fs::create_dir(&dir).map(|()| dir),
+        Err(e) => Err(e),
+    }
+}
+
+/// The image type of a thumbnail from its first bytes; anything else is refused.
+fn image_type(b: &[u8]) -> Option<&'static str> {
+    if b.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        Some("image/jpeg")
+    } else if b.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("image/png")
+    } else if b.len() >= 12 && &b[..4] == b"RIFF" && &b[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else if b.starts_with(b"GIF87a") || b.starts_with(b"GIF89a") {
+        Some("image/gif")
+    } else {
+        None
+    }
+}
+
 fn video_name(title: &str, ext: &str) -> String {
     let title = sanitize_file_name(title);
     let ext = if ext.is_empty() { "mp4" } else { ext };
@@ -1430,6 +1688,7 @@ mod tests {
             error: None,
             added_at: 0,
             queue: None,
+            playlist: None,
         }
     }
 
@@ -1944,6 +2203,42 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// A real playlist through the bundled programs: lookup, a thumbnail, and one entry
+    /// downloaded into the playlist's folder. Default: the first YouTube channel's uploads
+    /// (one short video), which yt-dlp lists as a playlist; `KSDM_PLAYLIST_URL` overrides.
+    /// `cargo test real_playlist -- --ignored --nocapture`.
+    #[tokio::test]
+    #[ignore = "needs the network and the bundled programs"]
+    async fn real_playlist_lookup_thumbnail_and_one_entry() {
+        let dir = temp_dir();
+        let bin = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug");
+        let (m, _) = manager(&dir, &[]);
+        m.set_video_tools(Arc::new(Tools::new(&bin, &bin, &dir.join("data"))));
+        let url = std::env::var("KSDM_PLAYLIST_URL").unwrap_or_else(|_| "https://www.youtube.com/@jawed/videos".into());
+        let view = m.probe(&url).await.unwrap();
+        let list = view.playlist.clone().expect("a playlist");
+        println!("playlist: {} ({} entries)", list.title, list.entries.len());
+        let first = list.entries.iter().find(|e| !e.unavailable).expect("an available entry");
+        println!("first: {first:?}");
+        if first.has_thumbnail {
+            let bytes = m.thumbnail(&url, first.index).await.unwrap();
+            println!("thumbnail: {} bytes, {:?}", bytes.len(), image_type(&bytes));
+        }
+        let picks = [Pick { index: first.index, url: first.url.clone() }];
+        assert_eq!(m.add_playlist(&url, dir.to_str().unwrap(), &picks, true, true).await.unwrap(), 1);
+        let id = m.list()[0].id;
+        let deadline = Instant::now() + Duration::from_secs(180);
+        while !matches!(get(&m, id).status, Status::Finished | Status::Failed) && Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+        let done = get(&m, id);
+        println!("finished: {done:?}");
+        assert_eq!(done.status, Status::Finished, "{:?}", done.error);
+        assert_eq!(done.path.parent(), Some(dir.join(sanitize_file_name(&list.title)).as_path()));
+        assert!(done.name.starts_with(&format!("{:02} - ", first.index)), "{}", done.name);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     #[tokio::test]
     async fn a_leftover_temp_folder_of_another_url_is_never_continued_in() {
         let dir = temp_dir();
@@ -2048,5 +2343,117 @@ mod tests {
         assert_eq!(tick.id, 7);
         assert_eq!(tick.speed, 0.0);
         assert!(tick.connections.is_empty());
+    }
+
+    // ---- Playlists (Part 5) ----
+
+    fn entry(index: u32, title: &str, unavailable: bool) -> PlaylistEntry {
+        PlaylistEntry {
+            index,
+            url: format!("https://www.youtube.com/watch?v={index}"),
+            title: title.into(),
+            duration: Some(60.0),
+            thumbnail: Some(format!("https://i.ytimg.com/{index}.jpg")),
+            unavailable,
+        }
+    }
+
+    fn playlist(title: &str, entries: Vec<PlaylistEntry>) -> VideoInfo {
+        VideoInfo { title: title.into(), ext: String::new(), size: None, entries, is_playlist: true }
+    }
+
+    fn pick(index: u32) -> Pick {
+        Pick { index, url: format!("https://www.youtube.com/watch?v={index}") }
+    }
+
+    const LIST: &str = "https://www.youtube.com/playlist?list=PL1";
+
+    #[tokio::test]
+    async fn a_playlist_adds_only_ticked_available_entries_in_its_own_folder() {
+        let dir = temp_dir();
+        let (m, _) = manager(&dir, &[]);
+        let entries = (1..=12).map(|i| entry(i, &format!("Song {i}"), i == 3)).collect();
+        m.keep_playlist(LIST, playlist("My list: best/of", entries));
+        let picks = [pick(2), pick(3), pick(11), Pick { index: 5, url: "https://evil.example/x".into() }];
+        let n = m.add_playlist(LIST, &dir.to_string_lossy(), &picks, true, false).await.unwrap();
+        assert_eq!(n, 2, "the unavailable entry and the mismatched link are skipped");
+        let folder = dir.join("My list_ best_of");
+        assert!(folder.is_dir(), "a folder named after the playlist");
+        let list = m.list();
+        let names: Vec<&str> = list.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, ["02 - Song 2.mp4", "11 - Song 11.mp4"], "numbered by position, padded to the longest");
+        assert!(list.iter().all(|r| r.kind == Kind::Video && r.status == Status::Queued && r.path.parent() == Some(folder.as_path())));
+        let group = list[0].playlist.clone().unwrap();
+        assert_eq!((group.title.as_str(), group.index), ("My list: best/of", 2));
+        assert_eq!(list[1].playlist.as_ref().unwrap().id, group.id, "one group");
+        assert!(list.iter().all(|r| r.id != group.id), "the group's ID is not a download's");
+
+        // Unnumbered, added again: the same folder, names without a prefix.
+        let n = m.add_playlist(LIST, &dir.to_string_lossy(), &[pick(1)], false, false).await.unwrap();
+        assert_eq!(n, 1);
+        let last = m.list().pop().unwrap();
+        assert_eq!(last.name, "Song 1.mp4");
+        assert_ne!(last.playlist.unwrap().id, group.id, "each add is its own group");
+
+        let none = m.add_playlist(LIST, &dir.to_string_lossy(), &[pick(3)], true, false).await;
+        assert_eq!(none.unwrap_err().code(), "error.nothingSelected");
+    }
+
+    #[test]
+    fn the_playlist_folder_is_never_a_file_or_a_link() {
+        let dir = temp_dir();
+        assert_eq!(playlist_folder(&dir, "..").unwrap().parent(), Some(dir.as_path()), "never outside the chosen folder");
+        assert_eq!(playlist_folder(&dir, "a/../../b").unwrap().parent(), Some(dir.as_path()));
+        std::fs::write(dir.join("taken"), b"x").unwrap();
+        assert!(playlist_folder(&dir, "taken").is_err(), "a file with that name");
+        #[cfg(unix)]
+        {
+            let elsewhere = temp_dir();
+            std::os::unix::fs::symlink(&elsewhere, dir.join("link")).unwrap();
+            assert!(playlist_folder(&dir, "link").is_err(), "a link is never followed");
+        }
+        std::fs::create_dir(dir.join("mine")).unwrap();
+        assert_eq!(playlist_folder(&dir, "mine").unwrap(), dir.join("mine"), "an existing folder is used");
+    }
+
+    #[test]
+    fn a_playlist_pauses_and_resumes_as_one() {
+        let dir = temp_dir();
+        let in_list = |id: u64, index: u32, group: u64, status: Status| Record {
+            playlist: Some(PlaylistRef { id: group, title: "L".into(), index }),
+            ..video(id, &dir, &format!("{id}.mp4"), status)
+        };
+        let records = [
+            in_list(1, 1, 100, Status::Waiting),
+            in_list(2, 2, 100, Status::Waiting),
+            in_list(3, 3, 100, Status::Finished),
+            in_list(4, 1, 200, Status::Waiting),
+        ];
+        let (m, _) = manager(&dir, &records);
+        assert_eq!(m.pause_playlist(100).unwrap(), 2);
+        assert_eq!([get(&m, 1).status, get(&m, 2).status, get(&m, 3).status], [Status::Queued, Status::Queued, Status::Finished]);
+        assert_eq!(get(&m, 4).status, Status::Waiting, "another playlist is untouched");
+        assert_eq!(m.pause_playlist(999).unwrap_err().code(), "error.noSuchDownload");
+        let ids: Vec<u64> = m.playlist_entries(100).into_iter().map(|(id, _)| id).collect();
+        assert_eq!(ids, [1, 2, 3], "in the playlist's order");
+    }
+
+    #[test]
+    fn thumbnails_come_only_from_a_looked_up_playlist_and_must_be_images() {
+        let dir = temp_dir();
+        let (m, _) = manager(&dir, &[]);
+        let mut plain = entry(2, "B", false);
+        plain.thumbnail = Some("http://i.ytimg.com/2.jpg".into());
+        m.keep_playlist(LIST, playlist("L", vec![entry(1, "A", false), plain]));
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        assert_eq!(rt.block_on(m.thumbnail("https://other/list", 1)).unwrap_err().code(), "error.thumbnail");
+        assert_eq!(rt.block_on(m.thumbnail(LIST, 9)).unwrap_err().code(), "error.thumbnail", "no such entry");
+        assert_eq!(rt.block_on(m.thumbnail(LIST, 2)).unwrap_err().code(), "error.thumbnail", "https only");
+        assert_eq!(image_type(&[0xFF, 0xD8, 0xFF, 0xE0]), Some("image/jpeg"));
+        assert_eq!(image_type(b"\x89PNG\r\n\x1a\n...."), Some("image/png"));
+        assert_eq!(image_type(b"RIFF\0\0\0\0WEBPVP8 "), Some("image/webp"));
+        assert_eq!(image_type(b"<svg onload=x>"), None, "SVG and anything else is refused");
+        let view = PlaylistView::new(&playlist("L", vec![entry(1, "A", false), entry(2, "B", true)]));
+        assert!(view.entries[0].has_thumbnail && view.entries[1].unavailable);
     }
 }

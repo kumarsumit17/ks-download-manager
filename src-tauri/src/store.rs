@@ -74,6 +74,22 @@ pub struct Record {
     /// The queue it belongs to; `None` is the main queue.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub queue: Option<u64>,
+    /// The playlist this video was added from (Part 5): its rows are grouped under the
+    /// playlist's title and can be paused and resumed together.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub playlist: Option<PlaylistRef>,
+}
+
+/// Which playlist a download belongs to. The ID comes from the same counter as download
+/// IDs, so it is never reused either; the title is kept on every entry, so the group needs
+/// no list of its own and disappears with its last entry.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaylistRef {
+    pub id: u64,
+    pub title: String,
+    /// Position in the playlist, from 1; keeps the rows in the playlist's order.
+    pub index: u32,
 }
 
 /// A queue the user made (the main queue is built in and has no entry).
@@ -188,6 +204,7 @@ mod tests {
             error: None,
             added_at: 1_790_000_000_000,
             queue: None,
+            playlist: None,
         }
     }
 

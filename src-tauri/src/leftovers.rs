@@ -232,6 +232,7 @@ mod tests {
             temp: None,
             added_at: 0,
             queue: None,
+            playlist: None,
         }
     }
 

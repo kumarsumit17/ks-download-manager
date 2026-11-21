@@ -25,6 +25,9 @@ const UNSURE = {
   downloadsToggle: "Part 2 hand-off option (Chrome extension)",
   downloadsNote: "Part 2 hand-off note (Chrome extension)",
   err_bad_request: "समझ नहीं आया for a message the app did not understand",
+  "playlist.number": "प्लेलिस्ट वाला नंबर for the position in the playlist",
+  "playlist.selected": "{total} में से {count} चुने गए: the order differs from English",
+  "error.thumbnail": "never shown today (thumbnails fail silently)",
 };
 
 const cell = (s) => String(s).replace(/\|/g, "\\|").replace(/\n/g, " ");

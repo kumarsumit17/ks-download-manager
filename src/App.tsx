@@ -78,6 +78,8 @@ export default function App() {
       copyLink: (d) => run(navigator.clipboard.writeText(d.url)),
       moveToQueue: (d, queue) => run(api.moveToQueue(d.id, queue)),
       remove: (d) => setDeleting(d),
+      resumePlaylist: (id) => run(api.resumePlaylist(id)),
+      pausePlaylist: (id) => run(api.pausePlaylist(id)),
     }),
     [run],
   );
