@@ -11,7 +11,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // The system's tar: on Windows the one in System32 (bsdtar), named by its full path, since
@@ -64,7 +64,7 @@ async function licences({ name, ver }) {
   const dir = mkdtempSync(join(tmpdir(), "crate-"));
   try {
     // Only the top folder's licence files are wanted; list first, extract those alone.
-    const list = execFileSync(TAR, ["-tzf", file], { encoding: "utf8", maxBuffer: 64 << 20 }).split("\n");
+    const list = execFileSync(TAR, ["-tzf", file], { encoding: "utf8", maxBuffer: 64 << 20 }).split(/\r?\n/);
     const wanted = list.filter((p) => {
       const parts = p.split("/");
       return parts.length === 2 && LICENCE_FILE.test(parts[1]) && !p.includes("..");
@@ -82,7 +82,7 @@ async function licences({ name, ver }) {
     const texts = wanted
       .map((p) => join(dir, p))
       .filter((p) => statSync(p).isFile())
-      .map((p) => ({ file: p.split("/").pop(), body: readFileSync(p, "utf8") }));
+      .map((p) => ({ file: basename(p), body: readFileSync(p, "utf8") }));
     return { name, ver, texts };
   } finally {
     rmSync(dir, { recursive: true, force: true });
