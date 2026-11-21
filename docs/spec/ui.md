@@ -7,7 +7,7 @@ Goal: a clean, classic download-manager window in the spirit of Internet Downloa
 - [AB Download Manager](https://github.com/amir1376/ab-download-manager): reference for a modern take on the same layout, with themes, queues and a browser extension that lives in its own repository. Apache-2.0, Kotlin; use it for ideas only, do not copy its code or assets.
 - [Free Download Manager](https://www.freedownloadmanager.org/): reference for feature scope (segmented downloads, resume, browser integration, wide language support).
 
-The design must be our own: no copied icons, skins, screenshots or wording from any of these.
+The design must be our own: no copied icons, skins, screenshots or wording from any of these. The full rule is in [clean-room](clean-room.md).
 
 ## Main window
 
@@ -38,6 +38,7 @@ The design must be our own: no copied icons, skins, screenshots or wording from 
 ## Dialogs
 - **Add download:** paste a URL (pre-filled from the clipboard when it holds a link); shows file name, size, category and save folder before starting. Buttons: Download now, Download later.
 - **Download progress:** per-download window or panel with speed, time left, and one bar per connection so the user can see the segments working.
+- **Playlist picker:** shown when the pasted link is a playlist: entries with title and duration, tick boxes (all selected), one quality choice for all. See [video-playlists](video-playlists.md).
 - **Settings:** General, Downloads (connections per file, speed limit, default folders per category), Browser integration, Appearance (light, dark, follow system).
 
 ## Look and feel
@@ -52,4 +53,6 @@ The design must be our own: no copied icons, skins, screenshots or wording from 
 - Progress updates are batched (a few times a second), never once per network chunk.
 
 ## Out of scope for the first version
-Torrents, video grabbing from web players, scheduler-driven shutdown, custom skins.
+Torrents, capturing video from inside the browser's player, scheduler-driven shutdown, custom skins.
+
+Video and playlist downloads by link are in scope: see [video-playlists](video-playlists.md).

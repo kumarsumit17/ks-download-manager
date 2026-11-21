@@ -14,6 +14,13 @@ Free download manager for images, audio and video, with up to 20× faster downlo
 - Follow `docs/spec/ui.md` (IDM-style single window: toolbar, sidebar, download list). Read it before any interface work.
 - The design is our own: never copy icons, skins, screenshots or code from the reference apps.
 
+## Clean room (non-negotiable)
+- Follow `docs/spec/clean-room.md`. Never read, copy or adapt source code, binaries or assets of other download managers. Implement only from our own specs and public standards.
+- Every dependency is listed with its licence in `docs/THIRD_PARTY.md`.
+
+## Video and playlists
+- Follow `docs/spec/video-playlists.md`: site support through yt-dlp as an unmodified sidecar, plus ffmpeg. No DRM bypass.
+
 ## Constraints
 - Free: no ads, no analytics, no crash-reporting SDKs.
 - Network access is used only for the downloads the user starts.

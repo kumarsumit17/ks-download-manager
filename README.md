@@ -14,12 +14,19 @@ A free download manager for images, audio and video, built for speed: up to 20×
 ## Planned features
 
 - Download images, audio and video
+- Download single videos and whole playlists from YouTube and other video sites ([spec](docs/spec/video-playlists.md))
 - Up to 20× faster downloads
 - Free, with no ads, analytics or tracking
 
 ## Interface
 
 A clean, classic single-window layout: toolbar on top, categories and queues on the left, the download list in the middle, in light and dark themes. See [docs/spec/ui.md](docs/spec/ui.md).
+
+## Clean-room implementation
+
+This is an independent implementation: no code or assets from other download managers. See [docs/spec/clean-room.md](docs/spec/clean-room.md).
+
+You are responsible for having the right to download what you request. The app does not bypass DRM or other copy protection.
 
 ## Why this stack
 
