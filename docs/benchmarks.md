@@ -21,7 +21,12 @@ How the download engine scales with the number of connections ([engine spec](../
 
 The spec's target, at least 19× with 20 connections, is met (19.95×). The spec describes a 1 GB file at 1 MB/s per connection; the single-connection run alone would take 17 minutes, so the file is 64 MiB at the same rate per connection. The overhead that can show (probe, splitting, the last range finishing) is a fixed cost, so it weighs a little more in a smaller file.
 
-**Regression check (ready for CI):** the same run compares every speed-up with `src-tauri/engine/tests/bench-baseline.txt` and fails when one drops more than 10 % below it, as the spec asks. Speed-ups, not times, are compared, because under a per-connection limit they do not depend on the machine. A new baseline is written with `KSDM_BENCH_RECORD=1 npm run bench`. No CI workflow exists yet (Release stage); a workflow only needs to run `npm run bench` on macOS or Linux with Rust installed.
+**Regression check (ready for CI):** the same run fails when
+- a speed-up drops more than 10 % below `src-tauri/engine/tests/bench-baseline.txt` (the spec's rule), or a measured count is missing from the baseline;
+- the one-connection run does not take size ÷ rate within 5 % (64 s here): otherwise the throttle did not work and the ratios would measure nothing;
+- an **unthrottled** run (256 MiB over 8 connections from the same local server, no limit) stays below a floor of 500 MiB/s (`KSDM_BENCH_FLOOR_MIBS`). Speed-ups alone cannot catch an engine that got slower everywhere; the floor can. Measured here: **3,095 MiB/s**; the floor is about a sixth of that, so slower machines pass.
+
+Speed-ups, not times, are compared with the baseline, because under a per-connection limit they do not depend on the machine. A new baseline is written with `KSDM_BENCH_RECORD=1 npm run bench` (the time and floor checks apply to that run too, so a broken run is never recorded). Added after the final review. No CI workflow exists yet (Release stage); a workflow only needs to run `npm run bench` on macOS or Linux with Rust installed.
 
 ## 2. Real world (one line, one day)
 

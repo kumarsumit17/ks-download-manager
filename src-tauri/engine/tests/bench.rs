@@ -8,7 +8,9 @@
 //! fills the line with one connection gains nothing.
 //!
 //! Regression check: every speed-up must stay within 10 % of `bench-baseline.txt` (next to
-//! this file). Run in release mode:
+//! this file), every count must be in it, the one-connection run must take size / rate
+//! within 5 % (the throttle worked), and an unthrottled 256 MiB run over 8 connections
+//! must reach a throughput floor. Run in release mode:
 //!   npm run bench                       (check against the baseline)
 //!   KSDM_BENCH_RECORD=1 npm run bench   (write a new baseline)
 //! Size and rate: KSDM_BENCH_MIB (default 64) and KSDM_BENCH_RATE_KIB (per connection,
@@ -31,6 +33,16 @@ use engine::{Adaptive, DownloadOptions, RetryPolicy, download};
 const COUNTS: [usize; 6] = [1, 4, 8, 16, 20, 32];
 /// A speed-up may drop this much below the baseline before the check fails.
 const ALLOWED_DROP: f64 = 0.10;
+/// The one-connection run must take size / rate within this share: it proves the server
+/// really limited each connection, so the speed-ups measure the engine and nothing else.
+const SINGLE_TOLERANCE: f64 = 0.05;
+/// The unthrottled run: this many MiB over 8 connections from the local server, which must
+/// reach `KSDM_BENCH_FLOOR_MIBS` MiB/s (default below). Speed-ups alone cannot catch an
+/// engine that got slower everywhere; this floor can.
+const UNTHROTTLED_MIB: u64 = 256;
+/// About a sixth of what an Apple M5 reached (3,095 MiB/s, 2026-11-21): slower machines
+/// pass, an engine several times slower does not.
+const DEFAULT_FLOOR_MIBS: u64 = 500;
 
 fn env_u64(name: &str, default: u64) -> u64 {
     std::env::var(name).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
@@ -66,6 +78,7 @@ async fn benchmark_connections() {
     println!("|---:|---:|---:|---:|---:|");
     let mut results: Vec<(usize, f64)> = Vec::new();
     let mut single = 0.0;
+    let mut single_secs = 0.0;
     for n in COUNTS {
         let path = dir.join(format!("bench-{n}.bin"));
         let options = DownloadOptions {
@@ -83,12 +96,31 @@ async fn benchmark_connections() {
         let throughput = size as f64 / secs / (1024.0 * 1024.0);
         if n == 1 {
             single = throughput;
+            single_secs = secs;
         }
         let speedup = throughput / single;
         println!("| {n} | {secs:.2} | {throughput:.2} | {speedup:.2}× | {n}× |");
         results.push((n, speedup));
     }
+
+    // Unthrottled: as fast as the engine and this machine go over loopback.
+    let fast = start(ServerOptions::new(UNTHROTTLED_MIB * 1024 * 1024)).await;
+    let path = dir.join("bench-unthrottled.bin");
+    let t = Instant::now();
+    download(&fast.url, &path, DownloadOptions { connections: 8, ..DownloadOptions::default() }).await.expect("unthrottled download");
+    let unthrottled = UNTHROTTLED_MIB as f64 / t.elapsed().as_secs_f64();
+    let _ = std::fs::remove_file(&path);
+    let floor = env_u64("KSDM_BENCH_FLOOR_MIBS", DEFAULT_FLOOR_MIBS) as f64;
+    println!("unthrottled: {UNTHROTTLED_MIB} MiB over 8 connections at {unthrottled:.0} MiB/s (floor {floor:.0} MiB/s)");
     let _ = std::fs::remove_dir_all(&dir);
+
+    // These hold in both modes: a baseline is never recorded from a broken run.
+    let expected = size as f64 / rate as f64;
+    assert!(
+        (single_secs - expected).abs() <= expected * SINGLE_TOLERANCE,
+        "one connection took {single_secs:.2} s, the throttle gives {expected:.2} s: the server did not limit the connection as set"
+    );
+    assert!(unthrottled >= floor, "unthrottled {unthrottled:.0} MiB/s is below the floor of {floor:.0} MiB/s");
 
     if std::env::var_os("KSDM_BENCH_RECORD").is_some() {
         let mut text = format!(
@@ -107,13 +139,13 @@ async fn benchmark_connections() {
     assert!(!baseline.is_empty(), "no baseline: run `KSDM_BENCH_RECORD=1 npm run bench` first");
     let mut failed = Vec::new();
     for (n, s) in &results {
-        if let Some((_, b)) = baseline.iter().find(|(m, _)| m == n)
-            && *s < b * (1.0 - ALLOWED_DROP)
-        {
-            failed.push(format!("{n} connections: {s:.2}× against {b:.2}×"));
+        match baseline.iter().find(|(m, _)| m == n) {
+            None => failed.push(format!("{n} connections: not in the baseline")),
+            Some((_, b)) if *s < b * (1.0 - ALLOWED_DROP) => failed.push(format!("{n} connections: {s:.2}× against {b:.2}×")),
+            Some(_) => {}
         }
     }
-    assert!(failed.is_empty(), "speed-up dropped more than 10 %: {}", failed.join("; "));
+    assert!(failed.is_empty(), "benchmark check failed: {}", failed.join("; "));
 }
 
 /// Public files published for speed tests; downloaded in full, twice each.
