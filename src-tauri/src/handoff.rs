@@ -440,8 +440,13 @@ async fn serve_with(listener: std::os::unix::net::UnixListener, path: PathBuf, h
 }
 
 /// Writes Chrome's host manifest so our extension can find this program. Only when Chrome's
-/// own folder exists (Chrome is installed); never creates Chrome's folder.
+/// own folder exists (Chrome is installed); never creates Chrome's folder. Skipped while the
+/// app runs from a place that goes away (see [`is_temporary_location`]); the next start from
+/// a lasting place writes it.
 pub fn install_manifest(exe: &Path) -> io::Result<Option<PathBuf>> {
+    if is_temporary_location(exe) {
+        return Ok(None);
+    }
     let Some(home) = std::env::var_os("HOME") else { return Ok(None) };
     let chrome = PathBuf::from(home).join("Library/Application Support/Google/Chrome");
     if !cfg!(target_os = "macos") || !chrome.is_dir() {
@@ -455,6 +460,14 @@ pub fn install_manifest(exe: &Path) -> io::Result<Option<PathBuf>> {
         ks_utility::atomic::write_atomic(&file, body.as_bytes())?;
     }
     Ok(Some(file))
+}
+
+/// True when the program runs from a mounted disk image (`/Volumes/…`) or from a copy
+/// Gatekeeper moved to a random read-only folder (App Translocation). Both paths disappear,
+/// so a manifest pointing there would break the extension later.
+fn is_temporary_location(exe: &Path) -> bool {
+    let s = exe.to_string_lossy();
+    s.starts_with("/Volumes/") || s.contains("/AppTranslocation/")
 }
 
 fn manifest_json(exe: &Path) -> String {
@@ -639,6 +652,18 @@ mod tests {
         tokio::time::timeout(Duration::from_secs(3), ok.read_to_string(&mut answer)).await.unwrap().unwrap();
         assert!(answer.contains("\"ok\":true"), "{answer}");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn no_manifest_from_a_disk_image_or_a_translocated_copy() {
+        let dmg = Path::new("/Volumes/KS Download Manager/KS Download Manager.app/Contents/MacOS/ks-download-manager");
+        let moved = Path::new("/private/var/folders/x1/abc/T/AppTranslocation/0A1B-2C3D/d/KS Download Manager.app/Contents/MacOS/ks-download-manager");
+        assert!(is_temporary_location(dmg));
+        assert!(is_temporary_location(moved));
+        assert_eq!(install_manifest(dmg).unwrap(), None);
+        assert_eq!(install_manifest(moved).unwrap(), None);
+        assert!(!is_temporary_location(Path::new("/Applications/KS Download Manager.app/Contents/MacOS/ks-download-manager")));
+        assert!(!is_temporary_location(Path::new("/Users/a/Applications/KS Download Manager.app/Contents/MacOS/ks-download-manager")));
     }
 
     #[test]
