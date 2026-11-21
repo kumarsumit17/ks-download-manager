@@ -1,7 +1,37 @@
-import { Ban } from "lucide-react";
+import { useState } from "react";
+import { Ban, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { api, message } from "./api";
 import { formatBytes, formatSpeed, formatTimeLeft } from "./format";
-import { CANNOT_PAUSE, type ConnectionTick, type Download, cannotPause } from "./types";
+import { CANNOT_PAUSE, type ConnectionTick, type Download, VIDEO_OUTDATED, cannotPause } from "./types";
+
+/** Installs the newest video component, then retries the download. */
+function UpdateVideoComponent({ d }: { d: Download }) {
+  const [state, setState] = useState<{ busy: boolean; note: string | null }>({ busy: false, note: null });
+  const run = async () => {
+    setState({ busy: true, note: "Updating the video component…" });
+    try {
+      const r = await api.updateVideoComponent();
+      if (r.result === "updated") {
+        setState({ busy: false, note: `Updated from ${r.from} to ${r.to}. Trying again…` });
+        await api.resume(d.id);
+      } else {
+        setState({ busy: false, note: `Already the newest version (${r.version}). The site may have changed since; try again later.` });
+      }
+    } catch (e) {
+      setState({ busy: false, note: message(e) });
+    }
+  };
+  return (
+    <div className="flex items-center gap-3">
+      <Button size="sm" variant="outline" disabled={state.busy} onClick={() => void run()}>
+        <RefreshCw className={state.busy ? "animate-spin motion-reduce:animate-none" : ""} aria-hidden /> Update video component
+      </Button>
+      {state.note && <span role="status" className="text-xs text-muted-foreground">{state.note}</span>}
+    </div>
+  );
+}
 
 function pct(done: number, total: number): number {
   return total > 0 ? Math.min(100, (done / total) * 100) : 0;
@@ -60,12 +90,17 @@ export function DownloadDetails({ d }: { d: Download }) {
           </>
         )}
       </div>
+      {d.status === "failed" && d.errorCode === VIDEO_OUTDATED && <UpdateVideoComponent d={d} />}
       {cannotPause(d) && (
         <p className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
           <Ban className="size-3.5 shrink-0" aria-hidden /> {CANNOT_PAUSE}
         </p>
       )}
-      {running && d.connections.length > 0 ? (
+      {running && d.kind === "video" ? (
+        <p className="text-xs text-muted-foreground">
+          {d.merging ? "Joining video and audio…" : "Fetched by the video component (one stream at a time)."}
+        </p>
+      ) : running && d.connections.length > 0 ? (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <h3 className="mb-1.5 text-xs font-medium text-muted-foreground">
             Connections ({d.connections.filter(Boolean).length} working)

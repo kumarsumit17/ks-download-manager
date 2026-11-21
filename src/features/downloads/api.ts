@@ -2,6 +2,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { Active, DownloadRecord, ProbeView, Tick } from "./types";
 
+export type ComponentUpdate =
+  | { result: "upToDate"; version: string }
+  | { result: "updated"; from: string; to: string };
+
 // Every command that acts on a download takes its id; Rust looks up the path.
 export const api = {
   list: () => invoke<DownloadRecord[]>("list_downloads"),
@@ -16,6 +20,7 @@ export const api = {
   openFile: (id: number) => invoke<void>("open_file", { id }),
   openFolder: (id: number) => invoke<void>("open_folder", { id }),
   active: () => invoke<Active>("active_downloads"),
+  updateVideoComponent: () => invoke<ComponentUpdate>("update_video_component"),
   quit: () => invoke<void>("quit"),
 };
 

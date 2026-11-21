@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { AlertTriangle, Film, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -98,13 +98,14 @@ export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
   };
 
   const ready = probe !== null && name.trim() !== "" && folder.trim() !== "" && !busy;
+  const video = probe?.kind === "video";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Add download</DialogTitle>
-          <DialogDescription>Paste a link to a file. Its details appear before it starts.</DialogDescription>
+          <DialogDescription>Paste a link to a file or a video page. Its details appear before it starts.</DialogDescription>
         </DialogHeader>
         <form
           className="grid gap-4"
@@ -132,7 +133,17 @@ export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
                 <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden /> Checking the link…
               </span>
             )}
-            {probe && (
+            {probe && video && (
+              <dl className="grid grid-cols-[6rem_1fr] gap-x-3 gap-y-1">
+                <dt className="text-muted-foreground">Video</dt>
+                <dd className="flex items-center gap-1.5">
+                  <Film className="size-4 shrink-0" aria-hidden /> Best available quality
+                </dd>
+                <dt className="text-muted-foreground">Size</dt>
+                <dd className="tabular-nums">{probe.size === null ? "Unknown" : `about ${formatBytes(probe.size)}`}</dd>
+              </dl>
+            )}
+            {probe && !video && (
               <dl className="grid grid-cols-[6rem_1fr] gap-x-3 gap-y-1">
                 <dt className="text-muted-foreground">Size</dt>
                 <dd className="tabular-nums">{formatBytes(probe.size)}</dd>
@@ -173,12 +184,20 @@ export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
           )}
 
           <DialogFooter>
-            <Button type="button" variant="outline" disabled={!ready} onClick={() => void add(false)}>
-              Download later
-            </Button>
-            <Button type="submit" disabled={!ready}>
-              Download now
-            </Button>
+            {video ? (
+              <Button type="submit" disabled={!ready}>
+                Download
+              </Button>
+            ) : (
+              <>
+                <Button type="button" variant="outline" disabled={!ready} onClick={() => void add(false)}>
+                  Download later
+                </Button>
+                <Button type="submit" disabled={!ready}>
+                  Download now
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </form>
       </DialogContent>

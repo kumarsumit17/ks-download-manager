@@ -23,5 +23,5 @@ pub use download::{
     saved_state,
 };
 pub use error::EngineError;
-pub use probe::{ProbeInfo, Validator, probe};
+pub use probe::{ProbeInfo, Validator, fetch_text, probe};
 pub use retry::RetryPolicy;

@@ -9,7 +9,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
-import { CANNOT_PAUSE, type Download, type Status, canPause, canResume, cannotPause } from "./types";
+import { CANNOT_PAUSE, type Download, type Status, canPause, canResume, cannotPause, isMkvVideo } from "./types";
 import { formatBytes, formatDate, formatSpeed, formatTimeLeft } from "./format";
 
 type SortKey = "name" | "size" | "status" | "speed" | "timeLeft" | "addedAt";
@@ -174,11 +174,21 @@ export function DownloadList({ downloads, selectedId, onSelect, actions, loaded 
                         Can't pause
                       </span>
                     )}
+                    {isMkvVideo(d) && (
+                      <span className="shrink-0 rounded border px-1 text-xs text-muted-foreground" title="Saved as MKV to keep the best quality without re-encoding.">
+                        MKV · plays in VLC or IINA
+                      </span>
+                    )}
                   </span>
                 </td>
                 <td className="px-3 text-right tabular-nums">{formatBytes(d.size)}</td>
                 <td className="px-3">
-                  {d.status === "downloading" && d.size === null ? (
+                  {d.status === "downloading" && d.merging ? (
+                    <div className="flex items-center gap-2">
+                      <div role="progressbar" aria-label="Joining video and audio" className="progress-indeterminate h-1.5 flex-1 overflow-hidden rounded-full bg-muted" />
+                      <span className="w-14 text-xs text-muted-foreground">Merging…</span>
+                    </div>
+                  ) : d.status === "downloading" && d.size === null ? (
                     <div className="flex items-center gap-2">
                       <div role="progressbar" aria-label="Downloading, size unknown" className="progress-indeterminate h-1.5 flex-1 overflow-hidden rounded-full bg-muted" />
                       <span className="w-14 text-xs text-muted-foreground">{formatBytes(d.received)}</span>

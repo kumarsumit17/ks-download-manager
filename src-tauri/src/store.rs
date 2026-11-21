@@ -31,11 +31,23 @@ pub enum Status {
     Interrupted,
 }
 
+/// What does the fetching: our own engine for files, yt-dlp for video-site links.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Kind {
+    #[default]
+    File,
+    Video,
+}
+
 /// One download in the list.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Record {
     pub id: u64,
+    /// Lists saved before video support have no kind: those are files.
+    #[serde(default)]
+    pub kind: Kind,
     pub url: String,
     pub name: String,
     /// Full path of the file. Chosen and checked in Rust; the interface only displays it.
@@ -47,6 +59,9 @@ pub struct Record {
     /// From the last probe: the server allows pausing and resuming this download.
     pub resumable: bool,
     pub error: Option<String>,
+    /// What the interface can offer for the error, e.g. `videoOutdated` (an update button).
+    #[serde(default)]
+    pub error_code: Option<String>,
     /// Milliseconds since the Unix epoch.
     pub added_at: u64,
 }
@@ -111,6 +126,8 @@ mod tests {
     pub fn record(id: u64) -> Record {
         Record {
             id,
+            kind: Kind::File,
+            error_code: None,
             url: format!("https://example.com/{id}.zip"),
             name: format!("{id}.zip"),
             path: PathBuf::from(format!("/tmp/{id}.zip")),
@@ -135,6 +152,19 @@ mod tests {
         assert!(!with_suffix(&file, ".tmp").exists(), "temp file renamed away");
         save(&file, &list[..1]).unwrap();
         assert_eq!(load(&file), list[..1]);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn lists_from_before_video_support_still_load() {
+        let dir = temp_dir();
+        fs::create_dir_all(&dir).unwrap();
+        let file = path(&dir);
+        let old = r#"{"version":1,"downloads":[{"id":1,"url":"https://e.x/a","name":"a","path":"/tmp/a",
+            "category":"other","status":"paused","size":10,"received":1,"resumable":true,"error":null,"addedAt":0}]}"#;
+        fs::write(&file, old).unwrap();
+        let list = load(&file);
+        assert_eq!((list.len(), list[0].kind, list[0].error_code.clone()), (1, Kind::File, None));
         fs::remove_dir_all(&dir).unwrap();
     }
 

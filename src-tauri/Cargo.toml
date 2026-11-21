@@ -31,7 +31,8 @@ ks-utility = { git = "https://github.com/kumarsumit17/ks-utility", rev = "f772fa
 # Already in Cargo.lock through tauri and the engine: no new packages.
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
-tokio = { version = "1.54.1", features = ["time"] }
+# process: runs the bundled yt-dlp; io-util/macros: reads its output, stops it on pause.
+tokio = { version = "1.54.1", features = ["time", "process", "io-util", "macros", "rt"] }
 
 [dev-dependencies]
 tokio = { version = "1.54.1", features = ["time", "rt", "macros", "fs"] }

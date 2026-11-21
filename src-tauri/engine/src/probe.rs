@@ -1,5 +1,5 @@
 use reqwest::StatusCode;
-use reqwest::header::{CONTENT_DISPOSITION, CONTENT_RANGE, ETAG, HeaderMap, LAST_MODIFIED, RANGE};
+use reqwest::header::{CONTENT_DISPOSITION, CONTENT_RANGE, CONTENT_TYPE, ETAG, HeaderMap, LAST_MODIFIED, RANGE};
 
 use ks_utility::content_disposition::{content_disposition_filename, percent_decode};
 use ks_utility::file_name::sanitize_file_name;
@@ -20,9 +20,16 @@ pub struct ProbeInfo {
     pub validator: Option<Validator>,
     /// From Content-Disposition, else the last part of the URL path, made safe as a file name.
     pub file_name: String,
+    /// The media type from `Content-Type`, lower case, without parameters (`text/html`).
+    pub content_type: Option<String>,
 }
 
 impl ProbeInfo {
+    /// True when the link answers with a web page rather than a file.
+    pub fn is_web_page(&self) -> bool {
+        matches!(self.content_type.as_deref(), Some("text/html" | "application/xhtml+xml"))
+    }
+
     /// True when a download of this file can be paused and resumed: the server supports
     /// ranges, the size is known and not zero, and it gave a strong validator (an ETag that
     /// is not weak, or Last-Modified). Otherwise stopping the download loses what it has.
@@ -87,7 +94,33 @@ pub async fn probe(url: &str) -> Result<ProbeInfo, EngineError> {
         size,
         ranges,
         validator: validator(&headers),
+        content_type: media_type(&headers),
     })
+}
+
+fn media_type(headers: &HeaderMap) -> Option<String> {
+    let value = headers.get(CONTENT_TYPE)?.to_str().ok()?;
+    let t = value.split(';').next()?.trim().to_ascii_lowercase();
+    (!t.is_empty()).then_some(t)
+}
+
+/// Fetches a small text resource (at most `max` bytes), for the few non-download requests
+/// the user starts, such as checking for a newer video component.
+pub async fn fetch_text(url: &str, max: usize) -> Result<String, EngineError> {
+    let url = parse_url(url)?;
+    let client = client()?;
+    let mut resp = get(&client, &url).send().await?;
+    if !resp.status().is_success() {
+        return Err(EngineError::HttpStatus(resp.status().as_u16()));
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = resp.chunk().await? {
+        if body.len() + chunk.len() > max {
+            return Err(EngineError::TooMuchData);
+        }
+        body.extend_from_slice(&chunk);
+    }
+    String::from_utf8(body).map_err(|_| EngineError::Network("the reply is not text".into()))
 }
 
 pub(crate) fn validator(headers: &HeaderMap) -> Option<Validator> {
@@ -124,6 +157,14 @@ mod tests {
         assert_eq!(sanitize("../../etc/passwd"), "passwd");
         assert_eq!(sanitize("a:b?.txt"), "a_b_.txt");
         assert_eq!(sanitize(".."), "download");
+    }
+
+    #[test]
+    fn media_type_drops_parameters() {
+        let mut h = HeaderMap::new();
+        h.insert(CONTENT_TYPE, "Text/HTML; charset=utf-8".parse().unwrap());
+        assert_eq!(media_type(&h).as_deref(), Some("text/html"));
+        assert_eq!(media_type(&HeaderMap::new()), None);
     }
 
     #[test]

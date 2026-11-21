@@ -23,6 +23,7 @@ function fromRecord(r: DownloadRecord, old?: Download): Download {
     queue: MAIN_QUEUE,
     speed: running ? (old?.speed ?? 0) : 0,
     connections: running ? (old?.connections ?? []) : [],
+    merging: running ? (old?.merging ?? false) : false,
     // Keep the live count while running: the record's own count is only updated on stop.
     received: running && old ? Math.max(old.received, r.received) : r.received,
   };
@@ -46,7 +47,7 @@ function progress(ticks: Tick[]) {
     const d = rows.get(t.id);
     if (!d || d.status !== "downloading") continue;
     next ??= new Map(rows);
-    next.set(t.id, { ...d, received: t.received, size: t.size ?? d.size, speed: t.speed, connections: t.connections });
+    next.set(t.id, { ...d, received: t.received, size: t.size ?? d.size, speed: t.speed, connections: t.connections, merging: t.merging });
   }
   if (next) {
     rows = next;

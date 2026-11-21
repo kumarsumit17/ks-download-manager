@@ -2,10 +2,12 @@
 //! the events it listens to. Downloading is done by the `engine` crate (src-tauri/engine);
 //! the list and the running downloads are kept by [`manager::Manager`].
 
+mod component;
 mod files;
 mod manager;
 mod open;
 mod store;
+mod video;
 
 use std::sync::Arc;
 
@@ -97,6 +99,22 @@ fn active_downloads(m: Downloads<'_>) -> Active {
     m.active()
 }
 
+/// "Update video component": installs the newest official yt-dlp, on request only.
+#[tauri::command]
+async fn update_video_component(m: Downloads<'_>) -> Result<component::Update, String> {
+    let tools = m.video_tools()?;
+    component::update(&tools).await
+}
+
+/// Where the bundled programs are: deno, ffmpeg and ffprobe next to the app executable
+/// (Tauri `externalBin`), yt-dlp's folder in the resources.
+fn video_tools(app: &tauri::App, data: &std::path::Path) -> Option<video::Tools> {
+    let exe = std::env::current_exe().ok()?;
+    let programs = exe.parent()?;
+    let resources = app.path().resource_dir().ok()?;
+    Some(video::Tools::new(programs, &resources, data))
+}
+
 /// Stops every download (resumable ones save their place), then exits.
 #[tauri::command]
 async fn quit(app: AppHandle, m: Downloads<'_>) -> Result<(), String> {
@@ -120,6 +138,9 @@ pub fn run() {
         .setup(|app| {
             let data = app.path().app_data_dir()?;
             let manager = Manager::new(store::path(&data), Arc::new(WindowEvents(app.handle().clone())));
+            if let Some(tools) = video_tools(app, &data) {
+                manager.set_video_tools(Arc::new(tools));
+            }
             // Reads only the range maps of unfinished downloads; nothing starts by itself.
             tauri::async_runtime::block_on(manager.restore());
             app.manage(manager.clone());
@@ -159,6 +180,7 @@ pub fn run() {
             open_file,
             open_folder,
             active_downloads,
+            update_video_component,
             quit,
         ])
         .build(tauri::generate_context!())

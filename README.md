@@ -9,7 +9,7 @@ A free download manager for images, audio and video, built for speed. The goal i
 | **Platform** | Windows · macOS (desktop) |
 | **Tech stack** | Rust (download engine) · Tauri (desktop shell) · TypeScript + React with shadcn/ui and Lucide icons (interface) |
 | **Chrome extension** | TypeScript, Manifest V3 (under consideration) |
-| **Status** | In development: Stage 1 (main window), Stage 2 (engine core: probe and segmented download), Stage 3 (dynamic splitting, retry, resume) and Stage 4 (UI wired to the engine) are done; Stage 5 (scheduler, queues, categories) is next. See [stages](specs/stages.md) |
+| **Status** | In development: Stages 1–4 are done; Stage 5 (Final) is being built part by part. See [stages](specs/stages.md) |
 
 ## Planned features
 
@@ -22,6 +22,15 @@ A free download manager for images, audio and video, built for speed. The goal i
 
 A clean, classic single-window layout: toolbar on top, categories and queues on the left, the download list in the middle, in light and dark themes. See [specs/ui.md](specs/ui.md).
 
+## Building
+
+```bash
+npm install
+npm run sidecars        # fetch yt-dlp and Deno, build ffmpeg (checked against pinned SHA-256)
+npm run tauri dev       # run with hot reload
+npm run bundle:mac      # release .app, then sign the bundled programs (ad-hoc unless an identity is given)
+```
+
 ## Clean-room implementation
 
 This is an independent implementation: no code or assets from other download managers. See [specs/clean-room.md](specs/clean-room.md).
@@ -30,7 +39,8 @@ You are responsible for having the right to download what you request. The app d
 
 ## Why this stack
 
-- **Fast:** the download engine is native Rust, and the app starts quickly with low memory use because it bundles no language runtime.
+- **Fast:** the download engine is native Rust. Ordinary downloads never start another runtime.
+- **Video sites:** video links go through bundled, unmodified copies of [yt-dlp](https://github.com/yt-dlp/yt-dlp) (which carries its own Python runtime), [Deno](https://deno.com) (a JavaScript runtime yt-dlp needs for YouTube) and an LGPL build of [ffmpeg](https://ffmpeg.org). They make the app much larger: about 250 MB per architecture instead of a few MB. Licences: [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md).
 - **Modern:** the interface is built with web technology inside a native window.
 - **One codebase** for Windows and macOS, and the Chrome extension can share interface code with the app.
 

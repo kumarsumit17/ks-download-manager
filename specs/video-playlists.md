@@ -32,12 +32,37 @@ One setting, **Always get the best available quality** (Settings → Downloads),
 - The app can update yt-dlp on its own, separately from app releases, because sites break old versions quickly.
 - Ordinary file downloads (images, archives, direct media links) do not go through yt-dlp; they use our own segmented Rust engine.
 
+## Bundled programs (Stage 5)
+| Program | What we ship | How it is checked | Licence |
+|---|---|---|---|
+| yt-dlp | The official unpacked macOS build (`yt-dlp_macos.zip`, universal), unmodified, in the app's resources (`yt-dlp/`) | Version and SHA-256 pinned in `src-tauri/sidecars.json`; `scripts/sidecars.mjs` refuses a file whose hash differs | Unlicense; its bundled Python and libraries are listed in `yt-dlp/_internal/THIRD_PARTY_LICENSES.txt`, shipped with it |
+| ffmpeg, ffprobe | Built by us from the pinned ffmpeg.org source tarball by `scripts/build-ffmpeg.sh`, for arm64 and x86_64 | Tarball SHA-256 pinned; the build stops on a mismatch | LGPL-2.1-or-later: no `--enable-gpl`, no `--enable-nonfree`, `--disable-autodetect` with only zlib and Secure Transport (system libraries) enabled |
+| Deno | The official release binary for the target architecture | Version and SHA-256 pinned | MIT; `licenses/deno-THIRD-PARTY.txt` lists the crates built into it |
+
+- **Why the unpacked yt-dlp:** the single-file build unpacks Python and its libraries to a temp folder on every run, which is slow and whose libraries cannot be signed with the app. The unpacked build is signed once with the app.
+- **ffmpeg network:** network protocols stay enabled, with TLS through the system's Secure Transport, so sites where yt-dlp hands an HLS stream to ffmpeg keep working. zlib is enabled explicitly (`--disable-autodetect` would otherwise drop it).
+- **LGPL obligations:** the licence texts and the exact source reference and configure line are shipped in `licenses/` (`ffmpeg-SOURCE.txt`); the build script is in this repository; the same source tarball is attached to each release (Release stage). ffmpeg is a separate program the user can replace.
+- **One architecture per build:** Deno alone is about 80–100 MB per architecture, so a universal app would roughly double in size. Each release is built for one architecture (`aarch64-apple-darwin` or `x86_64-apple-darwin`), with that architecture's ffmpeg and Deno.
+
+## How a video download runs
+- **Recognising a link:** our engine probes the link first. If it answers with a file, it is an ordinary download. If it answers with a web page (`text/html`), yt-dlp is asked (`-J`, 60 s limit) with the generic extractor off (`--ies default,-generic`), so only sites yt-dlp knows by name count. If none knows it, the Add dialog says "This link is a web page, not a file" and offers no way to save the page. Links that the engine gets 401, 403, 405 or 429 for are also tried with yt-dlp.
+- **One action:** the Add dialog shows the title, "Best available quality" and the estimated size, and a single **Download** button. No quality question.
+- **Arguments on every run:** `--ignore-config`, `--no-plugin-dirs`, `--no-remote-components`, `--no-update`, `--no-cookies-from-browser`, `--ffmpeg-location <app folder>`, `--js-runtimes deno:<bundled deno>`, `--cache-dir <app data>/yt-dlp-cache`, `--ies default,-generic`, `--no-playlist`, and the URL after `--`, so it can never be read as an option. No cookies are ever passed.
+- **Format:** `-f "bv*+ba/b" -S res,fps,br --merge-output-format mp4/mkv`. MP4 when the codecs fit, otherwise MKV; never re-encoded. A finished `.mkv` says so in its row ("MKV · plays in VLC or IINA"). The "Prefer MP4" setting adds codec preferences after resolution and frame rate, so it never lowers the resolution.
+- **Files:** yt-dlp writes to the fixed name `video.<ext>` (with its `.part` files) inside a hidden folder beside the destination, `.ksdownload-video-<id>/`, used for both its home and temp paths. The final name is not reserved before it runs (yt-dlp skips a download whose output exists, and the extension is only known after merging). When yt-dlp exits successfully, the app reserves `title.<real ext>` in the destination folder ("title (1).ext" if taken) and renames the file over the reservation, then removes the hidden folder. Nothing is ever overwritten.
+- **Progress:** yt-dlp prints one machine-readable line per update (format, bytes, total or estimate); video and audio come one after the other and are added up. While ffmpeg joins them the row shows "Merging…".
+- **Pause, delete, quit:** yt-dlp runs in its own process group; stopping sends SIGTERM to the whole group (yt-dlp, ffmpeg, Deno), then SIGKILL after 3 s. Resume runs yt-dlp again on the same folder; it continues its `.part` files and fetches fresh stream addresses. After a restart a video with its hidden folder comes back paused; without it, queued. Delete removes only that download's hidden folder.
+- **Failures:** the last `ERROR:` line decides the message: web page, sign-in needed, unavailable, DRM (not supported), live stream (not supported), or extractor failures (unable to extract, signature or `nsig` failures, 403 on streams, "please report this issue"), which say "the video component is out of date" and offer **Update video component**. There is no fallback to a lower quality.
+
+## Updating yt-dlp
+- **Update video component** (offered on a failed video, and in Settings) asks GitHub for the newest yt-dlp release, only when the user clicks it. If it is newer than the one in use, the app downloads `yt-dlp_macos.zip` and that release's `SHA2-256SUMS`, checks the hash, unpacks it into `<app data>/video-component/<version>/`, checks that it starts and reports that version, and only then switches to it (a `current` file names the version). The bundled copy inside the signed app is never changed; older updates are removed.
+- **What the hash proves:** the hash comes from the same release as the file, so it detects a damaged or incomplete download, not a deliberately altered release. The pinned hashes in `sidecars.json` are taken from the release's `SHA2-256SUMS` when the pin is moved; checking those sums' GPG signature by hand when moving the pin is recommended (not done yet: see `docs/decisions-stage5.md`).
+
 ## Limits
 - No DRM-protected content (paid streaming services). The app does not attempt to remove or bypass copy protection.
 - Private or sign-in-only videos are out of scope for the first version.
 - The user is responsible for having the right to download what they request. The first-run screen and the README say so plainly.
 
 ## Open points
-- Best-size images: picking the original needs a rule per site (for example a size parameter in the image address). Decide which sites the first version covers and list them here before Stage 7.
-- Licences to confirm and record in `docs/THIRD_PARTY.md` before bundling: yt-dlp and the exact ffmpeg build.
-- Chrome Web Store rules on extensions that help download YouTube video: confirm before designing the extension's "send to app" button for video pages.
+- Best-size images: the extension's site rules cover X (x.com, twitter.com); other sites use the largest `srcset` candidate or a linked full-size image (Stage 5, Part 2).
+- Chrome Web Store rules: not relevant, the extension is loaded unpacked and not published.

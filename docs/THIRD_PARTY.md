@@ -16,7 +16,9 @@ Add one row per dependency in the commit that introduces it. Direct dependencies
 | tauri-build | 2.7.6 | Apache-2.0 OR MIT | Build step for the Tauri app |
 | serde | 1.0.229 | MIT OR Apache-2.0 | Download list records sent to the interface and saved to disk. Feature: derive |
 | serde_json | 1.0.154 | MIT OR Apache-2.0 | `downloads.json` (the saved download list) |
-| tokio | 1.54.1 | MIT | The 250 ms progress ticker and the wait on quit. Feature: time (tests also use rt, macros, fs) |
+| tokio | 1.54.1 | MIT | The 250 ms progress ticker and the wait on quit; since Stage 5 also running yt-dlp and reading its output. Features: time, process, io-util, macros, rt (tests also use fs) |
+
+Stage 5 turned on tokio's `process` feature, which brings two packages into `Cargo.lock` (482 → 484 entries): signal-hook-registry 1.4.8 (MIT OR Apache-2.0) and errno 0.3.15 (MIT OR Apache-2.0).
 
 Stage 4 added these as direct dependencies of the shell; all three were already in `Cargo.lock` through tauri and the engine, so no package was added (481 lockfile entries before and after). The shell also depends on the in-repo `engine` crate.
 
@@ -58,3 +60,15 @@ Stage 2 added 25 third-party crates that are built (plus 11 lockfile entries for
 
 ## Assets
 - App icon (`assets/app-icon.svg`, generated sizes in `src-tauri/icons/`): our own design, made for this project.
+
+## Bundled programs (Stage 5)
+
+Separate programs shipped inside the app, run as child processes, never linked. Pinned by version and SHA-256 in `src-tauri/sidecars.json`; `npm run sidecars` (`scripts/sidecars.mjs`) fetches them, refuses any file whose hash differs, and builds ffmpeg. Details in [video-playlists](../specs/video-playlists.md#bundled-programs-stage-5).
+
+| Program | Version | Licence | How it is obtained and checked | Used for |
+|---|---|---|---|---|
+| yt-dlp | 2026.10.26 (`yt-dlp_macos.zip`, unpacked build, universal) | Unlicense; bundled Python 3.14 (PSF-2.0) and libraries listed in its `_internal/THIRD_PARTY_LICENSES.txt` (shipped) | Official GitHub release, SHA-256 `20d98fa6…3ef1` from the release's `SHA2-256SUMS`, unmodified | Reading video sites and fetching the streams |
+| ffmpeg, ffprobe | 9.1 | LGPL-2.1-or-later (no GPL or non-free parts; zlib and Secure Transport from the system) | Built by `scripts/build-ffmpeg.sh` from the ffmpeg.org tarball, SHA-256 `1a4d394a…2433`; licence texts and source reference in `licenses/` | Joining video and audio, container fixes |
+| Deno | 2.9.8 | MIT; V8 (BSD-3-Clause), ICU (Unicode) and the Rust crates listed in `licenses/deno-THIRD-PARTY.txt` | Official GitHub release for the target architecture, SHA-256 pinned per architecture | The JavaScript runtime yt-dlp needs for YouTube |
+
+Size: about 252 MB for the arm64 app (yt-dlp folder 120 MB, Deno 80 MB, ffmpeg and ffprobe 45 MB).

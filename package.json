@@ -10,7 +10,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "sidecars": "node scripts/sidecars.mjs",
+    "bundle:mac": "tauri build --bundles app && sh scripts/sign-macos.sh \"src-tauri/target/release/bundle/macos/KS Download Manager.app\""
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

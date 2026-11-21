@@ -113,6 +113,7 @@ fn resumable_needs_ranges_a_known_size_and_a_strong_validator() {
         ranges: true,
         validator: Some(Validator::ETag("\"v1\"".into())),
         file_name: "f".into(),
+        content_type: None,
     };
     assert!(base.resumable());
     assert!(ProbeInfo { validator: Some(Validator::LastModified("Tue, 01 Dec 2026 10:00:00 GMT".into())), ..base.clone() }.resumable());
