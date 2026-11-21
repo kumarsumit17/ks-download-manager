@@ -1,6 +1,7 @@
 # Tag-driven draft release (docs/release.md). Pushing a tag vX.Y.Z on main builds the
-# macOS disk images and the Chrome extension, attests every file, and creates a DRAFT
-# GitHub release. Nothing is published by this workflow.
+# macOS disk images, the Chrome extension and (when switched on) the Windows beta
+# installer, attests every file, and creates a DRAFT GitHub release. Nothing is published
+# by this workflow.
 # Runner images are named versions, never -latest (docs/decisions-release.md).
 # Actions are GitHub's own, pinned to a full commit SHA (version in the comment).
 name: Release
@@ -22,6 +23,9 @@ jobs:
       contents: read
     outputs:
       version: ${{ steps.v.outputs.version }}
+      # The Windows beta installer: "off" builds no Windows file at all. Switched on only
+      # once every Windows test passes on windows-2025 (docs/release-plan.md, section 4).
+      windows: "off"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -217,11 +221,77 @@ jobs:
           path: release/
           if-no-files-found: error
 
-  # Phase B (Windows, beta) is added here once every Windows test passes on windows-2025
-  # (docs/release-plan.md, section 4). Until then no Windows file is built.
+  # ffmpeg/ffprobe for Windows, cross-built on Linux (as in ci.yml).
+  ffmpeg-windows:
+    needs: version
+    if: needs.version.outputs.windows == 'on'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Cross-build (mingw-w64, nasm)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends mingw-w64 nasm >/dev/null
+          sh scripts/build-ffmpeg.sh "$PWD/ffmpeg-work" windows-x86_64
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ffmpeg-windows
+          path: ffmpeg-work/out-windows-x86_64/
+          if-no-files-found: error
+
+  # The Windows installer, beta: per-user NSIS, not code-signed (docs/release-plan.md, 3.2).
+  windows:
+    needs: [version, ffmpeg-windows]
+    if: needs.version.outputs.windows == 'on'
+    runs-on: windows-2025
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      EXE: ks-download-manager-v${{ needs.version.outputs.version }}-windows-x64-setup-beta.exe
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26"
+          cache: npm
+      - run: node scripts/set-version.mjs "$GITHUB_REF_NAME"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ffmpeg-windows
+          path: ffmpeg-windows
+      - run: npm ci
+      - name: Bundled programs (hash-checked; ffmpeg from the cross build)
+        run: node scripts/sidecars.mjs x86_64-pc-windows-msvc --ffmpeg-from ffmpeg-windows
+      - name: Build the installer
+        run: npm run tauri build -- --bundles nsis
+      - name: Name it
+        run: |
+          mkdir -p release
+          set -- src-tauri/target/release/bundle/nsis/*-setup.exe
+          [ $# -eq 1 ] && [ -f "$1" ] || { echo "::error::expected one installer, found: $*"; exit 1; }
+          cp "$1" "release/$EXE"
+      - name: Install, check (files, licences, programs, Chrome registration), uninstall
+        run: sh scripts/test-windows-installer.sh "release/$EXE"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows
+          path: release/
+          if-no-files-found: error
 
   attest:
-    needs: [version, mac, extension]
+    needs: [version, mac, extension, windows]
+    # Runs when Windows was built, and when it is switched off (skipped); never after a failure.
+    if: ${{ !cancelled() && needs.mac.result == 'success' && needs.extension.result == 'success' && (needs.windows.result == 'success' || (needs.windows.result == 'skipped' && needs.version.outputs.windows == 'off')) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -260,6 +330,7 @@ jobs:
 
   release:
     needs: [version, attest]
+    if: ${{ !cancelled() && needs.attest.result == 'success' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
