@@ -46,3 +46,11 @@ desktop.ini
 
 # ---- Logs ----
 *.log
+
+# ---- Rust / Tauri ----
+target/
+**/target/
+
+# ---- Node ----
+node_modules/
+dist/

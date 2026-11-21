@@ -7,7 +7,8 @@ A free download manager for images, audio and video, built for speed: up to 20×
 | | |
 |---|---|
 | **Platform** | Windows · macOS (desktop) |
-| **Tech stack** | Kotlin (rest to be decided) |
+| **Tech stack** | Rust (download engine) · Tauri (desktop shell) · TypeScript + React (interface) |
+| **Chrome extension** | TypeScript, Manifest V3 (under consideration) |
 | **Status** | Planned: this repository holds the project structure; app code is still to come |
 
 ## Planned features
@@ -15,6 +16,12 @@ A free download manager for images, audio and video, built for speed: up to 20×
 - Download images, audio and video
 - Up to 20× faster downloads
 - Free, with no ads, analytics or tracking
+
+## Why this stack
+
+- **Fast:** the download engine is native Rust, and the app starts quickly with low memory use because it bundles no language runtime.
+- **Modern:** the interface is built with web technology inside a native window.
+- **One codebase** for Windows and macOS, and the Chrome extension can share interface code with the app.
 
 ## Roadmap
 
