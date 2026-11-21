@@ -6,7 +6,7 @@ A free download manager for images, audio and video, built for speed: up to 20×
 
 | | |
 |---|---|
-| **Platform** | To be decided |
+| **Platform** | Windows · macOS (desktop) |
 | **Tech stack** | Kotlin (rest to be decided) |
 | **Status** | Planned: this repository holds the project structure; app code is still to come |
 
@@ -15,6 +15,12 @@ A free download manager for images, audio and video, built for speed: up to 20×
 - Download images, audio and video
 - Up to 20× faster downloads
 - Free, with no ads, analytics or tracking
+
+## Roadmap
+
+- **Now:** desktop app for Windows and macOS
+- **Maybe:** a Chrome extension that hands downloads to the desktop app
+- **Later:** Android is not planned for now and may be revisited in the future
 
 ## Release
 
