@@ -57,6 +57,13 @@ npm run tauri build              # release bundle (.app/.dmg on macOS)
 ## Dependencies
 - Keep third-party dependencies to the minimum. Follow `specs/dependencies.md` before adding any crate or package.
 
+## Platform folders
+- Every KS-Suite app repo has the same top-level platform folders: `tv/google-tv/`, `desktop/mac/`, `desktop/windows/`, `mobile/android/` and `mobile/ios/`. All five exist in every app repo, whether or not the app supports that platform yet.
+- This app targets `desktop/mac` and `desktop/windows`. The other folders are empty on purpose (a `.gitkeep` only): they mark where that platform's code would go, not missing work. Do not add code for a platform that is not a target without the owner asking.
+- Code for one platform goes in that platform's folder. Code used by more than one platform stays in one shared place and is never copied between platform folders.
+- One Tauri codebase builds both desktop targets, and it is still in the repository root (`src/`, `src-tauri/`, `extension/`). Moving code is a separate, planned change, done as its own stage with the builds run. Only what is specific to one operating system (packaging, signing, installer and OS-only code) goes into `desktop/mac/` or `desktop/windows/`; code both targets share stays in one shared place.
+- Never rename, merge or remove these folders, and never add another top-level platform folder; the layout is a suite-wide rule.
+
 ## Shared code (`ks-utility`)
 - Generic utility code shared across the KS-Suite apps lives in the `ks-utility` repository: TypeScript in `typescript/`, Rust in `rust/`. It is first-party, has no third-party dependencies, and knows nothing about this app. Application-specific logic stays in this repo.
 - It is a dependency pinned to one version tag (`vMAJOR.MINOR.PATCH`), the same in every manifest: `"ks-utility": "git+https://github.com/kumarsumit17/ks-utility.git#<tag>"` in `package.json`, and `ks-utility = { git = "https://github.com/kumarsumit17/ks-utility", tag = "<tag>" }` in `src-tauri/Cargo.toml` and `src-tauri/engine/Cargo.toml`. Both lock files record the exact commit behind the tag, so builds stay reproducible. Tags are never moved; versioning rules are in ks-utility's `specs/usage.md`.
