@@ -2294,6 +2294,42 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// A real file from a public test server: added, paused after 2 s, resumed from where
+    /// it stopped, finished at its full size, and marked as downloaded from the internet.
+    /// `KSDM_FILE_URL` overrides the link. `cargo test real_file -- --ignored --nocapture`.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[ignore = "downloads 100 MB from a public test server"]
+    async fn real_file_pause_resume_finish_and_marked() {
+        let dir = temp_dir();
+        let (m, _) = manager(&dir, &[]);
+        let url = std::env::var("KSDM_FILE_URL").unwrap_or_else(|_| "https://nbg1-speed.hetzner.com/100MB.bin".into());
+        let view = m.probe(&url).await.unwrap();
+        println!("probe: {view:?}");
+        assert!(view.resumable, "the test file must allow resuming");
+        let r = m.add(&url, "", dir.to_str().unwrap(), true).await.unwrap();
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        m.pause(r.id).unwrap();
+        while m.active().running > 0 {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let paused = get(&m, r.id);
+        println!("after pause: {:?}, {} of {:?} bytes", paused.status, paused.received, paused.size);
+        assert_eq!(paused.status, Status::Paused, "{:?}", paused.error);
+        assert!(paused.received > 0);
+        m.resume(r.id).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(300);
+        while !matches!(get(&m, r.id).status, Status::Finished | Status::Failed) && Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+        let done = get(&m, r.id);
+        println!("finished: {:?}, {} bytes, {}", done.status, done.received, done.path.display());
+        assert_eq!(done.status, Status::Finished, "{:?}", done.error);
+        assert_eq!(std::fs::metadata(&done.path).unwrap().len(), view.size.unwrap());
+        #[cfg(target_os = "macos")]
+        assert!(quarantined(&done.path), "marked as downloaded from the internet");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     /// A real playlist through the bundled programs: lookup, a thumbnail, and one entry
     /// downloaded into the playlist's folder. Default: the first YouTube channel's uploads
     /// (one short video), which yt-dlp lists as a playlist; `KSDM_PLAYLIST_URL` overrides.
