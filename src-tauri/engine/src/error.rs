@@ -24,7 +24,11 @@ pub enum EngineError {
     SizeMismatch { expected: u64, written: u64 },
     /// Reading or writing the destination file failed.
     Io(std::io::Error),
-    /// The download was cancelled by the caller.
+    /// The file on the server changed (its ETag / Last-Modified no longer matches) while
+    /// downloading, twice in a row, so no consistent copy could be made.
+    FileChanged,
+    /// The download was cancelled (paused) by the caller. For a resumable download the
+    /// partial file and its range map stay on disk; see [`crate::discard`].
     Cancelled,
     /// A download task stopped unexpectedly (a bug, not a server problem).
     Internal(String),
@@ -49,6 +53,7 @@ impl fmt::Display for EngineError {
                 write!(f, "file size check failed: expected {expected} bytes, wrote {written}")
             }
             Self::Io(e) => write!(f, "file error: {e}"),
+            Self::FileChanged => write!(f, "the file changed on the server during the download"),
             Self::Cancelled => write!(f, "download cancelled"),
             Self::Internal(m) => write!(f, "internal error: {m}"),
         }

@@ -1,5 +1,7 @@
 # 2026-11-21
 
+* **Update**: [Download engine](engine.md), Stage 3 review: a connection out of retries retires and hands its range to the others (only the last one fails the download); the range map is written only with a strong validator and removed before a fresh start; the partial file is kept on internal errors.
+* **Update**: [Download engine](engine.md) gained "Splitting, retry and resume in detail" (Stage 3): victim choice, retry policy and `Retry-After`, the `.ksdm` range map, pause and resume rules.
 * **Update**: Specs moved from `docs/spec/` to `specs/` in the repository root and converted to an Open Knowledge Format (OKF) v0.2 bundle: frontmatter on every file, plus this log and `index.md`.
 * **Creation**: [Dependencies](dependencies.md) added: third-party dependencies are kept to the minimum.
 * **Update**: [Video and playlist downloads](video-playlists.md) and [UI direction](ui.md) gained the "Always get the best available quality" option.

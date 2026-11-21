@@ -17,6 +17,8 @@ crate-type = ["rlib"]
 
 [workspace]
 members = ["engine"]
+# Plain `cargo test` / `cargo clippy` in src-tauri/ also cover the engine crate.
+default-members = [".", "engine"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

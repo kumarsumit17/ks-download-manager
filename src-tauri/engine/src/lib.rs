@@ -1,8 +1,10 @@
 //! KS Download Manager download engine.
 //!
-//! Stage 2: probe a URL, then download it over 1 to 32 separate HTTP/1.1
-//! connections, each writing its own byte range straight into a pre-allocated
-//! file. Retry, work stealing and resume come in Stage 3 (see specs/engine.md).
+//! Probe a URL, then download it over 1 to 32 separate HTTP/1.1 connections that write
+//! straight into a pre-allocated file. Connections share the work (an idle one takes half
+//! of the slowest range), every range is retried on its own with backoff and jitter, and a
+//! crash-safe range map next to the file lets a later call resume with `If-Range`
+//! (see specs/engine.md).
 //!
 //! This crate has no Tauri dependency and builds and tests on its own.
 
@@ -11,8 +13,15 @@ mod download;
 mod error;
 mod http;
 mod probe;
+mod rangemap;
+mod ranges;
+mod retry;
 
 pub use control::{CancelToken, Progress, ProgressSnapshot};
-pub use download::{DEFAULT_CONNECTIONS, DownloadOptions, DownloadOutcome, MAX_CONNECTIONS, Segment, download};
+pub use download::{
+    DEFAULT_CONNECTIONS, DownloadOptions, DownloadOutcome, MAX_CONNECTIONS, SavedState, Segment, discard, download,
+    saved_state,
+};
 pub use error::EngineError;
 pub use probe::{ProbeInfo, Validator, probe};
+pub use retry::RetryPolicy;

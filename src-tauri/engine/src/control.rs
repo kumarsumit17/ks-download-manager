@@ -51,6 +51,8 @@ pub struct Progress(Arc<ProgressInner>);
 #[derive(Debug)]
 struct ProgressInner {
     total: AtomicU64,
+    /// Bytes already in the file when the download was resumed.
+    base: AtomicU64,
     per_connection: RwLock<Arc<[AtomicU64]>>,
 }
 
@@ -59,9 +61,10 @@ struct ProgressInner {
 pub struct ProgressSnapshot {
     /// Total size in bytes, or `None` while unknown.
     pub total: Option<u64>,
-    /// Bytes received so far over all connections.
+    /// Bytes in the file so far: those kept from an earlier, resumed run plus those
+    /// received over all connections in this one.
     pub received: u64,
-    /// Bytes received per connection, in range order.
+    /// Bytes received per connection in this run (connections take new ranges as they go).
     pub per_connection: Vec<u64>,
 }
 
@@ -69,6 +72,7 @@ impl Default for Progress {
     fn default() -> Self {
         Self(Arc::new(ProgressInner {
             total: AtomicU64::new(UNKNOWN),
+            base: AtomicU64::new(0),
             per_connection: RwLock::new(Arc::from(Vec::new())),
         }))
     }
@@ -84,16 +88,21 @@ impl Progress {
         let per: Vec<u64> = self.counters().iter().map(|c| c.load(Ordering::Relaxed)).collect();
         ProgressSnapshot {
             total: (total != UNKNOWN).then_some(total),
-            received: per.iter().sum(),
+            received: self.0.base.load(Ordering::Relaxed) + per.iter().sum::<u64>(),
             per_connection: per,
         }
     }
 
     pub(crate) fn reset(&self, total: Option<u64>, connections: usize) {
         self.0.total.store(total.unwrap_or(UNKNOWN), Ordering::Relaxed);
+        self.0.base.store(0, Ordering::Relaxed);
         let fresh: Vec<AtomicU64> = (0..connections).map(|_| AtomicU64::new(0)).collect();
         // A poisoned lock only means a reader panicked; the counters are still valid.
         *self.0.per_connection.write().unwrap_or_else(|e| e.into_inner()) = Arc::from(fresh);
+    }
+
+    pub(crate) fn set_base(&self, resumed: u64) {
+        self.0.base.store(resumed, Ordering::Relaxed);
     }
 
     pub(crate) fn set_total(&self, total: u64) {

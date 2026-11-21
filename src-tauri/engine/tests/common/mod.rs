@@ -4,15 +4,23 @@
 
 #![allow(dead_code)]
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{Duration, Instant};
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinHandle;
 
+/// The ETag of the file as first served; `change_file` moves to `"v2"`, `"v3"`, ...
 pub const ETAG: &str = "\"v1\"";
+
+#[derive(Clone, Copy, Debug)]
+pub enum RetryAfter {
+    Seconds(u64),
+    /// An HTTP-date this many seconds in the future.
+    DateIn(u64),
+}
 
 #[derive(Clone, Debug)]
 pub struct ServerOptions {
@@ -31,6 +39,14 @@ pub struct ServerOptions {
     pub rate: Option<u64>,
     /// Send an ETag and honour If-Range against it.
     pub etag: bool,
+    /// The first N requests other than the probe are answered with this status, without a body.
+    pub fail_first: Option<(usize, u16, Option<RetryAfter>)>,
+    /// The first N requests other than the probe (and not failed) are cut after this many bytes.
+    pub drop_first: Option<(usize, u64)>,
+    /// A request whose range starts at this offset is served at this rate: one slow connection.
+    pub slow_at: Option<(u64, u64)>,
+    /// Serve at most this many connections at once; answer 503 on the others (not the probe).
+    pub max_connections: Option<usize>,
 }
 
 impl ServerOptions {
@@ -44,8 +60,29 @@ impl ServerOptions {
             drop_after: None,
             rate: None,
             etag: true,
+            fail_first: None,
+            drop_first: None,
+            slow_at: None,
+            max_connections: None,
         }
     }
+}
+
+/// One request as the server saw it.
+#[derive(Clone, Debug)]
+pub struct Request {
+    pub at: Instant,
+    /// The `Range` header as `(first, last)`, when it parsed.
+    pub range: Option<(u64, u64)>,
+    pub if_range: Option<String>,
+    /// The engine's probe (`bytes=0-0`).
+    pub probe: bool,
+    pub status: u16,
+}
+
+struct FileState {
+    data: Arc<Vec<u8>>,
+    version: u32,
 }
 
 pub struct TestServer {
@@ -54,7 +91,8 @@ pub struct TestServer {
     pub active: Arc<AtomicUsize>,
     /// HEAD requests received (always answered 405).
     pub heads: Arc<AtomicUsize>,
-    pub data: Arc<Vec<u8>>,
+    file: Arc<RwLock<FileState>>,
+    log: Arc<Mutex<Vec<Request>>>,
     task: JoinHandle<()>,
 }
 
@@ -64,35 +102,98 @@ impl Drop for TestServer {
     }
 }
 
+impl TestServer {
+    /// The bytes currently served.
+    pub fn data(&self) -> Arc<Vec<u8>> {
+        self.file.read().unwrap().data.clone()
+    }
+
+    /// Replaces the file with different bytes of the same size and a new ETag.
+    pub fn change_file(&self) {
+        let mut f = self.file.write().unwrap();
+        f.version += 1;
+        f.data = Arc::new(data_version(f.data.len() as u64, f.version));
+    }
+
+    pub fn etag(&self) -> String {
+        format!("\"v{}\"", self.file.read().unwrap().version)
+    }
+
+    /// Every request so far, in arrival order.
+    pub fn requests(&self) -> Vec<Request> {
+        self.log.lock().unwrap().clone()
+    }
+
+    /// Requests other than the probe.
+    pub fn range_requests(&self) -> Vec<Request> {
+        self.requests().into_iter().filter(|r| !r.probe).collect()
+    }
+
+    pub fn clear_log(&self) {
+        self.log.lock().unwrap().clear();
+    }
+}
+
 /// Deterministic bytes where neighbouring offsets differ, so a misplaced range is caught.
 pub fn data(size: u64) -> Vec<u8> {
-    (0..size).map(|i| ((i.wrapping_mul(2_654_435_761) >> 7) as u8) ^ (i as u8)).collect()
+    data_version(size, 1)
+}
+
+/// Version 1 is `data`; every other version differs from it at every offset.
+fn data_version(size: u64, version: u32) -> Vec<u8> {
+    let mix = ((version - 1) as u8).wrapping_mul(0x5b);
+    (0..size).map(|i| ((i.wrapping_mul(2_654_435_761) >> 7) as u8) ^ (i as u8) ^ mix).collect()
 }
 
 pub async fn start(opts: ServerOptions) -> TestServer {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind test server");
     let addr = listener.local_addr().expect("local addr");
-    let data = Arc::new(data(opts.size));
+    let file = Arc::new(RwLock::new(FileState { data: Arc::new(data(opts.size)), version: 1 }));
     let active = Arc::new(AtomicUsize::new(0));
-    let heads = Arc::new(AtomicUsize::new(0));
-    let (d, a, h) = (data.clone(), active.clone(), heads.clone());
+    let shared = Arc::new(Shared {
+        opts,
+        active: active.clone(),
+        file: file.clone(),
+        log: Arc::new(Mutex::new(Vec::new())),
+        heads: Arc::new(AtomicUsize::new(0)),
+        fails: AtomicUsize::new(0),
+        drops: AtomicUsize::new(0),
+    });
+    let (s, a) = (shared.clone(), active.clone());
     let task = tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
-            let (opts, d, a, h) = (opts.clone(), d.clone(), a.clone(), h.clone());
+            let (s, a) = (s.clone(), a.clone());
             tokio::spawn(async move {
                 a.fetch_add(1, Ordering::SeqCst);
-                let _ = serve(stream, &opts, &d, &h).await;
+                let _ = serve(stream, &s).await;
                 a.fetch_sub(1, Ordering::SeqCst);
             });
         }
     });
-    TestServer { url: format!("http://{addr}/files/file.bin"), active, heads, data, task }
+    TestServer {
+        url: format!("http://{addr}/files/file.bin"),
+        active,
+        heads: shared.heads.clone(),
+        file,
+        log: shared.log.clone(),
+        task,
+    }
 }
 
-async fn serve(mut stream: TcpStream, opts: &ServerOptions, data: &[u8], heads: &AtomicUsize) -> std::io::Result<()> {
+struct Shared {
+    opts: ServerOptions,
+    active: Arc<AtomicUsize>,
+    file: Arc<RwLock<FileState>>,
+    log: Arc<Mutex<Vec<Request>>>,
+    heads: Arc<AtomicUsize>,
+    fails: AtomicUsize,
+    drops: AtomicUsize,
+}
+
+async fn serve(mut stream: TcpStream, shared: &Shared) -> std::io::Result<()> {
+    let opts = &shared.opts;
     let head = read_head(&mut stream).await?;
-    let mut lines = head.split("\r\n");
-    let method = lines.next().unwrap_or("").split(' ').next().unwrap_or("").to_owned();
+    let method = head.split("\r\n").next().unwrap_or("").split(' ').next().unwrap_or("").to_owned();
     let header = |name: &str| {
         head.split("\r\n").skip(1).find_map(|l| {
             let (k, v) = l.split_once(':')?;
@@ -101,31 +202,71 @@ async fn serve(mut stream: TcpStream, opts: &ServerOptions, data: &[u8], heads: 
     };
 
     if method == "HEAD" {
-        heads.fetch_add(1, Ordering::SeqCst);
+        shared.heads.fetch_add(1, Ordering::SeqCst);
         return stream.write_all(b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await;
     }
 
+    let (data, etag) = {
+        let f = shared.file.read().unwrap();
+        (f.data.clone(), format!("\"v{}\"", f.version))
+    };
     let size = data.len() as u64;
-    let mut range = header("range").filter(|_| opts.ranges && !opts.ignore_range).and_then(|r| parse_range(&r, size));
-    if opts.ranges_only_for_probe && range != Some(Some((0, 0))) {
-        range = None;
-    }
-    if opts.etag
-        && let Some(v) = header("if-range")
-        && v != ETAG
-    {
-        range = None; // file "changed": send the whole thing
-    }
+    let range_header = header("range");
+    let if_range = header("if-range");
+    let probe = range_header.as_deref() == Some("bytes=0-0");
+    let mut entry = Request {
+        at: Instant::now(),
+        range: range_header.as_deref().and_then(|r| parse_range(r, u64::MAX)).flatten(),
+        if_range: if_range.clone(),
+        probe,
+        status: 0,
+    };
 
     let mut extra = String::new();
     if opts.etag {
-        extra.push_str(&format!("ETag: {ETAG}\r\n"));
+        extra.push_str(&format!("ETag: {etag}\r\n"));
+    }
+
+    // Injected failures (never for the probe, which the engine does not retry).
+    let over_limit = opts.max_connections.is_some_and(|n| shared.active.load(Ordering::SeqCst) > n);
+    if !probe && over_limit {
+        entry.status = 503;
+        shared.log.lock().unwrap().push(entry);
+        let msg = format!("HTTP/1.1 503 Too Many Connections\r\n{extra}Content-Length: 0\r\nConnection: close\r\n\r\n");
+        return stream.write_all(msg.as_bytes()).await;
+    }
+    if !probe
+        && let Some((n, status, retry_after)) = opts.fail_first
+        && shared.fails.fetch_add(1, Ordering::SeqCst) < n
+    {
+        entry.status = status;
+        shared.log.lock().unwrap().push(entry);
+        let ra = match retry_after {
+            Some(RetryAfter::Seconds(s)) => format!("Retry-After: {s}\r\n"),
+            Some(RetryAfter::DateIn(s)) => format!("Retry-After: {}\r\n", http_date(unix_now() + s)),
+            None => String::new(),
+        };
+        let msg = format!("HTTP/1.1 {status} Injected\r\n{ra}{extra}Content-Length: 0\r\nConnection: close\r\n\r\n");
+        return stream.write_all(msg.as_bytes()).await;
+    }
+
+    let mut range = range_header.filter(|_| opts.ranges && !opts.ignore_range).and_then(|r| parse_range(&r, size));
+    if opts.ranges_only_for_probe && !probe {
+        range = None;
+    }
+    if opts.etag
+        && let Some(v) = &if_range
+        && *v != etag
+    {
+        range = None; // file changed: send the whole (new) thing
     }
     if opts.ranges && !opts.ignore_range {
         extra.push_str("Accept-Ranges: bytes\r\n");
     }
     let (status, body, length_header) = match range {
         Some(None) => {
+            entry.status = 416;
+            shared.log.lock().unwrap().push(entry);
             let msg = format!("HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */{size}\r\nContent-Length: 0\r\n{extra}Connection: close\r\n\r\n");
             return stream.write_all(msg.as_bytes()).await;
         }
@@ -134,15 +275,30 @@ async fn serve(mut stream: TcpStream, opts: &ServerOptions, data: &[u8], heads: 
             &data[a as usize..=b as usize],
             true,
         ),
-        None => ("200 OK".to_owned(), data, opts.content_length),
+        None => ("200 OK".to_owned(), &data[..], opts.content_length),
     };
+    entry.status = if range.is_some() { 206 } else { 200 };
+    shared.log.lock().unwrap().push(entry);
+
+    let mut drop_after = opts.drop_after;
+    if !probe
+        && let Some((n, bytes)) = opts.drop_first
+        && shared.drops.fetch_add(1, Ordering::SeqCst) < n
+    {
+        drop_after = Some(bytes);
+    }
+    let rate = match (opts.slow_at, range) {
+        (Some((at, slow)), Some(Some((a, _)))) if !probe && a == at => Some(slow),
+        _ => opts.rate,
+    };
+
     let mut msg = format!("HTTP/1.1 {status}\r\n{extra}Connection: close\r\n");
     if length_header {
         msg.push_str(&format!("Content-Length: {}\r\n", body.len()));
     }
     msg.push_str("\r\n");
     stream.write_all(msg.as_bytes()).await?;
-    if send_body(&mut stream, body, opts).await? {
+    if send_body(&mut stream, body, drop_after, rate).await? {
         stream.shutdown().await?;
     }
     Ok(()) // a dropped stream is closed abruptly here
@@ -164,14 +320,14 @@ fn parse_range(value: &str, size: u64) -> Option<Option<(u64, u64)>> {
 }
 
 /// Returns false when the connection was dropped part-way on purpose.
-async fn send_body(stream: &mut TcpStream, body: &[u8], opts: &ServerOptions) -> std::io::Result<bool> {
-    let limit = opts.drop_after.map_or(body.len(), |d| (d as usize).min(body.len()));
+async fn send_body(stream: &mut TcpStream, body: &[u8], drop_after: Option<u64>, rate: Option<u64>) -> std::io::Result<bool> {
+    let limit = drop_after.map_or(body.len(), |d| (d as usize).min(body.len()));
     let started = Instant::now();
     let mut sent = 0usize;
     for chunk in body[..limit].chunks(16 * 1024) {
         stream.write_all(chunk).await?;
         sent += chunk.len();
-        if let Some(rate) = opts.rate {
+        if let Some(rate) = rate {
             let due = Duration::from_secs_f64(sent as f64 / rate as f64);
             if let Some(wait) = due.checked_sub(started.elapsed()) {
                 tokio::time::sleep(wait).await;
@@ -192,4 +348,39 @@ async fn read_head(stream: &mut TcpStream) -> std::io::Result<String> {
         buf.extend_from_slice(&byte[..n]);
     }
     Ok(String::from_utf8_lossy(&buf).into_owned())
+}
+
+fn unix_now() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
+}
+
+/// IMF-fixdate for `secs` since 1970 (civil-from-days, H. Hinnant's algorithm).
+pub fn http_date(secs: u64) -> String {
+    const DAYS: [&str; 7] = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"]; // 1970-01-01 was a Thursday
+    const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    let days = (secs / 86_400) as i64;
+    let rem = secs % 86_400;
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!(
+        "{}, {day:02} {} {year} {:02}:{:02}:{:02} GMT",
+        DAYS[days.rem_euclid(7) as usize],
+        MONTHS[(month - 1) as usize],
+        rem / 3600,
+        rem % 3600 / 60,
+        rem % 60
+    )
+}
+
+#[test]
+fn http_date_formats_the_rfc_example() {
+    assert_eq!(http_date(784_111_777), "Sun, 06 Nov 1994 08:49:37 GMT");
+    assert_eq!(http_date(0), "Thu, 01 Jan 1970 00:00:00 GMT");
 }

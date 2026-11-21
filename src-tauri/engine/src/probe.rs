@@ -73,7 +73,7 @@ pub async fn probe(url: &str) -> Result<ProbeInfo, EngineError> {
     })
 }
 
-fn validator(headers: &HeaderMap) -> Option<Validator> {
+pub(crate) fn validator(headers: &HeaderMap) -> Option<Validator> {
     let text = |name| headers.get(name).and_then(|v| v.to_str().ok()).map(str::trim).filter(|s| !s.is_empty());
     text(ETAG)
         .map(|e| Validator::ETag(e.to_owned()))
