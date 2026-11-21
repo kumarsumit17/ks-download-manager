@@ -59,8 +59,8 @@ npm run tauri build              # release bundle (.app/.dmg on macOS)
 
 ## Shared code (`ks-utility`)
 - Generic utility code shared across the KS-Suite apps lives in the `ks-utility` repository: TypeScript in `typescript/`, Rust in `rust/`. It is first-party, has no third-party dependencies, and knows nothing about this app. Application-specific logic stays in this repo.
-- It is a dependency pinned to one commit, the same in both manifests: `"ks-utility": "github:kumarsumit17/ks-utility#<commit>"` in `package.json`, and `ks-utility = { git = "https://github.com/kumarsumit17/ks-utility", rev = "<commit>" }` in `src-tauri/Cargo.toml` (and in `src-tauri/engine/Cargo.toml` if the engine uses it).
-- Before writing a generic helper, look in `ks-utility` and use it from there. If it is missing and another app would need it too, add it in the `ks-utility` repository, then move the pin here (change the commit, `npm install`, `cargo check`, commit both lock files).
+- It is a dependency pinned to one version tag (`vMAJOR.MINOR.PATCH`), the same in every manifest: `"ks-utility": "git+https://github.com/kumarsumit17/ks-utility.git#<tag>"` in `package.json`, and `ks-utility = { git = "https://github.com/kumarsumit17/ks-utility", tag = "<tag>" }` in `src-tauri/Cargo.toml` and `src-tauri/engine/Cargo.toml`. Both lock files record the exact commit behind the tag, so builds stay reproducible. Tags are never moved; versioning rules are in ks-utility's `specs/usage.md`.
+- Before writing a generic helper, look in `ks-utility` and use it from there. If it is missing and another app would need it too, add it in the `ks-utility` repository, tag it there, then move the pin here in its own commit (change the tag, `npm install`, `cargo check`, check both lock files name the tag's commit, commit both lock files).
 - The clean-room rule covers `ks-utility` too.
 
 ## Constraints
