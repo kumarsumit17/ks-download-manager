@@ -2,6 +2,14 @@
 # macOS disk images, the Chrome extension and (when switched on) the Windows beta
 # installer, attests every file, and creates a DRAFT GitHub release. Nothing is published
 # by this workflow.
+#
+# Rehearsal: run it by hand (Actions -> Release -> Run workflow) on any branch, e.g. dev,
+# with the version to rehearse. Every job runs as for a tag, except the "tag is on main"
+# check; no attestation is made and no release is created; the files and the notes are
+# left as workflow artifacts (docs/release.md, docs/decisions-release.md).
+#
+# Our own environment variables start with KSDM_: tools read some plain names by
+# themselves (zip reads $KSDM_EXT_ZIP as options, make imports every variable).
 # Runner images are named versions, never -latest (docs/decisions-release.md).
 # Actions are GitHub's own, pinned to a full commit SHA (version in the comment).
 name: Release
@@ -9,6 +17,12 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to rehearse, X.Y.Z (CHANGELOG.md needs a dated section for it). Builds everything, releases nothing."
+        required: true
+        type: string
 
 permissions: {}
 
@@ -22,7 +36,9 @@ jobs:
     permissions:
       contents: read
     outputs:
+      tag: ${{ steps.v.outputs.tag }}
       version: ${{ steps.v.outputs.version }}
+      rehearsal: ${{ steps.v.outputs.rehearsal }}
       # The Windows beta installer: "off" builds no Windows file at all. Switched on on
       # 2026-11-21, after every Windows test passed on windows-2025 (CI run 44930392469).
       windows: "on"
@@ -36,10 +52,22 @@ jobs:
           node-version: "26"
       - name: The tag is vMAJOR.MINOR.PATCH
         id: v
+        env:
+          KSDM_INPUT_VERSION: ${{ inputs.version }}
         run: |
-          node scripts/set-version.mjs "$GITHUB_REF_NAME"
-          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            KSDM_TAG="v$KSDM_INPUT_VERSION"
+            echo "rehearsal=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Rehearsal of $KSDM_TAG on $GITHUB_REF_NAME: no attestation, no release."
+          else
+            KSDM_TAG="$GITHUB_REF_NAME"
+            echo "rehearsal=false" >> "$GITHUB_OUTPUT"
+          fi
+          node scripts/set-version.mjs "$KSDM_TAG"
+          echo "tag=$KSDM_TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${KSDM_TAG#v}" >> "$GITHUB_OUTPUT"
       - name: The tagged commit is on main
+        if: github.event_name == 'push'
         run: |
           git fetch --no-tags origin main
           if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
@@ -47,8 +75,9 @@ jobs:
             exit 1
           fi
       - name: CHANGELOG.md has a dated section for this version
+        env:
+          V: ${{ steps.v.outputs.version }}
         run: |
-          V="${GITHUB_REF_NAME#v}"
           if ! tr -d '\r' < CHANGELOG.md | grep -Eq "^## \[${V//./\\.}\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$"; then
             echo "::error::CHANGELOG.md needs a line '## [$V] - YYYY-MM-DD' (docs/release.md)."
             exit 1
@@ -68,9 +97,10 @@ jobs:
     permissions:
       contents: read
     env:
-      VERSION: ${{ needs.version.outputs.version }}
-      APP: src-tauri/target/${{ matrix.triple }}/release/bundle/macos/KS Download Manager.app
-      DMG: ks-download-manager-v${{ needs.version.outputs.version }}-macos-${{ matrix.arch }}.dmg
+      KSDM_TAG: ${{ needs.version.outputs.tag }}
+      KSDM_VERSION: ${{ needs.version.outputs.version }}
+      KSDM_APP: src-tauri/target/${{ matrix.triple }}/release/bundle/macos/KS Download Manager.app
+      KSDM_DMG: ks-download-manager-v${{ needs.version.outputs.version }}-macos-${{ matrix.arch }}.dmg
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -79,7 +109,7 @@ jobs:
         with:
           node-version: "26"
           cache: npm
-      - run: node scripts/set-version.mjs "$GITHUB_REF_NAME"
+      - run: node scripts/set-version.mjs "$KSDM_TAG"
       - name: Signing mode (Developer ID only when every Apple secret is set)
         id: mode
         env:
@@ -113,15 +143,15 @@ jobs:
         run: npm run tauri build -- --target ${{ matrix.triple }} --bundles app
       - name: Licence files are in the app
         run: |
-          L="$APP/Contents/Resources/licenses"
+          L="$KSDM_APP/Contents/Resources/licenses"
           for f in yt-dlp-LICENSE.txt ffmpeg-COPYING.LGPLv2.1 ffmpeg-LICENSE.md ffmpeg-SOURCE.txt deno-LICENSE.md deno-THIRD-PARTY.txt; do
             [ -s "$L/$f" ] || { echo "::error::missing licence file: $f"; exit 1; }
           done
-          [ -s "$APP/Contents/Resources/yt-dlp/_internal/THIRD_PARTY_LICENSES.txt" ] || { echo "::error::missing yt-dlp THIRD_PARTY_LICENSES.txt"; exit 1; }
+          [ -s "$KSDM_APP/Contents/Resources/yt-dlp/_internal/THIRD_PARTY_LICENSES.txt" ] || { echo "::error::missing yt-dlp THIRD_PARTY_LICENSES.txt"; exit 1; }
           grep -q "Standard licence texts" "$L/deno-THIRD-PARTY.txt" || { echo "::error::deno notices without the standard licence texts"; exit 1; }
       - name: Bundled programs run
         run: |
-          M="$APP/Contents/MacOS"
+          M="$KSDM_APP/Contents/MacOS"
           run() { if [ "${{ matrix.arch }}" = x64 ]; then arch -x86_64 "$@"; else "$@"; fi; }
           if [ "${{ matrix.arch }}" = x64 ] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
             echo "::warning::Rosetta is not available on this runner: the x86_64 programs were not run (hand check)."
@@ -130,7 +160,7 @@ jobs:
           run "$M/ffmpeg" -hide_banner -version | head -1
           run "$M/ffprobe" -hide_banner -version | head -1
           run "$M/deno" --version | head -1
-          run "$APP/Contents/Resources/yt-dlp/yt-dlp_macos" --version
+          run "$KSDM_APP/Contents/Resources/yt-dlp/yt-dlp_macos" --version
       - name: Import the Developer ID certificate
         if: steps.mode.outputs.mode == 'developer-id'
         env:
@@ -155,15 +185,15 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          sh scripts/sign-macos.sh "$APP" "$APPLE_SIGNING_IDENTITY"
-          sh scripts/notarize-macos.sh "$APP"
+          sh scripts/sign-macos.sh "$KSDM_APP" "$APPLE_SIGNING_IDENTITY"
+          sh scripts/notarize-macos.sh "$KSDM_APP"
       - name: Sign the app (ad hoc)
         if: steps.mode.outputs.mode == 'ad-hoc'
-        run: sh scripts/sign-macos.sh "$APP" -
+        run: sh scripts/sign-macos.sh "$KSDM_APP" -
       - name: Make the disk image
         run: |
           mkdir -p release
-          sh scripts/make-dmg.sh "$APP" "release/$DMG"
+          sh scripts/make-dmg.sh "$KSDM_APP" "release/$KSDM_DMG"
       - name: Sign, notarise and staple the disk image (Developer ID)
         if: steps.mode.outputs.mode == 'developer-id'
         env:
@@ -172,9 +202,9 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "release/$DMG"
-          sh scripts/notarize-macos.sh "release/$DMG"
-          spctl -a -t open --context context:primary-signature -vv "release/$DMG"
+          codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "release/$KSDM_DMG"
+          sh scripts/notarize-macos.sh "release/$KSDM_DMG"
+          spctl -a -t open --context context:primary-signature -vv "release/$KSDM_DMG"
       - name: Remove the temporary keychain
         if: always() && steps.mode.outputs.mode == 'developer-id'
         run: security delete-keychain "$RUNNER_TEMP/release.keychain-db" || true
@@ -191,7 +221,8 @@ jobs:
     permissions:
       contents: read
     env:
-      ZIP: ks-download-manager-extension-v${{ needs.version.outputs.version }}.zip
+      KSDM_TAG: ${{ needs.version.outputs.tag }}
+      KSDM_EXT_ZIP: ks-download-manager-extension-v${{ needs.version.outputs.version }}.zip
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -200,17 +231,24 @@ jobs:
         with:
           node-version: "26"
           cache: npm
-      - run: node scripts/set-version.mjs "$GITHUB_REF_NAME"
+      - run: node scripts/set-version.mjs "$KSDM_TAG"
       - run: npm ci
       - run: npm run build:extension
       - name: Zip (manifest.json at the top of the zip)
         run: |
           mkdir -p release
-          (cd extension/dist && zip -q -r -X "../../release/$ZIP" .)
+          # zip and unzip read options from these variables; none may change what is made.
+          (cd extension/dist && env -u ZIP -u ZIPOPT zip -q -r -X "../../release/$KSDM_EXT_ZIP" .)
+          [ -s "release/$KSDM_EXT_ZIP" ] || { echo "::error::release/$KSDM_EXT_ZIP was not made"; exit 1; }
+          L=$(env -u UNZIP -u UNZIPOPT unzip -Z1 "release/$KSDM_EXT_ZIP")
+          echo "$L"
+          echo "$L" | grep -qx 'manifest.json' || { echo "::error::manifest.json is not at the top of the zip"; exit 1; }
+          if echo "$L" | grep -qiE '\.zip$'; then echo "::error::the zip contains a zip (itself?)"; exit 1; fi
+          if find extension/dist -iname '*.zip' | grep -q .; then echo "::error::a zip was written into extension/dist"; exit 1; fi
       - name: The zipped manifest gives our extension ID
         run: |
           D=$(mktemp -d)
-          unzip -q "release/$ZIP" manifest.json -d "$D"
+          env -u UNZIP -u UNZIPOPT unzip -q "release/$KSDM_EXT_ZIP" manifest.json -d "$D"
           node scripts/extension-id.mjs "$D/manifest.json" ikplfdbdfikcokpegkapjdedlgifmkbe
           node -e 'const a=require(process.argv[1]).key,b=require(process.argv[2]).key; if(a!==b){console.error("key differs from the repository manifest");process.exit(1)}' "$D/manifest.json" "$PWD/extension/manifest.json"
           V=$(node -p 'require(process.argv[1]).version' "$D/manifest.json")
@@ -254,8 +292,9 @@ jobs:
       run:
         shell: bash
     env:
-      VERSION: ${{ needs.version.outputs.version }}
-      EXE: ks-download-manager-v${{ needs.version.outputs.version }}-windows-x64-setup-beta.exe
+      KSDM_TAG: ${{ needs.version.outputs.tag }}
+      KSDM_VERSION: ${{ needs.version.outputs.version }}
+      KSDM_SETUP: ks-download-manager-v${{ needs.version.outputs.version }}-windows-x64-setup-beta.exe
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -264,7 +303,7 @@ jobs:
         with:
           node-version: "26"
           cache: npm
-      - run: node scripts/set-version.mjs "$GITHUB_REF_NAME"
+      - run: node scripts/set-version.mjs "$KSDM_TAG"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ffmpeg-windows
@@ -279,9 +318,9 @@ jobs:
           mkdir -p release
           set -- src-tauri/target/release/bundle/nsis/*-setup.exe
           [ $# -eq 1 ] && [ -f "$1" ] || { echo "::error::expected one installer, found: $*"; exit 1; }
-          cp "$1" "release/$EXE"
+          cp "$1" "release/$KSDM_SETUP"
       - name: Install, check (files, licences, programs, Chrome registration), uninstall
-        run: sh scripts/test-windows-installer.sh "release/$EXE"
+        run: sh scripts/test-windows-installer.sh "release/$KSDM_SETUP"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows
@@ -316,7 +355,11 @@ jobs:
           (cd files && sha256sum $(ls | LC_ALL=C sort) > SHA256SUMS)
           cat files/SHA256SUMS
           ls meta
+      # Not in a rehearsal: an attestation is a permanent, public, signed record (Sigstore's
+      # transparency log cannot be edited), and files that are never released must not
+      # have one (docs/decisions-release.md).
       - name: Build provenance for every file
+        if: needs.version.outputs.rehearsal != 'true'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: files/*
@@ -337,8 +380,8 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
-      TAG: ${{ github.ref_name }}
-      VERSION: ${{ needs.version.outputs.version }}
+      KSDM_TAG: ${{ needs.version.outputs.tag }}
+      KSDM_VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -350,25 +393,35 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "26"
-      - name: Check the sums and the attestation of every file
+      - name: Check the sums of every file
+        run: (cd files && sha256sum -c SHA256SUMS)
+      - name: Check the attestation of every file
+        if: needs.version.outputs.rehearsal != 'true'
         run: |
-          (cd files && sha256sum -c SHA256SUMS)
           for f in files/*; do gh attestation verify "$f" -R "$GH_REPO" > /dev/null && echo "attested: $(basename "$f")"; done
       - name: Release notes
         run: |
           A=$(cat meta/signing-macos-arm64.txt); X=$(cat meta/signing-macos-x64.txt)
           [ "$A" = "$X" ] || { echo "::error::the two macOS builds were signed differently ($A, $X)"; exit 1; }
           W=none; ls files/*.exe >/dev/null 2>&1 && W=unsigned
-          node scripts/release-notes.mjs "$VERSION" "$A" "$W" > notes.md
+          node scripts/release-notes.mjs "$KSDM_VERSION" "$A" "$W" > notes.md
           cat notes.md
+      - name: Rehearsal - keep the notes with the files, create no release
+        if: needs.version.outputs.rehearsal == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-notes
+          path: notes.md
+          if-no-files-found: error
       - name: Create the draft (an existing draft for this tag is replaced; a published release is never touched)
+        if: needs.version.outputs.rehearsal != 'true'
         run: |
-          if state=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null); then
+          if state=$(gh release view "$KSDM_TAG" --json isDraft --jq .isDraft 2>/dev/null); then
             if [ "$state" = "true" ]; then
-              gh release delete "$TAG" --yes
+              gh release delete "$KSDM_TAG" --yes
             else
-              echo "::error::$TAG is already published; make a new tag instead (docs/release.md)."
+              echo "::error::$KSDM_TAG is already published; make a new tag instead (docs/release.md)."
               exit 1
             fi
           fi
-          gh release create "$TAG" --draft --verify-tag --title "KS Download Manager $VERSION" --notes-file notes.md files/*
+          gh release create "$KSDM_TAG" --draft --verify-tag --title "KS Download Manager $KSDM_VERSION" --notes-file notes.md files/*
