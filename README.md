@@ -9,7 +9,7 @@ A free download manager for images, audio and video, built for speed. The goal i
 | **Platform** | Windows · macOS (desktop) |
 | **Tech stack** | Rust (download engine) · Tauri (desktop shell) · TypeScript + React with shadcn/ui and Lucide icons (interface) |
 | **Chrome extension** | TypeScript, Manifest V3 (under consideration) |
-| **Status** | In development: Stage 1 (main window with sample data) and Stage 2 (engine core: probe and segmented download) are done; Stage 3 (dynamic splitting, retry, resume) is next. See [stages](specs/stages.md) |
+| **Status** | In development: Stage 1 (main window with sample data), Stage 2 (engine core: probe and segmented download) and Stage 3 (dynamic splitting, retry, resume) are done; Stage 4 (UI wired to the engine) is next. See [stages](specs/stages.md) |
 
 ## Planned features
 
