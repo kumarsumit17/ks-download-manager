@@ -4,6 +4,7 @@ import { Clock, ListX, Pause, Play, Plus, Search, Settings, Trash2 } from "lucid
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { t } from "@/lib/text";
 
 interface Action {
   label: string;
@@ -27,6 +28,8 @@ interface Props {
   onPause: () => void;
   onDelete: () => void;
   onClearAll: () => void;
+  onQueues: () => void;
+  onSettings: () => void;
   query: string;
   onQuery: (q: string) => void;
   searchRef: RefObject<HTMLInputElement | null>;
@@ -42,10 +45,9 @@ export function Toolbar(p: Props) {
     { label: "Delete", icon: Trash2, enabled: p.canDelete, onClick: p.onDelete, hint: "Delete (Delete key)" },
     { label: "Clear all", icon: ListX, enabled: p.canClearAll, onClick: p.onClearAll, hint: "Remove every download from the list" },
   ];
-  // Queues and Settings arrive in Stage 5.
   const secondary: Action[] = [
-    { label: "Queues", icon: Clock, enabled: false, hint: "Queues arrive in a later version" },
-    { label: "Settings", icon: Settings, enabled: false, hint: "Settings arrive in a later version" },
+    { label: t("queues"), icon: Clock, enabled: true, onClick: p.onQueues, hint: t("queuesHint") },
+    { label: t("settings"), icon: Settings, enabled: true, onClick: p.onSettings, hint: t("settingsHint") },
   ];
 
   const render = (a: Action) => {

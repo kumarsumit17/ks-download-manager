@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
-import { ArrowDown, ArrowUp, Ban, Copy, ExternalLink, FolderOpen, Pause, Play, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Ban, Check, Clock, Copy, ExternalLink, FolderOpen, Pause, Play, Trash2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
-import { CANNOT_PAUSE, type Download, type Status, canPause, canResume, cannotPause, isMkvVideo } from "./types";
+import { t } from "@/lib/text";
+import { CANNOT_PAUSE, type Download, type Queue, type Status, canPause, canResume, cannotPause, isMkvVideo } from "./types";
 import { formatBytes, formatDate, formatSpeed, formatTimeLeft } from "./format";
 
 type SortKey = "name" | "size" | "status" | "speed" | "timeLeft" | "addedAt";
@@ -25,6 +29,7 @@ const columns: { key: SortKey; label: string; className: string }[] = [
 
 const statusLabel: Record<Status, string> = {
   downloading: "Downloading",
+  waiting: t("waiting"),
   paused: "Paused",
   queued: "Queued",
   finished: "Finished",
@@ -39,6 +44,7 @@ export interface RowActions {
   resume: (d: Download) => void;
   pause: (d: Download) => void;
   copyLink: (d: Download) => void;
+  moveToQueue: (d: Download, queue: number | null) => void;
   remove: (d: Download) => void;
 }
 
@@ -71,10 +77,11 @@ interface Props {
   selectedId: number | null;
   onSelect: (id: number | null) => void;
   actions: RowActions;
+  queues: Queue[];
   loaded: boolean;
 }
 
-export function DownloadList({ downloads, selectedId, onSelect, actions, loaded }: Props) {
+export function DownloadList({ downloads, selectedId, onSelect, actions, queues, loaded }: Props) {
   const [sort, setSort] = useState<{ key: SortKey; asc: boolean }>({ key: "addedAt", asc: false });
 
   const rows = useMemo(() => {
@@ -193,11 +200,11 @@ export function DownloadList({ downloads, selectedId, onSelect, actions, loaded 
                       <div role="progressbar" aria-label="Downloading, size unknown" className="progress-indeterminate h-1.5 flex-1 overflow-hidden rounded-full bg-muted" />
                       <span className="w-14 text-xs text-muted-foreground">{formatBytes(d.received)}</span>
                     </div>
-                  ) : d.status === "downloading" || d.status === "paused" ? (
+                  ) : d.status === "downloading" || d.status === "paused" || (d.status === "waiting" && d.received > 0) ? (
                     <div className="flex items-center gap-2">
                       <Progress value={pct} className="h-1.5 flex-1" aria-label={`${statusLabel[d.status]} ${Math.round(pct)}%`} />
                       <span className="w-14 text-xs tabular-nums text-muted-foreground">
-                        {d.status === "paused" ? "Paused" : `${Math.round(pct)}%`}
+                        {d.status === "downloading" ? `${Math.round(pct)}%` : statusLabel[d.status]}
                       </span>
                     </div>
                   ) : (
@@ -237,6 +244,19 @@ export function DownloadList({ downloads, selectedId, onSelect, actions, loaded 
         <ContextMenuItem disabled={!canPause(selected)} onSelect={() => actions.pause(selected)}>
           <Pause aria-hidden /> {cannotPause(selected) ? "Pause (not possible)" : "Pause"}
         </ContextMenuItem>
+        <ContextMenuSub>
+          <ContextMenuSubTrigger>
+            <Clock aria-hidden /> {t("moveToQueue")}
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent className="w-48">
+            {[{ id: null as number | null, name: t("mainQueue") }, ...queues].map((q) => (
+              <ContextMenuItem key={q.id ?? "main"} onSelect={() => actions.moveToQueue(selected, q.id)}>
+                {(selected.queue ?? null) === q.id ? <Check aria-hidden /> : <span className="size-4" aria-hidden />}
+                <span className="truncate">{q.name}</span>
+              </ContextMenuItem>
+            ))}
+          </ContextMenuSubContent>
+        </ContextMenuSub>
         <ContextMenuItem onSelect={() => actions.copyLink(selected)}>
           <Copy aria-hidden /> Copy link
         </ContextMenuItem>

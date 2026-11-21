@@ -1,10 +1,27 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { Active, DownloadRecord, ProbeView, Tick } from "./types";
+import type { Active, Category, DownloadRecord, ProbeView, Queue, Tick } from "./types";
 
 export type ComponentUpdate =
   | { result: "upToDate"; version: string }
   | { result: "updated"; from: string; to: string };
+
+/** Rust's `settings::Settings`. Speed limit in bytes per second. */
+export interface Settings {
+  maxActive: number;
+  totalConnections: number;
+  perDownload: number;
+  speedLimit: number | null;
+  folders: Record<Category, string | null>;
+  preferMp4: boolean;
+}
+
+/** A leftover download file or temp folder found by the last scan. */
+export interface LeftoverItem {
+  path: string;
+  folder: boolean;
+  size: number;
+}
 
 // Every command that acts on a download takes its id; Rust looks up the path.
 export const api = {
@@ -21,6 +38,19 @@ export const api = {
   openFolder: (id: number) => invoke<void>("open_folder", { id }),
   active: () => invoke<Active>("active_downloads"),
   updateVideoComponent: () => invoke<ComponentUpdate>("update_video_component"),
+  settings: () => invoke<Settings>("get_settings"),
+  saveSettings: (settings: Settings) => invoke<Settings>("set_settings", { settings }),
+  categoryFolder: (category: Category) => invoke<string | null>("category_folder", { category }),
+  pickFolder: (prompt: string, start: string | null) => invoke<string | null>("pick_folder", { prompt, start }),
+  queues: () => invoke<Queue[]>("list_queues"),
+  createQueue: (name: string) => invoke<Queue>("create_queue", { name }),
+  renameQueue: (id: number, name: string) => invoke<void>("rename_queue", { id, name }),
+  deleteQueue: (id: number) => invoke<void>("delete_queue", { id }),
+  moveToQueue: (id: number, queue: number | null) => invoke<void>("move_to_queue", { id, queue }),
+  startQueue: (queue: number | null) => invoke<void>("start_queue", { queue }),
+  stopQueue: (queue: number | null) => invoke<number>("stop_queue", { queue }),
+  leftovers: (rescan: boolean) => invoke<LeftoverItem[]>("leftover_files", { rescan }),
+  removeLeftovers: () => invoke<[number, number]>("remove_leftover_files"),
   quit: () => invoke<void>("quit"),
 };
 
@@ -34,6 +64,10 @@ export function onRemoved(f: (id: number) => void): Promise<UnlistenFn> {
 
 export function onProgress(f: (ticks: Tick[]) => void): Promise<UnlistenFn> {
   return listen<Tick[]>("downloads:progress", (e) => f(e.payload));
+}
+
+export function onQueues(f: (q: Queue[]) => void): Promise<UnlistenFn> {
+  return listen<Queue[]>("queues:changed", (e) => f(e.payload));
 }
 
 export function onQuitRequested(f: (a: Active) => void): Promise<UnlistenFn> {

@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from "react";
-import { api, onChanged, onProgress, onRemoved } from "./api";
-import { type Download, type DownloadRecord, MAIN_QUEUE, type Tick } from "./types";
+import { api, onChanged, onProgress, onQueues, onRemoved } from "./api";
+import type { Download, DownloadRecord, Queue, Tick } from "./types";
 
 // A small store for the download list. The state lives in Rust; this mirrors it from
 // events: a full record on every status change, and one batch of numbers a few times a
@@ -20,7 +20,6 @@ function fromRecord(r: DownloadRecord, old?: Download): Download {
   const running = r.status === "downloading";
   return {
     ...r,
-    queue: MAIN_QUEUE,
     speed: running ? (old?.speed ?? 0) : 0,
     connections: running ? (old?.connections ?? []) : [],
     merging: running ? (old?.merging ?? false) : false,
@@ -55,6 +54,14 @@ function progress(ticks: Tick[]) {
   }
 }
 
+// The user's queues, mirrored the same way: the full list on every change.
+let queues: Queue[] = [];
+
+function setQueues(q: Queue[]) {
+  queues = q;
+  for (const l of listeners) l();
+}
+
 let started = false;
 
 /** Subscribes to Rust once, then loads the list. Events that arrive while it loads win. */
@@ -72,7 +79,9 @@ async function start() {
       removed(id);
     }),
     onProgress(progress),
+    onQueues(setQueues),
   ]);
+  void api.queues().then(setQueues, () => {});
   const list = await api.list();
   const next = new Map(rows);
   for (const r of list) if (!seen.has(r.id)) next.set(r.id, fromRecord(r));
@@ -85,6 +94,13 @@ const subscribe = (l: () => void) => {
   listeners.add(l);
   return () => listeners.delete(l);
 };
+
+export function useQueues(): Queue[] {
+  useEffect(() => {
+    void start();
+  }, []);
+  return useSyncExternalStore(subscribe, () => queues);
+}
 
 export function useDownloads(): { downloads: Download[]; loaded: boolean } {
   useEffect(() => {

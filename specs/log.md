@@ -1,5 +1,7 @@
 # 2026-11-21
 
+* **Update**: [UI direction](ui.md), Part 3: Waiting status and the active-download limit, queues, category save folders, folder picker, Settings, leftover download files; Zustand not added.
+* **Update**: [Video and playlist downloads](video-playlists.md), Part 3: videos count toward the active limit, `--limit-rate` as an approximate speed limit, Prefer MP4 in Settings, leftover temp folders.
 * **Update**: [Download engine](engine.md), Part 3: adaptive connections (cap by size, start small, add while speed rises, back off, remember per host), shared connection budget and speed limit.
 * **Update**: [Chrome extension and hand-off](extension.md), Part 2 review: dangerous or still-scanned browser downloads are never taken over, and the option's text says what the hand-off gives up; the `/tmp` socket folder must be a private folder of ours; silent connections are closed after 5 s; the image look-up runs once per frame.
 * **Update**: [Download engine](engine.md), Part 2 review: once `If-Range` is dropped, every 206 must carry our validator.

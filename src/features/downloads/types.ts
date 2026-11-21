@@ -1,6 +1,6 @@
 export type Category = "video" | "audio" | "images" | "other";
 export type Kind = "file" | "video";
-export type Status = "queued" | "downloading" | "paused" | "finished" | "failed" | "interrupted";
+export type Status = "queued" | "downloading" | "waiting" | "paused" | "finished" | "failed" | "interrupted";
 
 /** One download as Rust stores it (src-tauri/src/store.rs, `Record`). */
 export interface DownloadRecord {
@@ -22,6 +22,14 @@ export interface DownloadRecord {
   /** What can be offered for the error: "videoOutdated" shows the update action. */
   errorCode: string | null;
   addedAt: number;
+  /** The queue it belongs to; absent or null for the main queue. */
+  queue?: number | null;
+}
+
+/** A queue the user made; the main queue is built in. */
+export interface Queue {
+  id: number;
+  name: string;
 }
 
 /** A connection's current range [start, end), of which [start, position) has arrived. */
@@ -48,8 +56,6 @@ export interface Download extends DownloadRecord {
   speed: number;
   connections: (ConnectionTick | null)[];
   merging: boolean;
-  /** Every download is in the main queue until queues arrive (Stage 5). */
-  queue: string;
 }
 
 export interface ProbeView {
@@ -72,14 +78,13 @@ export interface Active {
   notResumable: number;
 }
 
-export const MAIN_QUEUE = "Main queue";
-
 export type Filter =
   | { kind: "all" }
   | { kind: "unfinished" }
   | { kind: "finished" }
   | { kind: "category"; category: Category }
-  | { kind: "queue"; queue: string };
+  /** `queue` null: the main queue. */
+  | { kind: "queue"; queue: number | null };
 
 export function matches(d: Download, f: Filter): boolean {
   switch (f.kind) {
@@ -92,7 +97,7 @@ export function matches(d: Download, f: Filter): boolean {
     case "category":
       return d.category === f.category;
     case "queue":
-      return d.queue === f.queue;
+      return (d.queue ?? null) === f.queue;
   }
 }
 
@@ -105,8 +110,9 @@ export function canResume(d: Download): boolean {
   return ["queued", "paused", "failed", "interrupted"].includes(d.status);
 }
 
+/** Pause also ends a download's wait for a free slot. */
 export function canPause(d: Download): boolean {
-  return d.status === "downloading" && d.resumable;
+  return (d.status === "downloading" && d.resumable) || d.status === "waiting";
 }
 
 /** Running, but pausing would lose what it has (no resume support on the server). */

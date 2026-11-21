@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Film, Loader2 } from "lucide-react";
+import { AlertTriangle, Film, FolderOpen, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { t } from "@/lib/text";
 import { api, message } from "./api";
 import { formatBytes } from "./format";
 import type { Category, ProbeView } from "./types";
@@ -38,11 +39,14 @@ export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
   const [probing, setProbing] = useState(false);
   const [name, setName] = useState("");
   const [folder, setFolder] = useState("");
+  /** The user typed or chose a folder: the category's folder no longer replaces it. */
+  const [folderChosen, setFolderChosen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const probeFor = useRef("");
 
-  // Fresh dialog each time; the folder defaults to the system Downloads folder.
+  // Fresh dialog each time. The folder starts as the system Downloads folder and becomes
+  // the category's folder (Settings) once the link is looked up, unless the user chose one.
   useEffect(() => {
     if (!open) return;
     setUrl("");
@@ -50,9 +54,26 @@ export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
     setName("");
     setError(null);
     setBusy(false);
-    // Only on opening: a folder the user typed earlier is kept.
-    api.defaultFolder().then((d) => setFolder((f) => f || d), () => {});
+    setFolderChosen(false);
+    api.defaultFolder().then((d) => setFolder(d), () => {});
   }, [open]);
+
+  useEffect(() => {
+    if (!probe || folderChosen) return;
+    api.categoryFolder(probe.category).then((f) => f && setFolder(f), () => {});
+  }, [probe, folderChosen]);
+
+  const choose = async () => {
+    try {
+      const picked = await api.pickFolder(t("chooseFolder"), folder || null);
+      if (picked) {
+        setFolder(picked);
+        setFolderChosen(true);
+      }
+    } catch (e) {
+      setError(message(e));
+    }
+  };
 
   // Looks the link up shortly after it stops changing.
   useEffect(() => {
@@ -171,7 +192,20 @@ export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
           </div>
           <div className="grid gap-2">
             <Label htmlFor="add-folder">Save in folder</Label>
-            <Input id="add-folder" value={folder} onChange={(e) => setFolder(e.target.value)} spellCheck={false} />
+            <div className="flex gap-2">
+              <Input
+                id="add-folder"
+                value={folder}
+                onChange={(e) => {
+                  setFolder(e.target.value);
+                  setFolderChosen(true);
+                }}
+                spellCheck={false}
+              />
+              <Button type="button" variant="outline" onClick={() => void choose()}>
+                <FolderOpen aria-hidden /> {t("choose")}
+              </Button>
+            </div>
             <p className="text-xs text-muted-foreground">
               If a file with this name is already there, the new one is saved as “name (1)”. Nothing is overwritten.
             </p>
