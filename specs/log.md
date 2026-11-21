@@ -1,5 +1,6 @@
 # 2026-11-21
 
+* **Update**: [Build stages](stages.md), Release: phase A built (tag versions, CI on macOS, tag-driven draft release for macOS and the extension with provenance; owner's steps in `docs/release.md`); phase B (Windows beta) next.
 * **Update**: `ks-utility` pin moved from `v0.2.3` (`96741cd`) to `v0.2.4` (`40cb924`): the owner's final Hindi review (all terms approved; Yes is हाँ).
 * **Update**: final review of Stage 5. [Download engine](engine.md): a server that stops answering (25 s read timeout, "not answering" after 15 s, fails after 2 minutes keeping the partial file). [UI direction](ui.md): thumbnails never follow redirects, 15 s, 4 at once; windowed playlist picker; the list re-sorts only when its order can change and scrolls only on a new selection; clipboard pre-fill switch; restore failure still opens the list.
 * **Update**: [UI direction](ui.md), Part 7: first-run notice, clipboard pre-fill through Rust, the windowed list (10,000 rows), start-up restore after the window opens, Shift+F10 for the row menu, contrast checked (AA in both themes), reduced motion; window material not done. [Video and playlist downloads](video-playlists.md): downloaded files are marked as coming from the internet (quarantine; Windows Mark of the Web untested), the yt-dlp update still not.

@@ -88,3 +88,18 @@ The keys were fetched from the publishers' own sites (trust on first use); GnuPG
 4. Record the new versions, fingerprints and results in this table.
 
 Size: about 252 MB for the arm64 app (yt-dlp folder 120 MB, Deno 80 MB, ffmpeg and ffprobe 45 MB).
+
+## Build and release (GitHub Actions, not shipped)
+
+Used only by `.github/workflows/ci.yml` and `release.yml`; nothing from them is in the app. GitHub's own actions only, each pinned to a full commit SHA. Runner images: `macos-15`, `ubuntu-24.04` (`docs/decisions-release.md`).
+
+| Action | Version | Commit | Licence | Used for |
+|---|---|---|---|---|
+| actions/checkout | v7.0.1 | `3d3c42e5aac5ba805825da76410c181273ba90b1` | MIT | Checking out the repository |
+| actions/setup-node | v7.1.0 | `949feb2413d6458794dcd2491c4babbbce0c15c1` | MIT | Node 26 and the npm cache |
+| actions/cache | v6.1.0 | `55cc8345863c7cc4c66a329aec7e433d2d1c52a9` | MIT | Rust build and bundled-program caches |
+| actions/upload-artifact | v7.0.2 | `cf430e030ddbb5b0abf93d22962f4752f3646cd9` | MIT | Passing built files between jobs |
+| actions/download-artifact | v8.0.2 | `9000827ccba6bdab643e8b6fd33ac0654aef8333` | MIT | Same |
+| actions/attest-build-provenance | v4.2.2 | `4d101475d8b20a2381f78447822ac1eab6504dd8` | MIT | Build-provenance attestations for every release file |
+
+Other release inputs: SPDX `license-list-data` v3.29.0 (commit `31ba1a50e5397e00a304dbadc76531740e89ee48`; standard licence texts; the repository has no licence file, and SPDX publishes the License List under CC-BY-3.0), used by `scripts/deno-notices.mjs`.

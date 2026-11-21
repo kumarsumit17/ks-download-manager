@@ -78,8 +78,10 @@ Rules for the whole stage:
 ### After Part 7 — Full testing
 - Every check and test, the benchmark, and real downloads in the running app (direct file with pause and resume, a YouTube video, an X image through the extension, a playlist). Then `stage5-final-review.md` in the repository root for an outside review.
 
-## Release (later, not built in Stage 5)
-- Windows build, signing via `SIGNING_*` secrets in CI, notarisation, tag-driven versions, release workflow.
+## Release
+Plan: `docs/release-plan.md`; decisions: `docs/decisions-release.md`; owner's steps: `docs/release.md`.
+- **Phase A (built, not yet run on GitHub):** versions from the tag (`scripts/set-version.mjs`, only `vX.Y.Z`); CI on `macos-15` (`ci.yml`: build, every test, clippy, benchmark); a tag on `main` builds a **draft** release (`release.yml`): two macOS disk images (arm64, x64) made after signing, ad hoc unless all six Apple secrets exist (then Developer ID, notarised and stapled), the extension zip with its ID checked, the ffmpeg source, `SHA256SUMS`, and a build-provenance attestation for each file. The draft is published by hand only after the hand checks pass on its files. The Chrome host is not registered from a disk image or a translocated copy. Deno's notices give the standard text of each declared licence for crates without a licence file.
+- **Phase B (next):** Windows on the same workflows (sidecars, named-pipe hand-off, process and dialog paths, tests on `windows-2025`), shipped as an unsigned beta in the first release it is ready for.
 
 ## Done means
 - `npm run build` and `cargo test` (in `src-tauri/`) succeed; `npm run tauri dev` opens the window.

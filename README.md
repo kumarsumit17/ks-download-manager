@@ -9,9 +9,9 @@ A free download manager for images, audio and video, built for speed: each file 
 | **Platform** | Windows · macOS (desktop) |
 | **Tech stack** | Rust (download engine) · Tauri (desktop shell) · TypeScript + React with shadcn/ui and Lucide icons (interface) |
 | **Chrome extension** | TypeScript, Manifest V3, in `extension/` (loaded unpacked, not on the Chrome Web Store) |
-| **Status** | In development: Stages 1–4 are done; Stage 5 (Final) is being built part by part. See [stages](specs/stages.md) |
+| **Status** | First release (v0.1.0) being prepared: macOS and the Chrome extension; Windows follows as a beta. See [stages](specs/stages.md) and the [changelog](CHANGELOG.md) |
 
-## Planned features
+## Features
 
 - Download images, audio and video
 - Download single videos and whole playlists from YouTube and other video sites ([spec](specs/video-playlists.md))
@@ -21,6 +21,26 @@ A free download manager for images, audio and video, built for speed: each file 
 ## Interface
 
 A clean, classic single-window layout: toolbar on top, categories and queues on the left, the download list in the middle, in light and dark themes. See [specs/ui.md](specs/ui.md).
+
+## Install
+
+Downloads are on the [Releases page](https://github.com/kumarsumit17/ks-download-manager/releases). **The app does not check for updates** (it uses the network only for the downloads you start); new versions are published on that page, so look there for updates.
+
+### macOS (11 or later)
+
+1. Download the disk image for your Mac: `…-macos-arm64.dmg` for Apple silicon (M1 and later), `…-macos-x64.dmg` for Intel.
+2. Open it and drag **KS Download Manager** to **Applications**. Open the app from Applications, not from the disk image (from the disk image it cannot register with Chrome).
+3. If the release notes say the build is **not signed with an Apple Developer ID**, macOS refuses the first open ("cannot be opened" or "damaged"). Try to open it once, then open **System Settings → Privacy & Security**, choose **Open Anyway** next to the message about KS Download Manager, and confirm. Or, in Terminal: `xattr -dr com.apple.quarantine "/Applications/KS Download Manager.app"`.
+
+To remove it, drag the app to the Bin. It leaves Chrome's small registration file behind, which does nothing without the app; delete it by hand if you like: `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.ks.downloadmanager.json`. Settings and the download list are in `~/Library/Application Support/com.ks.downloadmanager`.
+
+### Windows
+
+Not in the first release. A Windows installer will be added to a later release as a **beta, untested by hand**.
+
+### Checking a download
+
+Each release has `SHA256SUMS`, the SHA-256 of every file. On macOS, in the folder with the files: `shasum -a 256 -c SHA256SUMS --ignore-missing`. On Windows: `Get-FileHash <file>` and compare. Every file also has a build-provenance attestation showing it was built by this repository's GitHub Actions from the release tag; with the [GitHub CLI](https://cli.github.com): `gh attestation verify <file> -R kumarsumit17/ks-download-manager`.
 
 ## Building
 
@@ -37,10 +57,12 @@ The extension adds a Download button on YouTube watch pages and Shorts, and on i
 
 It is not published on the Chrome Web Store. To install it:
 
-1. Build it: `npm install`, then `npm run build:extension`.
-2. Open the desktop app once, so it registers itself with Chrome.
-3. In Chrome, open `chrome://extensions`, turn on **Developer mode** (top right), click **Load unpacked** and choose the `extension/dist` folder.
+1. Download `ks-download-manager-extension-vX.Y.Z.zip` from the [Releases page](https://github.com/kumarsumit17/ks-download-manager/releases) and unzip it to a folder you keep (Chrome loads it from there, so do not delete or move that folder). Or build it yourself: `npm install`, then `npm run build:extension`, and use `extension/dist`.
+2. Open the desktop app once (from Applications on macOS), so it registers itself with Chrome.
+3. In Chrome, open `chrome://extensions`, turn on **Developer mode** (top right), click **Load unpacked** and choose that folder.
 4. The extension's ID must be `ikplfdbdfikcokpegkapjdedlgifmkbe`; the app accepts no other.
+
+If the app is removed, the extension says the app is not installed; remove the extension from `chrome://extensions`.
 
 Chrome may show a notice about extensions in developer mode; that is expected for an unpacked extension.
 
@@ -64,8 +86,7 @@ You are responsible for having the right to download what you request. The app d
 
 ## Release
 
-Releases will be cut by pushing a semantic version tag (`git tag v1.2.3 && git push --tags`).
-See the suite-level [CI/CD guide](https://github.com/kumarsumit17/KS-Suite#-cicd-semantic-versioning--automated-signing).
+A release is built by GitHub Actions from a `vX.Y.Z` tag on `main`, as a draft that is published only after hand checks on its files. Steps for the maintainer: [docs/release.md](docs/release.md). Changes: [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

@@ -21,6 +21,7 @@ Free download manager for images, audio and video, with up to 20× faster downlo
 npm install                      # first time
 npm run tauri dev                # run the app with hot reload
 npm run build                    # type-check (tsc -b, incl. vite.config.ts) + build the interface
+node --test scripts/test/         # release scripts (version from tag, extension ID, notes, notices)
 npm run test:lang                # language files (src/locales, extension/_locales): ks-utility's check
 npm run hindi-review             # regenerate docs/hindi-review.md after changing a language file
 cd src-tauri && cargo test       # Rust tests
