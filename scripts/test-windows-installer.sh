@@ -5,7 +5,7 @@
 #
 #   sh scripts/test-windows-installer.sh <setup.exe>        (Git Bash on Windows)
 set -eu
-export MSYS_NO_PATHCONV=1 # keep /S and /ve as they are, not as paths
+export MSYS_NO_PATHCONV=1 # keep /S and /ve as they are, not as paths (so Windows programs get cygpath -w paths)
 
 SETUP=${1:?setup.exe}
 KEY='HKCU\Software\Google\Chrome\NativeMessagingHosts\com.ks.downloadmanager'
@@ -42,7 +42,7 @@ node -e '
   if (m.path.toLowerCase() !== want.toLowerCase()) throw new Error(`path ${m.path}, expected ${want}`);
   if (JSON.stringify(m.allowed_origins) !== JSON.stringify(["chrome-extension://ikplfdbdfikcokpegkapjdedlgifmkbe/"])) throw new Error("allowed_origins");
   if (m.name !== "com.ks.downloadmanager" || m.type !== "stdio") throw new Error("name/type");
-' "$MANIFEST" "$(cygpath -w "$EXE")"
+' "$(cygpath -w "$MANIFEST")" "$(cygpath -w "$EXE")"
 reg query "$KEY" /ve | tr -d '\r' | grep -iF "$(cygpath -w "$MANIFEST")" || fail "registry key does not name the manifest"
 
 echo "uninstall: uninstall.exe /S"
