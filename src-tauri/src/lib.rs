@@ -2,11 +2,13 @@
 //! the events it listens to. Downloading is done by the `engine` crate (src-tauri/engine);
 //! the list and the running downloads are kept by [`manager::Manager`].
 
+mod clipboard;
 mod component;
 mod files;
 mod handoff;
 mod leftovers;
 mod manager;
+mod mark;
 mod marker;
 #[macro_use]
 mod msg;
@@ -55,8 +57,15 @@ impl Events for WindowEvents {
 type Downloads<'a> = State<'a, Arc<Manager>>;
 
 #[tauri::command]
-fn list_downloads(m: Downloads<'_>) -> Vec<Record> {
-    m.list()
+async fn list_downloads(m: Downloads<'_>) -> Result<Vec<Record>, msg::Msg> {
+    m.wait_restored().await;
+    Ok(m.list())
+}
+
+/// The clipboard's link for Add download, only when it holds exactly one web link.
+#[tauri::command]
+async fn clipboard_link() -> Result<Option<String>, msg::Msg> {
+    Ok(clipboard::link().await)
 }
 
 #[tauri::command]
@@ -143,6 +152,11 @@ fn set_settings(m: Downloads<'_>, settings: Settings) -> Result<Settings, msg::M
 }
 
 /// The save folder the Add dialog starts with for a category.
+#[tauri::command]
+fn accept_notice(m: Downloads<'_>) -> Result<(), msg::Msg> {
+    m.accept_notice()
+}
+
 #[tauri::command]
 fn category_folder(m: Downloads<'_>, category: Category) -> Option<String> {
     m.folder_for(category)
@@ -300,9 +314,13 @@ pub fn run() {
             if let Ok(d) = app.path().download_dir() {
                 manager.set_default_folder(d);
             }
-            // Reads only the range maps of unfinished downloads; nothing starts by itself.
-            tauri::async_runtime::block_on(manager.restore());
             app.manage(manager.clone());
+            // Reads the range maps of unfinished downloads after the window is up (Part 7):
+            // the list is sent once this is done, and nothing starts before it.
+            tauri::async_runtime::spawn({
+                let manager = manager.clone();
+                async move { manager.restore().await }
+            });
             // Leftover download files: looked for after start-up, never removed by itself.
             tauri::async_runtime::spawn({
                 let manager = manager.clone();
@@ -347,6 +365,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             list_downloads,
+            clipboard_link,
             default_folder,
             probe_url,
             add_download,
@@ -365,6 +384,7 @@ pub fn run() {
             get_settings,
             set_settings,
             category_folder,
+            accept_notice,
             pick_folder,
             list_queues,
             create_queue,

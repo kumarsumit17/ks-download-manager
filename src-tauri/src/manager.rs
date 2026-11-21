@@ -7,6 +7,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -19,6 +20,7 @@ use crate::files::{self, Category};
 use crate::leftovers;
 use crate::msg;
 use crate::msg::Msg;
+use crate::mark;
 use crate::marker;
 use crate::settings::{self, Settings};
 use crate::open;
@@ -213,6 +215,9 @@ pub struct Manager {
     leftovers: Mutex<Option<Vec<leftovers::Found>>>,
     /// Playlists looked up for the picker, by link.
     playlists: Mutex<HashMap<String, (Instant, VideoInfo)>>,
+    /// Set when [`Manager::restore`] is done. Until then the list is not shown and nothing
+    /// is started, so the window can open before the saved list is checked (Part 7).
+    restored: AtomicBool,
 }
 
 fn now_ms() -> u64 {
@@ -332,6 +337,7 @@ impl Manager {
             default_folder: Mutex::new(None),
             leftovers: Mutex::new(None),
             playlists: Mutex::new(HashMap::new()),
+            restored: AtomicBool::new(false),
         })
     }
 
@@ -370,6 +376,16 @@ impl Manager {
         Ok(new)
     }
 
+    /// Records that the first-run notice was accepted. Only this flag changes, so a
+    /// category folder that has gone missing cannot bring the notice back.
+    pub fn accept_notice(&self) -> Result<(), Msg> {
+        let mut s = self.settings.lock().unwrap_or_else(|e| e.into_inner());
+        let new = Settings { notice_seen: true, ..s.clone() };
+        settings::save(&self.settings_file, &new).map_err(|e| msg!("error.saveSettings", detail = e))?;
+        *s = new;
+        Ok(())
+    }
+
     /// The save folder for a category: its own from Settings, else the system Downloads
     /// folder.
     pub fn folder_for(&self, category: Category) -> Option<String> {
@@ -399,7 +415,12 @@ impl Manager {
     /// the map lists; otherwise it is marked interrupted and starts over when resumed, and
     /// a leftover `.ksdownload` file of it (useless without a map) is deleted. Nothing
     /// starts by itself.
-    pub async fn restore(&self) {
+    ///
+    /// Runs after the window is shown (Part 7). Only the downloads saved in the list are
+    /// looked at: one added meanwhile (an extension hand-off) is left alone. When it is
+    /// done the list can be read ([`Manager::wait_restored`]) and waiting downloads start.
+    pub async fn restore(self: &Arc<Self>) {
+        let saved: std::collections::HashSet<u64> = self.lock().records.iter().map(|r| r.id).collect();
         let all: Vec<(u64, String, PathBuf)> = self
             .lock()
             .records
@@ -416,7 +437,11 @@ impl Manager {
             found.insert(id, saved);
         }
         let mut inner = self.lock();
+        let running: Vec<u64> = inner.running.keys().copied().collect();
         for r in &mut inner.records {
+            if !saved.contains(&r.id) || running.contains(&r.id) {
+                continue;
+            }
             if r.kind == Kind::Video {
                 // yt-dlp continues from its .part files in the temp folder, if they are there.
                 if matches!(r.status, Status::Downloading | Status::Waiting | Status::Paused | Status::Interrupted) {
@@ -449,6 +474,16 @@ impl Manager {
             }
         }
         self.save(&inner);
+        drop(inner);
+        self.restored.store(true, Ordering::SeqCst);
+        self.schedule();
+    }
+
+    /// Waits until the saved list has been checked ([`Manager::restore`]).
+    pub async fn wait_restored(&self) {
+        while !self.restored.load(Ordering::SeqCst) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
     }
 
     pub fn list(&self) -> Vec<Record> {
@@ -857,6 +892,9 @@ impl Manager {
     /// queue first, then the queues in sidebar order, and within a queue by date added.
     /// Videos count toward the cap like files.
     fn schedule(self: &Arc<Self>) {
+        if !self.restored.load(Ordering::SeqCst) {
+            return;
+        }
         let max = self.settings().max_active;
         loop {
             let next = {
@@ -1030,6 +1068,7 @@ impl Manager {
     /// (mp4 or mkv), reserved now in the destination folder ("name (1).ext" when taken),
     /// then the file is renamed over the reservation, as [`Manager::complete`] does.
     fn complete_video(&self, id: u64, file: &Path) -> Result<(PathBuf, u64), RunError> {
+        self.mark_downloaded(id, file);
         let mut inner = self.lock();
         let r = inner.records.iter().find(|r| r.id == id).ok_or_else(|| RunError::Failed(msg!("error.noSuchDownload")))?;
         let folder = r.path.parent().ok_or_else(|| RunError::Failed(msg!("error.noFolder")))?.to_path_buf();
@@ -1053,10 +1092,21 @@ impl Manager {
         Ok((target, bytes))
     }
 
+    /// Marks a finished file as downloaded from the internet before it gets its final name
+    /// (`mark.rs`), so it never appears there unmarked. A file system that cannot carry the
+    /// mark does not fail the download; it is logged.
+    fn mark_downloaded(&self, id: u64, file: &Path) {
+        let url = self.lock().records.iter().find(|r| r.id == id).map(|r| r.url.clone()).unwrap_or_default();
+        if let Err(e) = mark::mark_from_internet(file, &url) {
+            eprintln!("could not mark {} as downloaded from the internet: {e}", file.display());
+        }
+    }
+
     /// Renames the finished `.ksdownload` file to its final name. That name is held by our
     /// empty reservation file, which is replaced; if something else is there now, the file
     /// gets a free "name (n).ext" instead, so nothing is overwritten.
     fn complete(&self, id: u64, path: &Path, part: &Path) -> Result<PathBuf, RunError> {
+        self.mark_downloaded(id, part);
         let mut inner = self.lock();
         // Our reservation, or the name is free again (claimed with create_new, so a file
         // that appears meanwhile is never replaced).
@@ -1711,7 +1761,10 @@ mod tests {
         let file = store::path(&dir.join("data"));
         store::save(&file, records, records.iter().map(|r| r.id).max().unwrap_or(0) + 1, &[]).unwrap();
         let log = Arc::new(Log::default());
-        (Manager::new(file, log.clone()), log)
+        let m = Manager::new(file, log.clone());
+        // As after start-up; tests of `restore` itself call it again.
+        m.restored.store(true, Ordering::SeqCst);
+        (m, log)
     }
 
     fn get(m: &Manager, id: u64) -> Record {
@@ -1736,6 +1789,21 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn nothing_starts_and_no_list_is_given_before_the_saved_list_is_checked() {
+        let dir = temp_dir();
+        let file = store::path(&dir.join("data"));
+        store::save(&file, &[refused(record(1, &dir, "a.zip", Status::Queued))], 2, &[]).unwrap();
+        let m = Manager::new(file, Arc::new(Log::default()));
+        m.resume(1).unwrap();
+        assert_eq!(get(&m, 1).status, Status::Waiting, "waits: the list is not checked yet");
+        assert!(tokio::time::timeout(Duration::from_millis(50), m.wait_restored()).await.is_err());
+        m.restore().await;
+        tokio::time::timeout(Duration::from_secs(1), m.wait_restored()).await.expect("restored");
+        wait_until(&m, |l| l[0].status != Status::Waiting).await;
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn waiting_downloads_start_in_queue_order_within_the_cap() {
         let dir = temp_dir();
         with_settings(&dir, Settings { max_active: 1, ..Settings::default() });
@@ -1748,6 +1816,7 @@ mod tests {
         store::save(&file, &records, 4, &[Queue { id: 1, name: "Later".into() }]).unwrap();
         let log = Arc::new(Log::default());
         let m = Manager::new(file, log.clone());
+        m.restored.store(true, Ordering::SeqCst);
         for id in [1, 2, 3] {
             m.resume(id).unwrap();
             let running = m.list().iter().filter(|r| r.status == Status::Downloading).count();
@@ -2057,11 +2126,21 @@ mod tests {
         assert_eq!(new, dir.join("taken (1).zip"));
         assert_eq!(std::fs::read(&taken.path).unwrap(), b"the user's own file");
         assert_eq!(std::fs::read(&new).unwrap(), b"complete download");
-        assert_eq!((get(&m, 2).name.as_str(), get(&m, 2).path), ("taken (1).zip", new));
+        assert_eq!((get(&m, 2).name.as_str(), get(&m, 2).path), ("taken (1).zip", new.clone()));
 
         // The reservation was removed: the name is free again and is used.
         assert_eq!(m.complete(3, &missing.path, &files::part(&missing.path)).unwrap(), missing.path);
         assert_eq!(std::fs::read(&missing.path).unwrap(), b"complete download");
+
+        // Every finished file is marked as downloaded from the internet (Part 7); the
+        // user's own file that kept its name is not touched.
+        #[cfg(target_os = "macos")]
+        {
+            for f in [&held.path, &new, &missing.path] {
+                assert!(quarantined(f), "{} is marked", f.display());
+            }
+            assert!(!quarantined(&taken.path), "the user's own file is not marked");
+        }
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -2127,7 +2206,19 @@ mod tests {
         assert_eq!(std::fs::read(&target).unwrap(), b"merged video");
         assert_eq!(get(&m, 1).name, "Big Buck Bunny (1).mkv");
         assert!(!dir.join("Big Buck Bunny.mp4").exists(), "the planned name was never reserved");
+        #[cfg(target_os = "macos")]
+        {
+            assert!(quarantined(&target), "a finished video is marked");
+            assert!(!quarantined(&dir.join("Big Buck Bunny.mkv")));
+        }
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The file carries our quarantine attribute (macOS).
+    #[cfg(target_os = "macos")]
+    fn quarantined(f: &Path) -> bool {
+        let out = std::process::Command::new("/usr/bin/xattr").args(["-p", "com.apple.quarantine"]).arg(f).output().unwrap();
+        out.status.success() && String::from_utf8_lossy(&out.stdout).contains(";KS Download Manager;")
     }
 
     #[tokio::test]

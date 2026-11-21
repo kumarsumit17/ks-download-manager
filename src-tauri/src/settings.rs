@@ -34,6 +34,8 @@ pub struct Settings {
     /// Interface language: "system" (follow the system), "en" or "hi". Anything else
     /// reads as "system" (specs/ui.md, "Languages").
     pub language: String,
+    /// The first-run notice (the user's responsibility, no DRM bypass) was accepted.
+    pub notice_seen: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -70,6 +72,7 @@ impl Default for Settings {
             folders: Folders::default(),
             prefer_mp4: false,
             language: "system".into(),
+            notice_seen: false,
         }
     }
 }
@@ -160,6 +163,7 @@ mod tests {
             folders: Folders { video: Some("  ".into()), ..Folders::default() },
             prefer_mp4: false,
             language: "fr".into(),
+            notice_seen: true,
         }
         .checked();
         assert_eq!((s.max_active, s.total_connections, s.per_download, s.speed_limit), (1, MAX_TOTAL_CONNECTIONS, 32, None));

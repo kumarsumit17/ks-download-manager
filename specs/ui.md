@@ -88,11 +88,21 @@ The design must be our own: our own UI and icons, and no code, assets, screensho
 - **Clear all:** finished files stay on disk; partial files of unfinished downloads are deleted with them.
 
 ## Deferred from Stage 4
-- **Clipboard pre-fill in Add download** → Stage 5, Part 7 (Polish). Reading the clipboard from the web view shows a system paste prompt on macOS; doing it properly needs a clipboard plugin, to be justified then.
+- **Clipboard pre-fill in Add download** → done in Stage 5, Part 7 (below): read by Rust with the system `pbpaste`, not by the web view, so no clipboard plugin was needed.
 - **Folder picker for the save folder** → done in Stage 5, Part 3 (above).
 - **Zustand** → not added in Stage 5, Part 3: queues are one more list mirrored from Rust events in the same hand-written store (`src/features/downloads/store.ts`), and settings are read and saved by the Settings dialog alone.
-- **TanStack Table + TanStack Virtual** → Stage 5, Part 7, with the 10,000-row scroll test. Stage 4 keeps the plain sortable table.
-- **Start-up restore off the critical path** → Stage 5, Part 7. Stage 4 reads the range map of every unfinished download before the window shows; fast for a normal list, but it adds to start-up time with many unfinished downloads (quality bar: usable window in under 1 second).
+- **TanStack Table + TanStack Virtual** → not added in Stage 5, Part 7: rows have one fixed height, so our own windowing (`src/features/downloads/windowing.ts`) draws only the rows on screen (below).
+- **Start-up restore off the critical path** → done in Stage 5, Part 7 (below).
+
+## Polish (Stage 5, Part 7)
+- **First-run notice:** on the first start, a dialog says that the user is responsible for what they download, that the app does not remove or get around copy protection (DRM) and does not support paid streaming or sign-in videos, and that it is free and uses the network only for the downloads the user starts. Only **I understand** closes it (not Escape); the choice is saved in `settings.json` (`noticeSeen`) by its own command, so a missing category folder cannot bring it back.
+- **Clipboard pre-fill:** when Add download opens and the link field is empty, Rust reads the clipboard (`pbpaste` on macOS; PowerShell `Get-Clipboard` on Windows, untested) and passes it to the page only when it is exactly one `http(s)` link of at most 2048 characters, with no spaces and no user name or password. The text is selected, so typing replaces it. Nothing else on the clipboard reaches the page, and nothing is kept. The clipboard is read only when the dialog opens.
+- **10,000 rows:** the list is windowed. Every row (download or playlist heading) has one height, measured from a drawn row; only the rows on screen plus 8 above and below are drawn, and two spacer rows keep the full scroll height. The arrow keys move through every row; the selection is scrolled into view by its position. The table carries `aria-rowcount` and each row `aria-rowindex`, so screen readers know the real size.
+- **Start-up:** the window opens before the saved list is checked: the range maps are read in the background, the list is sent when that is done, and nothing starts before it. A download handed over by the extension meanwhile is left as it is.
+- **Keyboard:** besides Ctrl/Cmd+N, Ctrl/Cmd+F, Space, Delete and the arrow keys, Shift+F10 (or the Menu key) opens the row menu at the selected row. Every toolbar, sidebar, dialog and playlist-heading control is a real button or field, so Tab reaches it.
+- **Contrast** (computed from the theme's OKLCH colours, alpha blended in sRGB as browsers do): every text and background pair meets WCAG AA (at least 4.5:1) in both themes. The lowest are light error text on a selected row (4.94:1) and light button text on the accent colour (5.04:1).
+- **Reduced motion:** the spinner and the indeterminate progress bars stop when the system asks for reduced motion (CSS `prefers-reduced-motion`).
+- **Window material:** not done. Tauri's window effects need a transparent window, which on macOS needs Tauri's private-API flag (`macos-private-api`); the window keeps its solid background.
 
 ## Look and feel
 - Flat and calm: one accent colour, generous spacing, no gradients or skeuomorphic buttons.

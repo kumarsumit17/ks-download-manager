@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { ArrowDown, ArrowUp, Ban, Check, ChevronDown, ChevronRight, Clock, Copy, ExternalLink, FolderOpen, ListVideo, Pause, Play, Trash2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -16,6 +16,7 @@ import { msgText, t } from "@/lib/i18n";
 import { cannotPauseText, type Download, type Queue, type Status, canPause, canResume, cannotPause, isMkvVideo } from "./types";
 import { formatBytes, formatDate, formatSpeed, formatTimeLeft } from "./format";
 import { groupRows } from "./playlist";
+import { scrollToShow, visibleRange } from "./windowing";
 
 type SortKey = "name" | "size" | "status" | "speed" | "timeLeft" | "addedAt";
 
@@ -56,15 +57,15 @@ type Item =
 
 /** A playlist's heading row: its title, how many entries finished, their combined
  * speed, and Pause / Resume for the whole playlist. Not a download: never selected. */
-function PlaylistHeading(props: { id: number; title: string; rows: Download[]; open: boolean; onFold: () => void; actions: RowActions }) {
-  const { id, title, rows, open, onFold, actions } = props;
+function PlaylistHeading(props: { id: number; title: string; rows: Download[]; open: boolean; rowIndex: number; onFold: () => void; actions: RowActions }) {
+  const { id, title, rows, open, rowIndex, onFold, actions } = props;
   const done = rows.filter((r) => r.status === "finished").length;
   const failed = rows.filter((r) => r.status === "failed").length;
   const speed = rows.reduce((n, r) => n + r.speed, 0);
   const pct = rows.length ? (done / rows.length) * 100 : 0;
   const Fold = open ? ChevronDown : ChevronRight;
   return (
-    <tr className="h-9 border-b border-border/60 bg-muted/40">
+    <tr data-row aria-rowindex={rowIndex} className="h-9 border-b border-border/60 bg-muted/40">
       <td className="px-3">
         <span className="flex items-center gap-1.5">
           <button
@@ -201,19 +202,49 @@ export function DownloadList({ downloads, selectedId, onSelect, actions, queues,
     onSelect(shown[next < 0 ? 0 : next].id);
   };
 
+  // Windowing (specs/ui.md, "Performance rules"): rows all have one height, so only those
+  // on screen, plus a few, are drawn; two spacer rows stand in for the rest.
+  const scroller = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewport, setViewport] = useState(800);
+  const [rowHeight, setRowHeight] = useState(36);
+  const [headerHeight, setHeaderHeight] = useState(32);
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const size = new ResizeObserver(() => setViewport(el.clientHeight));
+    size.observe(el);
+    return () => size.disconnect();
+  }, []);
+  // The real heights, measured once rows are drawn (borders and scaling included).
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    const row = el?.querySelector<HTMLElement>("tbody tr[data-row]");
+    const head = el?.querySelector<HTMLElement>("thead");
+    if (row && Math.abs(row.getBoundingClientRect().height - rowHeight) > 0.1) setRowHeight(row.getBoundingClientRect().height);
+    if (head && Math.abs(head.getBoundingClientRect().height - headerHeight) > 0.1) setHeaderHeight(head.getBoundingClientRect().height);
+  });
+  const range = visibleRange(items.length, rowHeight, scrollTop, viewport - headerHeight);
+
   // Keep the selected row visible when it changes (arrow keys, sorting, filtering).
   useEffect(() => {
-    if (selectedId) document.getElementById(rowId(selectedId))?.scrollIntoView({ block: "nearest" });
-  }, [selectedId, rows]);
+    const el = scroller.current;
+    if (!selectedId || !el) return;
+    const index = items.findIndex((i) => "d" in i && i.d.id === selectedId);
+    if (index < 0) return;
+    const to = scrollToShow(index, rowHeight, el.scrollTop, el.clientHeight - headerHeight);
+    if (to !== null) el.scrollTop = to;
+  }, [selectedId, items, rowHeight, headerHeight]);
 
   return (
     <ContextMenu>
     <ContextMenuTrigger asChild>
-    <div className="min-h-0 flex-1 overflow-auto">
+    <div ref={scroller} onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)} className="min-h-0 flex-1 overflow-auto">
       <table
         role="grid"
         aria-label={t("list.label")}
-        aria-activedescendant={selectedId ? rowId(selectedId) : undefined}
+        aria-activedescendant={selectedId && shown.some((d) => d.id === selectedId) ? rowId(selectedId) : undefined}
+        aria-rowcount={items.length + 1}
         tabIndex={0}
         onKeyDown={onKey}
         className="w-full table-fixed border-collapse text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
@@ -246,10 +277,12 @@ export function DownloadList({ downloads, selectedId, onSelect, actions, queues,
           </tr>
         </thead>
         <tbody>
-          {items.map((item) => {
+          {range.before > 0 && <tr aria-hidden style={{ height: range.before }} />}
+          {items.slice(range.start, range.end).map((item, i) => {
+            const rowIndex = range.start + i + 2; // the header is row 1
             if ("heading" in item) {
               const h = item.heading;
-              return <PlaylistHeading key={`playlist-${h.id}`} {...h} onFold={() => fold(h.id)} actions={actions} />;
+              return <PlaylistHeading key={`playlist-${h.id}`} {...h} rowIndex={rowIndex} onFold={() => fold(h.id)} actions={actions} />;
             }
             const { d, indent } = item;
             const pct = d.size ? Math.min(100, (d.received / d.size) * 100) : 0;
@@ -258,6 +291,8 @@ export function DownloadList({ downloads, selectedId, onSelect, actions, queues,
               <tr
                 key={d.id}
                 id={rowId(d.id)}
+                data-row
+                aria-rowindex={rowIndex}
                 aria-selected={selected}
                 onClick={() => onSelect(d.id)}
                 onContextMenu={() => onSelect(d.id)}
@@ -317,6 +352,7 @@ export function DownloadList({ downloads, selectedId, onSelect, actions, queues,
               </tr>
             );
           })}
+          {range.after > 0 && <tr aria-hidden style={{ height: range.after }} />}
         </tbody>
       </table>
       {loaded && rows.length === 0 && (

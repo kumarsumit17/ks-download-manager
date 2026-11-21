@@ -17,6 +17,8 @@ export interface Settings {
   preferMp4: boolean;
   /** "system", "en" or "hi". */
   language: string;
+  /** The first-run notice was accepted. */
+  noticeSeen: boolean;
 }
 
 /** A leftover download file or temp folder found by the last scan. */
@@ -31,6 +33,9 @@ export interface LeftoverItem {
 export const api = {
   list: () => invoke<DownloadRecord[]>("list_downloads"),
   defaultFolder: () => invoke<string>("default_folder"),
+  /** The clipboard's text, only when it is exactly one web link (checked in Rust). */
+  clipboardLink: () => invoke<string | null>("clipboard_link"),
+  acceptNotice: () => invoke<void>("accept_notice"),
   probe: (url: string) => invoke<ProbeView>("probe_url", { url }),
   add: (url: string, name: string, folder: string, start: boolean) =>
     invoke<DownloadRecord>("add_download", { url, name, folder, start }),

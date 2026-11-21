@@ -240,5 +240,10 @@
   "update.damaged": "The download was damaged (checksum mismatch). Nothing was changed.",
   "update.newNoStart": "The new version does not start. Nothing was changed.",
   "update.install": "Could not install the update: {detail}.",
-  "update.unpack": "Could not unpack the update."
+  "update.unpack": "Could not unpack the update.",
+  "notice.title": "Before you start",
+  "notice.rights": "Download only what you have the right to download. You are responsible for what you download and how you use it.",
+  "notice.drm": "KS Download Manager does not remove or get around copy protection (DRM). Paid streaming services and videos that need a sign-in are not supported.",
+  "notice.free": "The app is free, with no ads and no tracking. It uses the network only for the downloads you start.",
+  "notice.accept": "I understand"
 }

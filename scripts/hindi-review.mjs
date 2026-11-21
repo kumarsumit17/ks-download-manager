@@ -28,6 +28,8 @@ const UNSURE = {
   "playlist.number": "प्लेलिस्ट वाला नंबर for the position in the playlist",
   "playlist.selected": "{total} में से {count} चुने गए: the order differs from English",
   "error.thumbnail": "never shown today (thumbnails fail silently)",
+  "notice.accept": "समझ लिया for I understand (gender-neutral; समझ गया/गई would need the user's gender)",
+  "notice.drm": "कॉपी प्रोटेक्शन kept as the familiar term; न … न … for neither … nor",
 };
 
 const cell = (s) => String(s).replace(/\|/g, "\\|").replace(/\n/g, " ");

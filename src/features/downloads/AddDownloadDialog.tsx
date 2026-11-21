@@ -49,6 +49,7 @@ export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
   const [ticked, setTicked] = useState<Set<number>>(new Set());
   const [numbered, setNumbered] = useState(true);
   const probeFor = useRef("");
+  const urlInput = useRef<HTMLInputElement>(null);
 
   // Fresh dialog each time. The folder starts as the system Downloads folder and becomes
   // the category's folder (Settings) once the link is looked up, unless the user chose one.
@@ -62,6 +63,16 @@ export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
     setFolderChosen(false);
     setNumbered(true);
     api.defaultFolder().then((d) => setFolder(d), () => {});
+    // A web link on the clipboard fills the field, selected so typing replaces it. Rust
+    // reads the clipboard only now and passes it on only when it is exactly one link.
+    api.clipboardLink().then(
+      (link) => {
+        if (!link) return;
+        setUrl((u) => (u === "" ? link : u));
+        requestAnimationFrame(() => urlInput.current?.select());
+      },
+      () => {},
+    );
   }, [open]);
 
   useEffect(() => {
@@ -153,6 +164,7 @@ export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
             <Label htmlFor="add-url">{t("details.link")}</Label>
             <Input
               id="add-url"
+              ref={urlInput}
               autoFocus
               value={url}
               onChange={(e) => setUrl(e.target.value)}

@@ -10,6 +10,7 @@ import { AddDownloadDialog } from "@/features/downloads/AddDownloadDialog";
 import { DeleteDialog } from "@/features/downloads/DeleteDialog";
 import { QueuesDialog } from "@/features/queues/QueuesDialog";
 import { SettingsDialog } from "@/features/settings/SettingsDialog";
+import { FirstRunNotice } from "@/features/notice/FirstRunNotice";
 import { t } from "@/lib/i18n";
 import { api, message, onQuitRequested } from "@/features/downloads/api";
 import { useDownloads, useQueues } from "@/features/downloads/store";
@@ -124,6 +125,12 @@ export default function App() {
       } else if (e.key === "Delete" || (e.key === "Backspace" && mod)) {
         e.preventDefault();
         setDeleting(selected);
+      } else if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+        // The row menu from the keyboard: opened at the selected row.
+        e.preventDefault();
+        const row = document.getElementById(`download-row-${selected.id}`);
+        const r = row?.getBoundingClientRect();
+        if (row && r) row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + 24, clientY: r.bottom }));
       }
     };
     window.addEventListener("keydown", onKey);
@@ -132,6 +139,7 @@ export default function App() {
 
   return (
     <TooltipProvider delayDuration={400}>
+      <FirstRunNotice />
       <div className="flex h-full flex-col bg-background text-foreground">
         <Toolbar
           canResume={selected !== null && canResume(selected)}
