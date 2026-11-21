@@ -24,9 +24,9 @@ The spec's target, at least 19× with 20 connections, is met (19.95×). The spec
 **Regression check (ready for CI):** the same run fails when
 - a speed-up drops more than 10 % below `src-tauri/engine/tests/bench-baseline.txt` (the spec's rule), or a measured count is missing from the baseline;
 - the one-connection run does not take size ÷ rate within 5 % (64 s here): otherwise the throttle did not work and the ratios would measure nothing;
-- an **unthrottled** run (256 MiB over 8 connections from the same local server, no limit) stays below a floor of 500 MiB/s (`KSDM_BENCH_FLOOR_MIBS`). Speed-ups alone cannot catch an engine that got slower everywhere; the floor can. Measured here: **3,095 MiB/s**; the floor is about a sixth of that, so slower machines pass.
+- an **unthrottled** run (256 MiB over 8 connections from the same local server, no limit) stays below a floor (`KSDM_BENCH_FLOOR_MIBS`). Speed-ups alone cannot catch an engine that got slower everywhere; the floor can. **The floor is a machine-dependent sanity check, not a measured speed:** strict locally (default 500 MiB/s; measured on the owner's Mac: **3,095 MiB/s**), loose on shared runners (CI sets 100 MiB/s, because GitHub's `macos-15` runners measured 187 to 627 MiB/s for the same code on 2026-11-21). On CI it only catches a catastrophic slowdown; the measured value is printed in each run's job summary, so a downward trend is visible while it still passes.
 
-Speed-ups, not times, are compared with the baseline, because under a per-connection limit they do not depend on the machine. A new baseline is written with `KSDM_BENCH_RECORD=1 npm run bench` (the time and floor checks apply to that run too, so a broken run is never recorded). Added after the final review. No CI workflow exists yet (Release stage); a workflow only needs to run `npm run bench` on macOS or Linux with Rust installed.
+Speed-ups, not times, are compared with the baseline, because under a per-connection limit they do not depend on the machine. A new baseline is written with `KSDM_BENCH_RECORD=1 npm run bench` (the time and floor checks apply to that run too, so a broken run is never recorded). Added after the final review. CI runs it in the `bench` job of `.github/workflows/ci.yml` (`macos-15`) on every push.
 
 ## 2. Real world (one line, one day)
 

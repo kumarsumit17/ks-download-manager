@@ -209,5 +209,22 @@ jobs:
             src-tauri/target
           key: bench-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'src-tauri/Cargo.lock') }}
           restore-keys: bench-${{ runner.os }}-
+      # The unthrottled floor is a machine-dependent sanity check: 500 MiB/s on the owner's
+      # Mac (bench.rs default), 100 here, since shared runners have measured 187 to 627 MiB/s.
+      # Only the floor is loosened; the speed-up, missing-count and one-connection checks are
+      # unchanged (docs/decisions-release.md, docs/benchmarks.md).
       - name: Benchmark against the local throttled server (no internet download)
-        run: npm run bench
+        env:
+          KSDM_BENCH_FLOOR_MIBS: "100"
+        run: |
+          set +e
+          npm run bench 2>&1 | tee bench.log
+          status=${PIPESTATUS[0]}
+          {
+            echo "### Engine benchmark (macos-15, shared runner)"
+            echo
+            grep -E '^\|' bench.log
+            echo
+            echo "**$(grep -E '^unthrottled:' bench.log || echo 'unthrottled: not measured (the run stopped earlier)')**"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
