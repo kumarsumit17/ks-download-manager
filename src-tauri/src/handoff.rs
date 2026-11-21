@@ -3,8 +3,9 @@
 //! Chrome's native messaging starts this same program as a "host", with the calling
 //! extension's origin as its argument, and talks to it over stdin/stdout. The host checks
 //! that origin against our one extension ID, then forwards each message to the running app
-//! over a Unix socket in the app data folder, starting the app through LaunchServices if
-//! it is not running. The socket bind is also the app's single-instance lock.
+//! over a Unix socket in the app data folder (macOS) or a local named pipe (Windows),
+//! starting the app if it is not running. The socket or pipe is also the app's
+//! single-instance lock.
 //!
 //! What stops others from adding downloads:
 //! - Websites cannot use native messaging at all; Chrome only lets the extensions listed in
@@ -12,6 +13,10 @@
 //! - The host refuses any origin argument but ours, exactly.
 //! - The socket lives in the user's own app data folder, is created `0600`, and every
 //!   connection's peer user ID must equal the socket owner's.
+//! - Windows: the pipe refuses network clients, and each side checks that the process at
+//!   the other end runs as the same Windows user (its token's user SID), so a pipe of the
+//!   same name made first by another user on the PC is never used. The host opens the pipe
+//!   at the identification level only, so the app at the other end cannot act as the user.
 //! - Messages are small (8 KB), strictly shaped (unknown fields rejected), and carry only an
 //!   http(s) URL and a kind. Nothing is run, opened or saved anywhere but the save folder.
 
@@ -32,11 +37,15 @@ pub const MAX_MESSAGE: usize = 8 * 1024;
 /// How long the host waits for the app to start and open its socket.
 const START_WAIT: Duration = Duration::from_secs(10);
 /// `sun_path` holds 104 bytes on macOS, including the final NUL.
+#[cfg(unix)]
 const MAX_SOCKET_PATH: usize = 103;
 /// The fallback socket folder's name, followed by the user ID.
+#[cfg(unix)]
 const FALLBACK_DIR: &str = "/tmp/ksdm-";
 /// How long the app waits for a connection's one line before closing it.
 const LINE_WAIT: Duration = Duration::from_secs(5);
+/// How long the host waits for the app's answer.
+const ANSWER_WAIT: Duration = Duration::from_secs(120);
 
 pub fn origin() -> String {
     format!("chrome-extension://{EXTENSION_ID}/")
@@ -215,10 +224,22 @@ fn start_app() -> bool {
         .is_ok_and(|s| s.success())
 }
 
-#[cfg(not(target_os = "macos"))]
+/// Starts the app (this same program, without arguments) outside Chrome's job object, so it
+/// is not closed with Chrome. If the job does not allow that, Explorer starts it instead.
+#[cfg(windows)]
 fn start_app() -> bool {
-    // Windows: the Release stage (named pipe, start through the shell). Not built yet.
-    let _ = BUNDLE_ID;
+    use std::os::windows::process::CommandExt;
+    use std::process::{Command, Stdio};
+    use windows_sys::Win32::System::Threading::{CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, DETACHED_PROCESS};
+    let Ok(exe) = std::env::current_exe() else { return false };
+    // Chrome's pipes are never handed on: the app gets no stdin, stdout or stderr.
+    let spawn = |c: &mut Command| c.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().is_ok();
+    spawn(Command::new(&exe).creation_flags(CREATE_BREAKAWAY_FROM_JOB | DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP))
+        || spawn(Command::new("explorer.exe").arg(&exe))
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+fn start_app() -> bool {
     false
 }
 
@@ -231,7 +252,7 @@ fn ask(socket: &Path, req: &Request) -> io::Result<Reply> {
         check_private_dir(dir, current_uid()?)?;
     }
     let mut s = UnixStream::connect(socket)?;
-    s.set_read_timeout(Some(Duration::from_secs(120)))?;
+    s.set_read_timeout(Some(ANSWER_WAIT))?;
     let mut line = serde_json::to_vec(req).map_err(io::Error::other)?;
     line.push(b'\n');
     s.write_all(&line)?;
@@ -240,9 +261,53 @@ fn ask(socket: &Path, req: &Request) -> io::Result<Reply> {
     serde_json::from_str(&answer).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
-#[cfg(not(unix))]
+/// One request over the pipe, from a plain (blocking) file handle: the host has no async
+/// runtime. The answer is awaited on a helper thread, so a stuck app cannot hold the host.
+#[cfg(windows)]
+fn ask(pipe: &Path, req: &Request) -> io::Result<Reply> {
+    use std::io::{BufRead, BufReader};
+    let file = open_pipe(pipe)?;
+    if !win::other_end_is_same_user(&file, win::End::Server)? {
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "the pipe belongs to another user"));
+    }
+    let mut line = serde_json::to_vec(req).map_err(io::Error::other)?;
+    line.push(b'\n');
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let talk = || -> io::Result<String> {
+            (&file).write_all(&line)?;
+            let mut answer = String::new();
+            BufReader::new((&file).take(MAX_MESSAGE as u64)).read_line(&mut answer)?;
+            Ok(answer)
+        };
+        let _ = tx.send(talk());
+    });
+    let answer = rx.recv_timeout(ANSWER_WAIT).map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "no answer"))??;
+    serde_json::from_str(&answer).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+}
+
+/// Opens the app's pipe as a client. A busy pipe (every instance in use for a moment) is
+/// tried again for up to a second.
+#[cfg(windows)]
+fn open_pipe(pipe: &Path) -> io::Result<std::fs::File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows_sys::Win32::Foundation::ERROR_PIPE_BUSY;
+    use windows_sys::Win32::Storage::FileSystem::SECURITY_IDENTIFICATION;
+    let deadline = Instant::now() + Duration::from_secs(1);
+    loop {
+        // Identification level: the server may learn who we are, never act as us.
+        match std::fs::OpenOptions::new().read(true).write(true).security_qos_flags(SECURITY_IDENTIFICATION).open(pipe) {
+            Err(e) if e.raw_os_error() == Some(ERROR_PIPE_BUSY as i32) && Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            other => return other,
+        }
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
 fn ask(_socket: &Path, _req: &Request) -> io::Result<Reply> {
-    Err(io::Error::new(io::ErrorKind::Unsupported, "Windows hand-off is not built yet"))
+    Err(io::Error::new(io::ErrorKind::Unsupported, "no hand-off on this system"))
 }
 
 // ---- The app side: socket path, single-instance lock, server.
@@ -251,6 +316,7 @@ fn ask(_socket: &Path, _req: &Request) -> io::Result<Reply> {
 /// socket, in a private `/tmp/ksdm-<uid>/` folder. The host and the app compute it the
 /// same way. The fallback folder is used only if it is a real folder (not a link), owned by
 /// us, with mode `0700` ([`check_private_dir`]); `bind` and `ask` refuse it otherwise.
+#[cfg(unix)]
 pub fn socket_path(data_dir: &Path) -> PathBuf {
     let preferred = data_dir.join("ext.sock");
     if preferred.as_os_str().len() <= MAX_SOCKET_PATH {
@@ -261,7 +327,28 @@ pub fn socket_path(data_dir: &Path) -> PathBuf {
     PathBuf::from(format!("{FALLBACK_DIR}{uid}")).join("ext.sock")
 }
 
+/// Windows: the pipe `\\.\pipe\com.ks.downloadmanager-<user name>`, the same for the host
+/// and the app (the data folder is not used). The name only keeps two users' copies apart;
+/// who is at the other end is checked on every connection ([`win::other_end_is_same_user`]).
+#[cfg(windows)]
+pub fn socket_path(_data_dir: &Path) -> PathBuf {
+    pipe_name(&std::env::var("USERNAME").unwrap_or_default())
+}
+
+#[cfg(windows)]
+fn pipe_name(user: &str) -> PathBuf {
+    // A backslash would end the name; everything else is allowed in a pipe name.
+    let user = if user.is_empty() { "unknown".to_owned() } else { user.replace('\\', "_") };
+    PathBuf::from(format!(r"\\.\pipe\{BUNDLE_ID}-{user}"))
+}
+
+#[cfg(not(any(unix, windows)))]
+pub fn socket_path(data_dir: &Path) -> PathBuf {
+    data_dir.join("ext.sock")
+}
+
 /// The fallback folder, if `socket` is in it.
+#[cfg(unix)]
 fn fallback_dir(socket: &Path) -> Option<&Path> {
     socket.parent().filter(|d| d.to_str().is_some_and(|d| d.starts_with(FALLBACK_DIR)))
 }
@@ -279,11 +366,6 @@ fn current_uid() -> io::Result<u32> {
         String::from_utf8(out.stdout).ok()?.trim().parse().ok()
     });
     uid.ok_or_else(|| io::Error::other("could not read the user ID"))
-}
-
-#[cfg(not(unix))]
-fn current_uid() -> io::Result<u32> {
-    Err(io::Error::new(io::ErrorKind::Unsupported, "no user IDs here"))
 }
 
 /// A folder in a shared place such as `/tmp` is trusted only if it is a real folder (not a
@@ -305,11 +387,6 @@ fn check_private_dir(dir: &Path, uid: u32) -> io::Result<()> {
     Ok(())
 }
 
-#[cfg(not(unix))]
-fn check_private_dir(_dir: &Path, _uid: u32) -> io::Result<()> {
-    Ok(())
-}
-
 /// The data folder the app uses (Tauri's `app_data_dir`), computed without Tauri for host
 /// mode: `~/Library/Application Support/com.ks.downloadmanager` on macOS.
 pub fn data_dir_without_tauri() -> Option<PathBuf> {
@@ -323,9 +400,15 @@ pub fn data_dir_without_tauri() -> Option<PathBuf> {
     }
 }
 
+/// What the app listens on: a Unix socket, or the first instance of the Windows pipe.
+#[cfg(unix)]
+pub type Listener = std::os::unix::net::UnixListener;
+#[cfg(windows)]
+pub type Listener = tokio::net::windows::named_pipe::NamedPipeServer;
+
 pub enum Bound {
-    #[cfg(unix)]
-    Listener(std::os::unix::net::UnixListener),
+    #[cfg(any(unix, windows))]
+    Listener(Listener),
     /// Another copy of the app owns the socket and answered.
     AlreadyRunning,
 }
@@ -379,9 +462,32 @@ fn prepare_private_dir(dir: &Path) -> io::Result<()> {
     check_private_dir(dir, current_uid()?)
 }
 
-#[cfg(not(unix))]
+/// Creates the first instance of the pipe, which is also the single-instance lock. If the
+/// pipe exists, the app at the other end must be ours (same user) to count as running;
+/// another user's pipe of that name is an error, and the app then runs without the
+/// extension. Needs a Tokio runtime context (the pipe is registered with its reactor).
+#[cfg(windows)]
+pub fn bind(path: &Path) -> io::Result<Bound> {
+    match tokio::net::windows::named_pipe::ServerOptions::new()
+        .first_pipe_instance(true)
+        .reject_remote_clients(true)
+        .create(path)
+    {
+        Ok(server) => Ok(Bound::Listener(server)),
+        Err(e) => {
+            let Ok(file) = open_pipe(path) else { return Err(e) };
+            if win::other_end_is_same_user(&file, win::End::Server)? {
+                Ok(Bound::AlreadyRunning)
+            } else {
+                Err(io::Error::new(io::ErrorKind::PermissionDenied, "the pipe belongs to another user"))
+            }
+        }
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
 pub fn bind(_path: &Path) -> io::Result<Bound> {
-    Err(io::Error::new(io::ErrorKind::Unsupported, "Windows hand-off is not built yet"))
+    Err(io::Error::new(io::ErrorKind::Unsupported, "no hand-off on this system"))
 }
 
 /// Tells the copy of the app that owns the socket to show its window.
@@ -405,7 +511,7 @@ pub async fn serve(listener: std::os::unix::net::UnixListener, path: PathBuf, ha
 #[cfg(unix)]
 async fn serve_with(listener: std::os::unix::net::UnixListener, path: PathBuf, handler: std::sync::Arc<dyn Handler>, line_wait: Duration) {
     use std::os::unix::fs::MetadataExt;
-    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+    use tokio::io::{AsyncReadExt, BufReader};
     let Ok(()) = listener.set_nonblocking(true) else { return };
     let Ok(listener) = tokio::net::UnixListener::from_std(listener) else { return };
     let owner = std::fs::metadata(&path).map(|m| m.uid()).ok();
@@ -418,31 +524,86 @@ async fn serve_with(listener: std::os::unix::net::UnixListener, path: PathBuf, h
                 return;
             }
             let (read, mut write) = stream.into_split();
-            let mut line = String::new();
             let mut reader = BufReader::new(read.take(MAX_MESSAGE as u64));
-            match tokio::time::timeout(line_wait, reader.read_line(&mut line)).await {
-                Ok(Ok(_)) if line.ends_with('\n') => {}
-                _ => return, // too slow, cut short or failed: the connection is closed
+            answer_one(&mut reader, &mut write, &*handler, line_wait).await;
+        });
+    }
+}
+
+/// Serves the pipe: the same protocol as the Unix socket. Each connected instance is
+/// handed to a task and a new instance is made for the next client. Only clients running
+/// as our own Windows user are answered.
+#[cfg(windows)]
+pub async fn serve(listener: Listener, path: PathBuf, handler: std::sync::Arc<dyn Handler>) {
+    serve_with(listener, path, handler, LINE_WAIT).await;
+}
+
+#[cfg(windows)]
+async fn serve_with(first: Listener, path: PathBuf, handler: std::sync::Arc<dyn Handler>, line_wait: Duration) {
+    use tokio::io::{AsyncReadExt, BufReader};
+    use tokio::net::windows::named_pipe::ServerOptions;
+    let mut server = first;
+    loop {
+        let connected = server.connect().await.is_ok();
+        let next = match ServerOptions::new().reject_remote_clients(true).create(&path) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("the Chrome extension can no longer reach the app: {e}");
+                return;
             }
-            let answer = match serde_json::from_str::<Request>(line.trim()) {
-                Err(_) => Reply::err("bad_request"),
-                Ok(req) => match validate(&req) {
-                    Err(r) => r,
-                    Ok(()) => handler.handle(req).await,
-                },
-            };
-            if let Ok(mut out) = serde_json::to_vec(&answer) {
-                out.push(b'\n');
-                let _ = write.write_all(&out).await;
+        };
+        let pipe = std::mem::replace(&mut server, next);
+        let same_user = connected && win::other_end_is_same_user(&pipe, win::End::Client).unwrap_or(false);
+        let handler = handler.clone();
+        tokio::spawn(async move {
+            if !same_user {
+                return;
+            }
+            let (read, mut write) = tokio::io::split(pipe);
+            let mut reader = BufReader::new(read.take(MAX_MESSAGE as u64));
+            if answer_one(&mut reader, &mut write, &*handler, line_wait).await {
+                // Closing our end could drop an answer the client has not read yet: wait
+                // (briefly) until the client closes its end.
+                let mut rest = [0u8; 64];
+                let read = reader.get_mut().get_mut();
+                let _ = tokio::time::timeout(LINE_WAIT, async { while matches!(read.read(&mut rest).await, Ok(n) if n > 0) {} }).await;
             }
         });
     }
+}
+
+/// Reads one line (within `line_wait`), answers it with one line. False when the
+/// connection was closed without an answer (too slow, cut short or failed).
+#[cfg(any(unix, windows))]
+async fn answer_one(
+    reader: &mut (impl tokio::io::AsyncBufRead + Unpin),
+    write: &mut (impl tokio::io::AsyncWrite + Unpin),
+    handler: &dyn Handler,
+    line_wait: Duration,
+) -> bool {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+    let mut line = String::new();
+    match tokio::time::timeout(line_wait, reader.read_line(&mut line)).await {
+        Ok(Ok(_)) if line.ends_with('\n') => {}
+        _ => return false,
+    }
+    let answer = match serde_json::from_str::<Request>(line.trim()) {
+        Err(_) => Reply::err("bad_request"),
+        Ok(req) => match validate(&req) {
+            Err(r) => r,
+            Ok(()) => handler.handle(req).await,
+        },
+    };
+    let Ok(mut out) = serde_json::to_vec(&answer) else { return false };
+    out.push(b'\n');
+    write.write_all(&out).await.is_ok()
 }
 
 /// Writes Chrome's host manifest so our extension can find this program. Only when Chrome's
 /// own folder exists (Chrome is installed); never creates Chrome's folder. Skipped while the
 /// app runs from a place that goes away (see [`is_temporary_location`]); the next start from
 /// a lasting place writes it.
+#[cfg(not(windows))]
 pub fn install_manifest(exe: &Path) -> io::Result<Option<PathBuf>> {
     if is_temporary_location(exe) {
         return Ok(None);
@@ -460,6 +621,152 @@ pub fn install_manifest(exe: &Path) -> io::Result<Option<PathBuf>> {
         ks_utility::atomic::write_atomic(&file, body.as_bytes())?;
     }
     Ok(Some(file))
+}
+
+/// Windows: the manifest file goes next to the program (`<install folder>\com.ks.downloadmanager.json`)
+/// and Chrome finds it through `HKCU\Software\Google\Chrome\NativeMessagingHosts\com.ks.downloadmanager`.
+/// The installer writes both (`--register-chrome-host`) and the uninstaller deletes both;
+/// each start rewrites whichever is missing or points elsewhere, so a moved copy heals
+/// itself. Only when Chrome's own folder exists (`%LOCALAPPDATA%\Google\Chrome`).
+#[cfg(windows)]
+pub fn install_manifest(exe: &Path) -> io::Result<Option<PathBuf>> {
+    if is_temporary_location(exe) {
+        return Ok(None);
+    }
+    let chrome = std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("Google").join("Chrome"));
+    if !chrome.is_some_and(|c| c.is_dir()) {
+        return Ok(None);
+    }
+    register_windows(exe, CHROME_HOSTS_KEY).map(Some)
+}
+
+/// Where Chrome looks up native messaging hosts for the current user.
+#[cfg(windows)]
+const CHROME_HOSTS_KEY: &str = r"HKCU\Software\Google\Chrome\NativeMessagingHosts";
+
+/// Writes the manifest next to `exe` and names it in `<hosts_key>\<HOST_NAME>`, each only
+/// when it differs. `hosts_key` is a parameter so tests use a key of their own.
+#[cfg(windows)]
+fn register_windows(exe: &Path, hosts_key: &str) -> io::Result<PathBuf> {
+    let dir = exe.parent().ok_or_else(|| io::Error::other("the program has no folder"))?;
+    let file = dir.join(format!("{HOST_NAME}.json"));
+    let body = manifest_json(exe);
+    if std::fs::read_to_string(&file).ok().as_deref() != Some(body.as_str()) {
+        ks_utility::atomic::write_atomic(&file, body.as_bytes())?;
+    }
+    let value = file.to_str().ok_or_else(|| io::Error::other("the install folder's name is not valid Unicode"))?;
+    let key = format!(r"{hosts_key}\{HOST_NAME}");
+    // A value reg.exe printed in another code page reads as different and is simply rewritten.
+    if reg::default_value(&key)?.as_deref() != Some(value) {
+        reg::set_default(&key, value)?;
+    }
+    Ok(file)
+}
+
+/// The registry through the system's `reg.exe` (no crate).
+#[cfg(windows)]
+mod reg {
+    use std::io;
+    use std::process::Stdio;
+
+    fn reg(args: &[&str]) -> io::Result<std::process::Output> {
+        crate::command::std("reg.exe").args(args).stdin(Stdio::null()).stderr(Stdio::null()).output()
+    }
+
+    /// A key's default value, or `None` when the key or the value is not there.
+    pub fn default_value(key: &str) -> io::Result<Option<String>> {
+        let out = reg(&["query", key, "/ve"])?;
+        if !out.status.success() {
+            return Ok(None);
+        }
+        // "    (Default)    REG_SZ    C:\…" (the label is in the system's language).
+        let text = String::from_utf8_lossy(&out.stdout);
+        Ok(text.lines().find_map(|l| l.split_once("REG_SZ").map(|(_, v)| v.trim().to_owned())))
+    }
+
+    pub fn set_default(key: &str, value: &str) -> io::Result<()> {
+        check(reg(&["add", key, "/ve", "/t", "REG_SZ", "/d", value, "/f"])?)
+    }
+
+    #[cfg(test)]
+    pub fn delete(key: &str) -> io::Result<()> {
+        check(reg(&["delete", key, "/f"])?)
+    }
+
+    fn check(out: std::process::Output) -> io::Result<()> {
+        if out.status.success() { Ok(()) } else { Err(io::Error::other(format!("reg.exe failed ({})", out.status))) }
+    }
+}
+
+/// Who is at the other end of a pipe: the only `unsafe` code of the hand-off, a few calls
+/// into Windows through `windows-sys` (docs/THIRD_PARTY.md).
+#[cfg(windows)]
+mod win {
+    use std::io;
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use windows_sys::Win32::Security::{GetLengthSid, GetTokenInformation, TOKEN_QUERY, TOKEN_USER, TokenUser};
+    use windows_sys::Win32::System::Pipes::{GetNamedPipeClientProcessId, GetNamedPipeServerProcessId};
+    use windows_sys::Win32::System::Threading::{OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION};
+
+    /// Which end of the pipe to ask about.
+    pub enum End {
+        Client,
+        Server,
+    }
+
+    /// True when the process at `end` of `pipe` runs as the same Windows user as this one.
+    pub fn other_end_is_same_user(pipe: &impl AsRawHandle, end: End) -> io::Result<bool> {
+        let handle = pipe.as_raw_handle();
+        let mut pid = 0u32;
+        // SAFETY: `handle` is a live pipe handle borrowed from `pipe` for this call; `pid`
+        // is a valid place for the answer.
+        let ok = unsafe {
+            match end {
+                End::Client => GetNamedPipeClientProcessId(handle, &mut pid),
+                End::Server => GetNamedPipeServerProcessId(handle, &mut pid),
+            }
+        };
+        if ok == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        is_same_user(pid)
+    }
+
+    /// True when process `pid` runs as our user. A process we may not look at is an error.
+    pub fn is_same_user(pid: u32) -> io::Result<bool> {
+        Ok(user_sid(pid)? == user_sid(std::process::id())?)
+    }
+
+    /// The user SID of process `pid`, as bytes.
+    fn user_sid(pid: u32) -> io::Result<Vec<u8>> {
+        // SAFETY: every handle is checked before use and owned, so it is closed on every
+        // path; the token buffer is 8-byte aligned and as long as Windows asked for; the SID
+        // points into that buffer, which is alive while the SID is copied.
+        unsafe {
+            let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if process.is_null() {
+                return Err(io::Error::last_os_error());
+            }
+            let process = OwnedHandle::from_raw_handle(process);
+            let mut token = std::ptr::null_mut();
+            if OpenProcessToken(process.as_raw_handle(), TOKEN_QUERY, &mut token) == 0 {
+                return Err(io::Error::last_os_error());
+            }
+            let token = OwnedHandle::from_raw_handle(token);
+            let mut len = 0u32;
+            GetTokenInformation(token.as_raw_handle(), TokenUser, std::ptr::null_mut(), 0, &mut len);
+            if len == 0 {
+                return Err(io::Error::last_os_error());
+            }
+            let mut buf = vec![0u64; (len as usize).div_ceil(8)];
+            if GetTokenInformation(token.as_raw_handle(), TokenUser, buf.as_mut_ptr().cast(), len, &mut len) == 0 {
+                return Err(io::Error::last_os_error());
+            }
+            let sid = (*buf.as_ptr().cast::<TOKEN_USER>()).User.Sid;
+            let n = GetLengthSid(sid) as usize;
+            Ok(std::slice::from_raw_parts(sid.cast::<u8>(), n).to_vec())
+        }
+    }
 }
 
 /// True when the program runs from a mounted disk image (`/Volumes/…`) or from a copy
@@ -551,6 +858,7 @@ mod tests {
         assert_eq!(run_host(&args(&format!("{}x", origin())), Path::new("/nonexistent")), 1);
     }
 
+    #[cfg(unix)]
     #[test]
     fn socket_paths_fit_the_unix_limit() {
         let short = Path::new("/Users/me/Library/Application Support/com.ks.downloadmanager");
@@ -617,10 +925,10 @@ mod tests {
         std::fs::remove_dir_all(&base).unwrap();
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     struct Echo;
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     impl Handler for Echo {
         fn handle(&self, _req: Request) -> std::pin::Pin<Box<dyn std::future::Future<Output = Reply> + Send + '_>> {
             Box::pin(async { Reply::ok(None) })
@@ -664,6 +972,161 @@ mod tests {
         assert_eq!(install_manifest(moved).unwrap(), None);
         assert!(!is_temporary_location(Path::new("/Applications/KS Download Manager.app/Contents/MacOS/ks-download-manager")));
         assert!(!is_temporary_location(Path::new("/Users/a/Applications/KS Download Manager.app/Contents/MacOS/ks-download-manager")));
+    }
+
+    /// A socket path (in a fresh folder) or pipe name of this test's own.
+    #[cfg(unix)]
+    fn endpoint(what: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("ks{what}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join("s.sock")
+    }
+
+    #[cfg(windows)]
+    fn endpoint(what: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().subsec_nanos();
+        pipe_name(&format!("test-{what}-{}-{nanos}", std::process::id()))
+    }
+
+    #[cfg(any(unix, windows))]
+    #[tokio::test]
+    async fn the_host_reaches_the_running_app() {
+        let path = endpoint("trip");
+        let Bound::Listener(listener) = bind(&path).unwrap() else { panic!("bound") };
+        tokio::spawn(serve(listener, path.clone(), std::sync::Arc::new(Echo)));
+        let host_path = path.clone();
+        let (code, out) = tokio::task::spawn_blocking(move || {
+            let mut input = framed(r#"{"type":"ping","v":1}"#);
+            input.extend(framed(r#"{"type":"add","v":1,"kind":"image","url":"https://a.example/x.jpg"}"#));
+            let mut out = Vec::new();
+            let code = serve_host(&mut input.as_slice(), &mut out, &|req| forward(&host_path, req));
+            (code, out)
+        })
+        .await
+        .unwrap();
+        assert_eq!(code, 0);
+        assert_eq!(replies(&out), vec![Reply::ok(None), Reply::ok(None)], "both went to the app and back");
+        #[cfg(unix)]
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_pipe_is_local_and_named_per_user() {
+        assert_eq!(pipe_name("Asha"), PathBuf::from(r"\\.\pipe\com.ks.downloadmanager-Asha"));
+        assert_eq!(pipe_name(r"PC\Asha"), PathBuf::from(r"\\.\pipe\com.ks.downloadmanager-PC_Asha"));
+        assert_eq!(pipe_name(""), PathBuf::from(r"\\.\pipe\com.ks.downloadmanager-unknown"));
+        let user = std::env::var("USERNAME").unwrap();
+        assert_eq!(socket_path(Path::new(r"C:\ignored")), pipe_name(&user));
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn the_pipe_is_a_single_instance_lock() {
+        let name = endpoint("lock");
+        let first = bind(&name).unwrap();
+        assert!(matches!(first, Bound::Listener(_)));
+        assert!(matches!(bind(&name).unwrap(), Bound::AlreadyRunning), "a live pipe is not taken over");
+        drop(first);
+        assert!(matches!(bind(&name).unwrap(), Bound::Listener(_)), "free again once the first copy is gone");
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn a_pipe_connection_without_a_complete_line_is_closed() {
+        use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+        use tokio::net::windows::named_pipe::ClientOptions;
+        let name = endpoint("slow");
+        let Bound::Listener(listener) = bind(&name).unwrap() else { panic!("bound") };
+        tokio::spawn(serve_with(listener, name.clone(), std::sync::Arc::new(Echo), Duration::from_millis(200)));
+
+        // Half a line, then silence: closed without an answer. Windows reports the closed
+        // end as a broken pipe, Tokio may also report it as the end of the stream.
+        let mut slow = ClientOptions::new().open(&name).unwrap();
+        slow.write_all(br#"{"type":"ping""#).await.unwrap();
+        let mut got = Vec::new();
+        let read = tokio::time::timeout(Duration::from_secs(3), slow.read_to_end(&mut got)).await;
+        let closed = matches!(read, Ok(Ok(0))) || matches!(&read, Ok(Err(e)) if e.kind() == io::ErrorKind::BrokenPipe);
+        assert!(closed && got.is_empty(), "closed with nothing sent: {read:?} {got:?}");
+
+        // A complete line is still answered, and the app at the other end is our own user.
+        let ok = ClientOptions::new().open(&name).unwrap();
+        assert!(win::other_end_is_same_user(&ok, win::End::Server).unwrap());
+        let mut ok = BufReader::new(ok);
+        ok.get_mut().write_all(b"{\"type\":\"ping\",\"v\":1}\n").await.unwrap();
+        let mut answer = String::new();
+        tokio::time::timeout(Duration::from_secs(3), ok.read_line(&mut answer)).await.unwrap().unwrap();
+        assert!(answer.contains("\"ok\":true"), "{answer}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn another_users_process_is_not_ours() {
+        assert!(win::is_same_user(std::process::id()).unwrap());
+        // winlogon.exe runs as SYSTEM in every session. Refused either way: a different
+        // SID, or a process we may not look at.
+        let out = std::process::Command::new("tasklist")
+            .args(["/FI", "IMAGENAME eq winlogon.exe", "/FO", "CSV", "/NH"])
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&out.stdout);
+        let pid: u32 = text.split(',').nth(1).and_then(|p| p.trim_matches('"').parse().ok()).unwrap_or_else(|| panic!("no winlogon: {text}"));
+        assert!(!matches!(win::is_same_user(pid), Ok(true)), "winlogon ({pid}) is not our user");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_host_is_registered_in_the_registry_and_healed() {
+        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().subsec_nanos();
+        let key = format!(r"HKCU\Software\KSDM-test-{}-{nanos}", std::process::id());
+        let dir = std::env::temp_dir().join(format!("ks-reg-{}-{nanos}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let exe = dir.join("KS Download Manager.exe");
+        std::fs::write(&exe, b"").unwrap();
+
+        let file = register_windows(&exe, &key).unwrap();
+        assert_eq!(file, dir.join("com.ks.downloadmanager.json"));
+        let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        assert_eq!(v["path"], exe.to_str().unwrap());
+        assert_eq!(v["allowed_origins"], serde_json::json!([origin()]));
+        let host = format!(r"{key}\{HOST_NAME}");
+        assert_eq!(reg::default_value(&host).unwrap().as_deref(), file.to_str());
+
+        // A key pointing elsewhere, and a missing file, are put right by the next start.
+        reg::set_default(&host, r"C:\elsewhere\x.json").unwrap();
+        std::fs::remove_file(&file).unwrap();
+        register_windows(&exe, &key).unwrap();
+        assert_eq!(reg::default_value(&host).unwrap().as_deref(), file.to_str());
+        assert!(file.is_file());
+
+        reg::delete(&key).unwrap();
+        assert_eq!(reg::default_value(&host).unwrap(), None);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_data_folder_is_the_one_tauri_uses() {
+        // Tauri's app_data_dir: the Roaming AppData known folder, then the identifier.
+        let out = std::process::Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; [Console]::Out.Write([Environment]::GetFolderPath('ApplicationData'))",
+            ])
+            .output()
+            .unwrap();
+        let roaming = PathBuf::from(String::from_utf8(out.stdout).unwrap());
+        assert!(roaming.is_absolute(), "{}", roaming.display());
+        assert_eq!(data_dir_without_tauri(), Some(roaming.join(BUNDLE_ID)));
+    }
+
+    #[test]
+    fn the_bundle_id_is_the_apps_identifier() {
+        let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(conf["identifier"], BUNDLE_ID);
     }
 
     #[test]

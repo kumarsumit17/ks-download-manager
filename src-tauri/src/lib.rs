@@ -3,6 +3,7 @@
 //! the list and the running downloads are kept by [`manager::Manager`].
 
 mod clipboard;
+mod command;
 mod component;
 mod files;
 mod handoff;
@@ -290,17 +291,31 @@ pub fn run() {
         let socket = handoff::data_dir_without_tauri().map(|d| handoff::socket_path(&d));
         std::process::exit(socket.map_or(1, |s| handoff::run_host(&args, &s)));
     }
+    // Windows installer: register the Chrome host for this copy, then exit (src-tauri/windows/hooks.nsh).
+    #[cfg(windows)]
+    if args.get(1).map(String::as_str) == Some("--register-chrome-host") {
+        let done = std::env::current_exe().and_then(|exe| handoff::install_manifest(&exe));
+        std::process::exit(if done.is_ok() { 0 } else { 1 });
+    }
     // The extension's socket is also the single-instance lock: a second copy shows the
     // first one's window and exits.
     let socket = handoff::data_dir_without_tauri().map(|d| handoff::socket_path(&d));
-    let listener = match socket.as_deref().map(handoff::bind) {
+    // Windows: the pipe is registered with Tauri's own Tokio runtime, which later serves it.
+    #[cfg(windows)]
+    let runtime = tauri::async_runtime::handle();
+    #[cfg(windows)]
+    let entered = runtime.inner().enter();
+    let bound = socket.as_deref().map(handoff::bind);
+    #[cfg(windows)]
+    drop(entered);
+    let listener = match bound {
         Some(Ok(handoff::Bound::AlreadyRunning)) => {
             if let Some(s) = &socket {
                 handoff::ask_to_show(s);
             }
             return;
         }
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         Some(Ok(handoff::Bound::Listener(l))) => Some(l),
         Some(Err(e)) => {
             eprintln!("the Chrome extension cannot reach the app: {e}");
@@ -345,7 +360,7 @@ pub fn run() {
                     manager.scan_leftovers().await;
                 }
             });
-            #[cfg(unix)]
+            #[cfg(any(unix, windows))]
             if let (Some(listener), Some(path)) = (listener, socket.clone()) {
                 let handler = Arc::new(ExtensionRequests(app.handle().clone()));
                 tauri::async_runtime::spawn(handoff::serve(listener, path, handler));
