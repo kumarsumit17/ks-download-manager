@@ -246,7 +246,7 @@ impl Tools {
 
     /// The version of the yt-dlp in use, from `yt-dlp --version`.
     pub async fn version(&self, program: &Path) -> Option<String> {
-        let out = Command::new(program).arg("--version").stdin(Stdio::null()).output().await.ok()?;
+        let out = crate::command::tokio(program).arg("--version").stdin(Stdio::null()).output().await.ok()?;
         out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned())
     }
 }
@@ -260,8 +260,8 @@ fn own_group(c: &mut Command) {
 
 #[cfg(windows)]
 fn own_group(c: &mut Command) {
-    // CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW. Untested until the Windows build.
-    c.creation_flags(0x0000_0200 | 0x0800_0000);
+    use windows_sys::Win32::System::Threading::{CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW};
+    c.creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
 }
 
 /// Stops yt-dlp and everything it started: SIGTERM to the whole group, then SIGKILL
@@ -285,14 +285,28 @@ fn signal_group(pid: u32, signal: &str) {
         .status();
 }
 
+/// Windows has no signals: the first call already ends the whole tree, forcibly.
 #[cfg(windows)]
 fn signal_group(pid: u32, _signal: &str) {
-    // The whole tree, forcibly. Untested until the Windows build.
-    let _ = std::process::Command::new("taskkill")
+    if let Err(e) = kill_tree(pid) {
+        eprintln!("could not stop yt-dlp ({pid}): {e}");
+    }
+}
+
+/// `taskkill /T /F`: the process and everything it started. A process that has already
+/// exited is not an error (taskkill's exit code 128, "not found").
+#[cfg(windows)]
+fn kill_tree(pid: u32) -> std::io::Result<()> {
+    let status = crate::command::std("taskkill")
         .args(["/T", "/F", "/PID", &pid.to_string()])
+        .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status();
+        .status()?;
+    match status.code() {
+        Some(0 | 128) => Ok(()),
+        _ => Err(std::io::Error::other(format!("taskkill failed ({status})"))),
+    }
 }
 
 async fn collect(mut child: Child) -> std::io::Result<(Option<i32>, String, String)> {
@@ -540,6 +554,50 @@ fn parse_progress(rest: &str) -> Option<(String, u64, Option<u64>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The PIDs of `name` processes started by `parent`.
+    #[cfg(windows)]
+    fn children(parent: u32, name: &str) -> Vec<u32> {
+        let query = format!("Get-CimInstance Win32_Process -Filter \"ParentProcessId={parent} AND Name='{name}'\" | ForEach-Object {{ $_.ProcessId }}");
+        let out = std::process::Command::new("powershell.exe").args(["-NoProfile", "-NonInteractive", "-Command", &query]).output().unwrap();
+        String::from_utf8_lossy(&out.stdout).split_whitespace().filter_map(|p| p.parse().ok()).collect()
+    }
+
+    #[cfg(windows)]
+    fn alive(pid: u32) -> bool {
+        let out = std::process::Command::new("tasklist").args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"]).output().unwrap();
+        String::from_utf8_lossy(&out.stdout).contains(&format!("\"{pid}\""))
+    }
+
+    /// The same shape as yt-dlp with ffmpeg under it: cmd.exe running ping for a minute.
+    /// Stopping must end both, and stopping again (already gone) is not an error.
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn stopping_ends_the_whole_process_tree() {
+        let mut c = Command::new("cmd.exe");
+        c.args(["/C", "ping -n 60 127.0.0.1 >NUL"]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        own_group(&mut c);
+        let mut child = c.spawn().unwrap();
+        let parent = child.id().unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(15);
+        let ping = loop {
+            if let Some(&p) = children(parent, "PING.EXE").first() {
+                break p;
+            }
+            assert!(std::time::Instant::now() < deadline, "ping did not start");
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        };
+        assert!(alive(parent) && alive(ping));
+        stop(&mut child).await;
+        assert!(!alive(parent), "cmd.exe is gone");
+        // Ending a process is not instant once it has been told to: allow a few seconds.
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while alive(ping) && std::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert!(!alive(ping), "ping (the grandchild) is gone too");
+        kill_tree(parent).unwrap();
+    }
 
     fn tools() -> Tools {
         Tools::new(Path::new("/app/MacOS"), Path::new("/app/Resources"), Path::new("/data"))

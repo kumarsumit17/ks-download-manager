@@ -42,18 +42,30 @@ fn opener(path: &Path, select: bool) -> Command {
     cmd
 }
 
+/// explorer.exe takes the path itself as its argument; no cmd.exe is involved. Explorer
+/// returns exit code 1 even when it worked, so its exit code is never read (`run` does not
+/// wait for it).
 #[cfg(target_os = "windows")]
 fn opener(path: &Path, select: bool) -> Command {
-    // explorer.exe takes the path itself as its argument; no cmd.exe is involved.
+    use std::os::windows::process::CommandExt;
     let mut cmd = Command::new("explorer.exe");
     if select {
-        let mut arg = std::ffi::OsString::from("/select,");
-        arg.push(path.as_os_str());
-        cmd.arg(arg);
+        cmd.raw_arg(select_arg(path));
     } else {
         cmd.arg(path);
     }
     cmd
+}
+
+/// `/select,"<path>"`, written as is: Explorer reads its command line itself and does not
+/// understand the usual quoting of a whole argument (`"/select,C:\a b\c.txt"`). A Windows
+/// path cannot contain `"`, so the quotes always enclose the whole path.
+#[cfg(target_os = "windows")]
+fn select_arg(path: &Path) -> std::ffi::OsString {
+    let mut arg = std::ffi::OsString::from("/select,\"");
+    arg.push(path.as_os_str());
+    arg.push("\"");
+    arg
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -69,15 +81,34 @@ fn opener(path: &Path, select: bool) -> Command {
 mod tests {
     use super::*;
 
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn explorer_selects_the_file_with_the_path_in_quotes() {
+        let file = Path::new(r"C:\Users\a b\Downloads\वीडियो, 1.mp4");
+        assert_eq!(select_arg(file), std::ffi::OsString::from(r#"/select,"C:\Users\a b\Downloads\वीडियो, 1.mp4""#));
+        let cmd = opener(file, true);
+        assert_eq!(cmd.get_program(), "explorer.exe");
+        assert_eq!(cmd.get_args().collect::<Vec<_>>(), [select_arg(file).as_os_str()]);
+        let cmd = opener(file, false);
+        assert_eq!(cmd.get_args().collect::<Vec<_>>(), [file.as_os_str()]);
+    }
+
     #[test]
     fn the_path_is_one_argument_and_never_a_shell_command() {
+        // `"` cannot be in a Windows file name; Windows' own test is the one above.
+        #[cfg(not(target_os = "windows"))]
         let tricky = Path::new("/tmp/-rf; echo hi $(whoami) `x` & | \"q\".zip");
+        #[cfg(target_os = "windows")]
+        let tricky = Path::new(r"C:\tmp\-rf; echo hi $(whoami) `x` & | %PATH% ^q.zip");
         for select in [false, true] {
             let cmd = opener(tricky, select);
             let program = cmd.get_program().to_string_lossy().to_lowercase();
             assert!(!["sh", "bash", "zsh", "cmd", "cmd.exe", "powershell"].iter().any(|s| program.ends_with(s)));
             let args: Vec<_> = cmd.get_args().collect();
             let last = args.last().unwrap().to_string_lossy().into_owned();
+            // Windows' "/select," argument closes the path with a quote.
+            #[cfg(target_os = "windows")]
+            let last = last.trim_end_matches('"');
             assert!(last.ends_with(&*tricky.to_string_lossy()), "{last}");
         }
     }

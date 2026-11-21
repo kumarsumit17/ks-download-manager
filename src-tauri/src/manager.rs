@@ -308,8 +308,14 @@ fn remove_video_temp(record: &Record) {
 
 #[cfg(windows)]
 fn hide(dir: &Path) {
-    // The dot hides it on macOS; Windows needs the hidden attribute. Untested until the Windows build.
-    let _ = std::process::Command::new("attrib").arg("+h").arg(dir).status();
+    // The dot hides it on macOS; Windows needs the hidden attribute.
+    let _ = crate::command::std("attrib")
+        .arg("+h")
+        .arg(dir)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
 }
 
 #[cfg(not(windows))]
@@ -1750,6 +1756,38 @@ fn is_reservation(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Video titles with what Windows refuses or changes in a file name: each becomes a
+    /// file that Windows creates under exactly that name.
+    #[cfg(windows)]
+    #[test]
+    fn video_titles_become_files_windows_creates_as_named() {
+        let dir = std::env::temp_dir().join(format!("ks-names-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let long = "a long title ".repeat(40);
+        for title in ["Part 1: the end?", "CON", "con.tar", "AUX ", "Ends with a dot.", "a<b>c|d*e\"f\\g/h", "हिन्दी गाना: भाग 2?", &long] {
+            let name = video_name(title, "mp4");
+            let path = dir.join(&name);
+            std::fs::write(&path, b"x").unwrap_or_else(|e| panic!("{title:?} -> {name:?}: {e}"));
+            let listed: Vec<String> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+            assert_eq!(listed, vec![name.clone()], "{title:?}");
+            std::fs::remove_file(&path).unwrap();
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_hidden_folder_has_the_hidden_attribute() {
+        use std::os::windows::fs::MetadataExt;
+        let dir = std::env::temp_dir().join(format!("ks-hide-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        hide(&dir);
+        let attributes = std::fs::metadata(&dir).unwrap().file_attributes();
+        assert_ne!(attributes & windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_HIDDEN, 0, "{attributes:#x}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[derive(Default)]
     struct Log(Mutex<Vec<String>>);

@@ -45,8 +45,7 @@ fn mark(file: &Path, _url: &str) -> std::io::Result<()> {
     if status.success() { Ok(()) } else { Err(std::io::Error::other("xattr could not set the quarantine attribute")) }
 }
 
-/// Zone 3 is the Internet zone. Written but untested until the Windows build (Release
-/// stage).
+/// Zone 3 is the Internet zone, written to the file's `Zone.Identifier` stream.
 #[cfg(windows)]
 fn mark(file: &Path, url: &str) -> std::io::Result<()> {
     let mut stream = file.as_os_str().to_owned();
@@ -100,6 +99,29 @@ mod tests {
         let out = std::process::Command::new("/usr/bin/xattr").args(["-p", "com.apple.quarantine"]).arg(&f).output().unwrap();
         let value = String::from_utf8_lossy(&out.stdout);
         assert!(value.starts_with("0081;") && value.contains(";KS Download Manager;"), "{value}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_marked_file_carries_the_mark_of_the_web() {
+        let dir = std::env::temp_dir().join(format!("ks-mark-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("a.exe");
+        std::fs::write(&f, b"x").unwrap();
+        mark_from_internet(&f, "https://a.example/a.exe").unwrap();
+        let mut stream = f.as_os_str().to_owned();
+        stream.push(":Zone.Identifier");
+        let mark = std::fs::read_to_string(&stream).unwrap();
+        assert_eq!(mark, "[ZoneTransfer]\r\nZoneId=3\r\nHostUrl=https://a.example/a.exe\r\n");
+        assert_eq!(std::fs::read(&f).unwrap(), b"x", "the file itself is unchanged");
+        // Windows itself reads the stream: PowerShell lists it on the file.
+        let out = std::process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command", "(Get-Item -LiteralPath $env:KSDM_FILE -Stream Zone.Identifier).Length"])
+            .env("KSDM_FILE", &f)
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), mark.len().to_string());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

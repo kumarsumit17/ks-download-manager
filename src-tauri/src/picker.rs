@@ -1,7 +1,9 @@
 //! The system's folder picker, without a new crate. macOS: `osascript` runs a fixed
 //! AppleScript; the prompt and the starting folder are passed as arguments (`argv`) and
 //! never become part of the script. Windows: PowerShell's folder dialog, with both values
-//! in environment variables; written but **untested** (Release stage).
+//! in environment variables. Its answer is written as UTF-8 (Windows PowerShell 5.1 would
+//! otherwise use the console code page and spoil, for example, Hindi folder names). The
+//! script is tested on Windows without the dialog; the dialog itself is a hand check.
 
 use std::path::Path;
 
@@ -47,25 +49,44 @@ pub async fn pick_folder(prompt: &str, start: Option<&Path>) -> Result<Option<St
     Ok(clean(&chosen))
 }
 
+/// The PowerShell script. The values reach it only as environment variables. `answer` is
+/// the line that shows the dialog; the test puts a line there that answers without one.
 #[cfg(windows)]
-pub async fn pick_folder(prompt: &str, start: Option<&Path>) -> Result<Option<String>, Msg> {
-    // Untested. The values reach the script only as environment variables.
-    const SCRIPT: &str = "Add-Type -AssemblyName System.Windows.Forms; \
-        $d = New-Object System.Windows.Forms.FolderBrowserDialog; \
-        $d.Description = $env:KSDM_PROMPT; \
-        if ($env:KSDM_START) { $d.SelectedPath = $env:KSDM_START }; \
-        if ($d.ShowDialog() -eq 'OK') { [Console]::Out.Write($d.SelectedPath) }";
-    let out = tokio::process::Command::new("powershell.exe")
-        .args(["-NoProfile", "-NonInteractive", "-STA", "-Command", SCRIPT])
+fn windows_script(answer: &str) -> String {
+    [
+        "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false",
+        "Add-Type -AssemblyName System.Windows.Forms",
+        "$d = New-Object System.Windows.Forms.FolderBrowserDialog",
+        "$d.Description = $env:KSDM_PROMPT",
+        "if ($env:KSDM_START) { $d.SelectedPath = $env:KSDM_START }",
+        answer,
+    ]
+    .join("; ")
+}
+
+#[cfg(windows)]
+const SHOW_DIALOG: &str = "if ($d.ShowDialog() -eq 'OK') { [Console]::Out.Write($d.SelectedPath) }";
+
+#[cfg(windows)]
+async fn run_windows_script(script: &str, prompt: &str, start: Option<&Path>) -> Result<Option<String>, Msg> {
+    let out = crate::command::tokio("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-STA", "-Command", script])
         .env("KSDM_PROMPT", prompt)
         .env("KSDM_START", start.map(|p| p.as_os_str().to_owned()).unwrap_or_default())
+        .stdin(std::process::Stdio::null())
         .output()
         .await
         .map_err(|e| msg!("error.picker", detail = e))?;
     if !out.status.success() {
         return Err(msg!("error.picker", detail = "-"));
     }
-    Ok(clean(&String::from_utf8_lossy(&out.stdout)))
+    // A byte-order mark is never part of a path.
+    Ok(clean(String::from_utf8_lossy(&out.stdout).trim_start_matches('\u{feff}')))
+}
+
+#[cfg(windows)]
+pub async fn pick_folder(prompt: &str, start: Option<&Path>) -> Result<Option<String>, Msg> {
+    run_windows_script(&windows_script(SHOW_DIALOG), prompt, start).await
 }
 
 #[cfg(not(any(target_os = "macos", windows)))]
@@ -109,5 +130,19 @@ mod tests {
         let status = c.arg("-o").arg(&out).status().unwrap();
         assert!(status.success());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The real script, set up exactly as for the dialog, answering with the starting folder
+    /// instead of showing the dialog: a Hindi folder name must come back unchanged.
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn the_windows_script_returns_unicode_paths_unchanged() {
+        let dir = std::env::temp_dir().join(format!("ks-picker-{}", std::process::id())).join("डाउनलोड वीडियो");
+        std::fs::create_dir_all(&dir).unwrap();
+        let echo = windows_script("[Console]::Out.Write($d.SelectedPath)");
+        let got = run_windows_script(&echo, "फ़ोल्डर चुनें", Some(&dir)).await.unwrap();
+        assert_eq!(got.as_deref(), dir.to_str());
+        assert!(windows_script(SHOW_DIALOG).ends_with(SHOW_DIALOG));
+        std::fs::remove_dir_all(dir.parent().unwrap()).unwrap();
     }
 }

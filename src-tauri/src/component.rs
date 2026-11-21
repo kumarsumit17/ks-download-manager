@@ -133,7 +133,7 @@ async fn sha256(file: &Path) -> Option<String> {
     #[cfg(not(target_os = "windows"))]
     let out = tokio::process::Command::new("/usr/bin/shasum").args(["-a", "256"]).arg(file).stdin(Stdio::null()).output().await.ok()?;
     #[cfg(target_os = "windows")]
-    let out = tokio::process::Command::new("certutil").arg("-hashfile").arg(file).arg("SHA256").stdin(Stdio::null()).output().await.ok()?;
+    let out = crate::command::tokio("certutil").arg("-hashfile").arg(file).arg("SHA256").stdin(Stdio::null()).output().await.ok()?;
     let text = String::from_utf8_lossy(&out.stdout);
     text.split_whitespace().find(|w| w.len() == 64 && w.chars().all(|c| c.is_ascii_hexdigit())).map(str::to_ascii_lowercase)
 }
@@ -144,7 +144,7 @@ async fn unzip(zip: &Path, into: &Path) -> Result<(), Msg> {
     #[cfg(target_os = "windows")]
     let status = {
         let _ = std::fs::create_dir_all(into);
-        tokio::process::Command::new("tar").arg("-xf").arg(zip).arg("-C").arg(into).status().await
+        crate::command::tokio("tar").arg("-xf").arg(zip).arg("-C").arg(into).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status().await
     };
     match status {
         Ok(s) if s.success() => Ok(()),
@@ -171,6 +171,27 @@ mod tests {
         assert_eq!(expected_hash(&sums, "yt-dlp_macos.zip"), Some("b".repeat(64)));
         assert_eq!(expected_hash(&sums, "yt-dlp_macos"), Some("c".repeat(64)));
         assert_eq!(expected_hash(&sums, "yt-dlp"), None, "too short to be a SHA-256");
+    }
+
+    /// The system tools the update uses: hashing a known file, then unpacking a zip.
+    #[tokio::test]
+    async fn the_system_tools_hash_and_unpack() {
+        let dir = std::env::temp_dir().join(format!("ks-component-tools-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("in")).unwrap();
+        let file = dir.join("in").join(EXE);
+        std::fs::write(&file, b"abc").unwrap();
+        // SHA-256 of "abc" (FIPS 180-2 test vector).
+        assert_eq!(sha256(&file).await.as_deref(), Some("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"));
+        let zip = dir.join("t.zip");
+        #[cfg(windows)]
+        let made = std::process::Command::new("tar").arg("-a").arg("-cf").arg(&zip).arg("-C").arg(dir.join("in")).arg(EXE).status().unwrap();
+        #[cfg(not(windows))]
+        let made = std::process::Command::new("/usr/bin/ditto").args(["-c", "-k"]).arg(dir.join("in")).arg(&zip).status().unwrap();
+        assert!(made.success());
+        unzip(&zip, &dir.join("out")).await.unwrap();
+        assert_eq!(std::fs::read(dir.join("out").join(EXE)).unwrap(), b"abc");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
