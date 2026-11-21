@@ -6,7 +6,7 @@ Add one row per dependency in the commit that introduces it. Direct dependencies
 
 | Component | Pinned version | Licence | Used for |
 |---|---|---|---|
-| ks-utility | tag `v0.2.0` (commit 6ea7fb4dcde48f1ca73cddd7b5a41943f64a65f2, recorded in both lock files) | MIT | Generic utilities shared by the KS-Suite apps; our own code, standard library only, no third-party dependencies. Declared in `package.json` (TypeScript part), `src-tauri/Cargo.toml` and `src-tauri/engine/Cargo.toml` (Rust part). Used for HTTP-date and `Retry-After`, backoff with jitter, `Content-Range`, `Content-Disposition`, byte-range sets, atomic writes, file-name sanitising and free names, size/speed/time formatting, and (from `v0.2.0`) translation look-up, the language rule and language-file check, message codes, token-bucket arithmetic and media-type extensions. Adds one entry to each lock file |
+| ks-utility | tag `v0.2.1` (commit a5aa8e72abd0032c296096f10c6175c8ed46669d, recorded in both lock files) | MIT | Generic utilities shared by the KS-Suite apps; our own code, standard library only, no third-party dependencies. Declared in `package.json` (TypeScript part), `src-tauri/Cargo.toml` and `src-tauri/engine/Cargo.toml` (Rust part). Used for HTTP-date and `Retry-After`, backoff with jitter, `Content-Range`, `Content-Disposition`, byte-range sets, atomic writes, file-name sanitising and free names, size/speed/time formatting, and (from `v0.2.0`) translation look-up, the language rule and language-file check, message codes, token-bucket arithmetic and media-type extensions. Adds one entry to each lock file |
 
 ## Rust (`src-tauri/Cargo.toml`)
 
