@@ -537,13 +537,27 @@ async fn crash_mid_download_then_resume_fetches_only_the_missing_bytes() {
     let progress = Progress::new();
     let options = DownloadOptions { progress: progress.clone(), ..opts(4) };
     let (url, path) = (server.url.clone(), out.0.clone());
-    let task = tokio::spawn(async move { download(&url, &path, options).await });
 
-    wait_for(&progress, size / 3).await;
-    tokio::time::sleep(Duration::from_millis(120)).await; // at least one checkpoint
-    // The crash: the task is torn down mid-flight, with no pause and no final save.
-    task.abort();
-    assert!(task.await.unwrap_err().is_cancelled());
+    // The crash: the download runs in a runtime of its own, which is torn down mid-flight,
+    // with no pause and no final save. Aborting the task alone is not a crash: file and map
+    // writes run on blocking threads that outlive the abort, and one landing after the map
+    // is read below would change what the resume sees (it did, under load). Dropping the
+    // runtime waits for those threads, so the files on disk are final, as after a real crash.
+    let crashed = std::thread::spawn({
+        let progress = progress.clone();
+        move || {
+            let runtime = tokio::runtime::Builder::new_multi_thread().worker_threads(4).enable_all().build().unwrap();
+            runtime.block_on(async move {
+                let task = tokio::spawn(async move { download(&url, &path, options).await });
+                wait_for(&progress, size / 3).await;
+                tokio::time::sleep(Duration::from_millis(120)).await; // at least one checkpoint
+                task.abort();
+                assert!(task.await.unwrap_err().is_cancelled());
+            });
+            drop(runtime);
+        }
+    });
+    tokio::task::spawn_blocking(move || crashed.join()).await.unwrap().expect("crashed download thread");
 
     let saved = saved_state(&out.0).await.expect("the range map survives a crash");
     assert_eq!(saved.url, server.url);
