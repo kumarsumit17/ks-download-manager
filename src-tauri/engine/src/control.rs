@@ -1,0 +1,107 @@
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, RwLock};
+
+use tokio::sync::Notify;
+
+/// Cancels a download. Clone it, pass one copy in `DownloadOptions`, keep the other.
+#[derive(Clone, Default, Debug)]
+pub struct CancelToken(Arc<CancelInner>);
+
+#[derive(Default, Debug)]
+struct CancelInner {
+    flag: AtomicBool,
+    notify: Notify,
+}
+
+impl CancelToken {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn cancel(&self) {
+        self.0.flag.store(true, Ordering::SeqCst);
+        self.0.notify.notify_waiters();
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.0.flag.load(Ordering::SeqCst)
+    }
+
+    /// Resolves once `cancel` has been called (immediately if it already was).
+    pub async fn cancelled(&self) {
+        loop {
+            let notified = self.0.notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if self.is_cancelled() {
+                return;
+            }
+            notified.await;
+        }
+    }
+}
+
+const UNKNOWN: u64 = u64::MAX;
+
+/// Live byte counters for one download, safe to poll from another task or thread.
+/// Updated with one atomic add per network chunk; the caller reads a snapshot whenever it likes.
+#[derive(Clone, Debug)]
+pub struct Progress(Arc<ProgressInner>);
+
+#[derive(Debug)]
+struct ProgressInner {
+    total: AtomicU64,
+    per_connection: RwLock<Arc<[AtomicU64]>>,
+}
+
+/// A point-in-time copy of [`Progress`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProgressSnapshot {
+    /// Total size in bytes, or `None` while unknown.
+    pub total: Option<u64>,
+    /// Bytes received so far over all connections.
+    pub received: u64,
+    /// Bytes received per connection, in range order.
+    pub per_connection: Vec<u64>,
+}
+
+impl Default for Progress {
+    fn default() -> Self {
+        Self(Arc::new(ProgressInner {
+            total: AtomicU64::new(UNKNOWN),
+            per_connection: RwLock::new(Arc::from(Vec::new())),
+        }))
+    }
+}
+
+impl Progress {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn snapshot(&self) -> ProgressSnapshot {
+        let total = self.0.total.load(Ordering::Relaxed);
+        let per: Vec<u64> = self.counters().iter().map(|c| c.load(Ordering::Relaxed)).collect();
+        ProgressSnapshot {
+            total: (total != UNKNOWN).then_some(total),
+            received: per.iter().sum(),
+            per_connection: per,
+        }
+    }
+
+    pub(crate) fn reset(&self, total: Option<u64>, connections: usize) {
+        self.0.total.store(total.unwrap_or(UNKNOWN), Ordering::Relaxed);
+        let fresh: Vec<AtomicU64> = (0..connections).map(|_| AtomicU64::new(0)).collect();
+        // A poisoned lock only means a reader panicked; the counters are still valid.
+        *self.0.per_connection.write().unwrap_or_else(|e| e.into_inner()) = Arc::from(fresh);
+    }
+
+    pub(crate) fn set_total(&self, total: u64) {
+        self.0.total.store(total, Ordering::Relaxed);
+    }
+
+    /// The counters for the current download; tasks hold this so a chunk is one atomic add.
+    pub(crate) fn counters(&self) -> Arc<[AtomicU64]> {
+        self.0.per_connection.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+}

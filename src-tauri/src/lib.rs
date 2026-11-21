@@ -1,4 +1,5 @@
-//! KS Download Manager desktop shell. The download engine arrives in Stage 2.
+//! KS Download Manager desktop shell. The download engine is the `engine` crate (src-tauri/engine);
+//! the shell does not call it yet (Stage 4 wires it to the interface).
 
 use tauri::window::Color;
 use tauri::{Manager, Theme};

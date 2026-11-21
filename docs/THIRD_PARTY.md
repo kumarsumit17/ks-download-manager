@@ -9,6 +9,17 @@ Add one row per dependency in the commit that introduces it. Direct dependencies
 | tauri | 2.12.7 | Apache-2.0 OR MIT | Desktop shell and native window |
 | tauri-build | 2.7.6 | Apache-2.0 OR MIT | Build step for the Tauri app |
 
+## Rust engine (`src-tauri/engine/Cargo.toml`)
+
+| Component | Version | Licence | Used for |
+|---|---|---|---|
+| reqwest | 0.13.5 | MIT OR Apache-2.0 | HTTP/1.1 client for probe and range requests. `default-features = false`, only `rustls`: no HTTP/2, no decompression, no system proxy |
+| tokio | 1.54.1 | MIT | Async runtime: one task per connection, file writes at offsets, timers. Features: fs, io-util, rt, sync, time, macros (tests and the example also use net and rt-multi-thread) |
+
+Brought in by reqwest's `rustls` feature (not direct dependencies, listed for the TLS audit trail): rustls 0.23.46 (Apache-2.0 OR ISC OR MIT), aws-lc-rs 1.19.0 (ISC AND (Apache-2.0 OR ISC)) with aws-lc-sys 0.47.0 (ISC, Apache-2.0, MIT, BSD-3-Clause and related; see its Cargo.toml), rustls-platform-verifier 0.7.1 (MIT OR Apache-2.0), which checks certificates with the operating system's trust store. No OpenSSL or native-tls.
+
+Stage 2 added 25 third-party crates that are built (plus 11 lockfile entries for optional features that are off, such as HTTP/3).
+
 ## Interface, runtime (`package.json` dependencies)
 
 | Component | Version | Licence | Used for |

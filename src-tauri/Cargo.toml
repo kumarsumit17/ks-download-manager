@@ -15,6 +15,9 @@ edition = "2024"
 name = "ks_download_manager_lib"
 crate-type = ["rlib"]
 
+[workspace]
+members = ["engine"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
