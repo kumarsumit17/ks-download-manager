@@ -6,7 +6,8 @@
 //
 // Accepts only vMAJOR.MINOR.PATCH (no leading zeros, no suffix). Every edit is checked: each
 // file must still hold exactly the placeholder (or, for the JSON files without a version, no
-// version key), otherwise nothing is written and the script exits 1.
+// version key), otherwise nothing is written and the script exits 1. Each file keeps its own
+// line ends (LF, or CRLF in a Windows checkout made without .gitattributes).
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,13 +26,17 @@ const once = (text, find, replace, file) => {
   return text.replace(find, replace);
 };
 
+/** The file's line end: CRLF if it has any, otherwise LF. */
+export const eolOf = (text) => (text.includes("\r\n") ? "\r\n" : "\n");
+
 // Adds "version" right after the first key of a JSON object, keeping the file's layout.
+// `[ \t]*` rather than `\s*` for the indent, so a CR of the line before is never taken in.
 const addJsonVersion = (text, version, after, file) => {
   if (/^\s*"version"\s*:/m.test(text)) throw new Error(`${file}: already has a version`);
-  const re = new RegExp(`^(\\s*)"${after}"\\s*:.*,$`, "m");
+  const re = new RegExp(`^([ \\t]*)"${after}"[ \\t]*:.*,$`, "m");
   const m = text.match(re);
   if (!m) throw new Error(`${file}: "${after}" line not found`);
-  return text.replace(re, `${m[0]}\n${m[1]}"version": "${version}",`);
+  return text.replace(re, `${m[0]}${eolOf(text)}${m[1]}"version": "${version}",`);
 };
 
 /** The edits, as [relative path, function(text) => new text]. */
@@ -39,10 +44,10 @@ export function edits(version) {
   return [
     ["package.json", (t, f) => addJsonVersion(t, version, "private", f)],
     ["src-tauri/tauri.conf.json", (t, f) => addJsonVersion(t, version, "productName", f)],
-    ["src-tauri/Cargo.toml", (t, f) => once(t, '\nversion = "0.0.0"\n', `\nversion = "${version}"\n`, f)],
+    ["src-tauri/Cargo.toml", (t, f, n = eolOf(t)) => once(t, `${n}version = "0.0.0"${n}`, `${n}version = "${version}"${n}`, f)],
     [
       "src-tauri/Cargo.lock",
-      (t, f) => once(t, 'name = "ks-download-manager"\nversion = "0.0.0"\n', `name = "ks-download-manager"\nversion = "${version}"\n`, f),
+      (t, f, n = eolOf(t)) => once(t, `name = "ks-download-manager"${n}version = "0.0.0"${n}`, `name = "ks-download-manager"${n}version = "${version}"${n}`, f),
     ],
     ["extension/manifest.json", (t, f) => once(t, '"version": "0.0.0"', `"version": "${version}"`, f)],
   ];

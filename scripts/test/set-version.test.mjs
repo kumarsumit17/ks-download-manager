@@ -60,3 +60,24 @@ test("a file already changed stops the script before anything is written", () =>
     rmSync(dir, { recursive: true });
   }
 });
+
+test("CRLF files (a Windows checkout without .gitattributes) get the same edits and keep CRLF", () => {
+  const lf = copy();
+  const crlf = copy();
+  try {
+    for (const f of FILES) {
+      const p = join(crlf, f);
+      writeFileSync(p, readFileSync(p, "utf8").replace(/\r?\n/g, "\r\n"));
+    }
+    setVersion("v1.20.3", lf);
+    assert.equal(setVersion("v1.20.3", crlf), "1.20.3");
+    for (const f of FILES) {
+      const got = readFileSync(join(crlf, f), "utf8");
+      assert.ok(!/[^\r]\n/.test(got), `${f}: a bare LF was written`);
+      assert.equal(got, readFileSync(join(lf, f), "utf8").replace(/\n/g, "\r\n"), f);
+    }
+  } finally {
+    rmSync(lf, { recursive: true });
+    rmSync(crlf, { recursive: true });
+  }
+});
