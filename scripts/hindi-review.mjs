@@ -11,27 +11,10 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const util = join(root, "node_modules/ks-utility");
 const json = (p) => JSON.parse(readFileSync(p, "utf8"));
 
-// Strings whose Hindi I was unsure about (Stage 5, Part 4); the owner decides.
-const UNSURE = {
-  "common.error.permission": "इसकी इजाज़त नहीं है: or अनुमति नहीं है (more formal)",
-  "details.progress": "प्रोग्रेस (transliteration); प्रगति is understood but more formal",
-  "details.problem": "दिक्कत; समस्या is more formal",
-  "details.idle": "खाली for an idle connection",
-  "error.picker": "फ़ोल्डर चुनने वाली विंडो for the folder picker",
-  "status.interrupted": "बीच में रुका",
-  "sidebar.finished": "पूरे हुए (plural) next to the status पूरा हुआ",
-  "quit.confirm": "ऐप बंद करें for Quit",
-  "video.forbidden": "इलाके for region",
-  downloadsToggle: "Part 2 hand-off option (Chrome extension)",
-  downloadsNote: "Part 2 hand-off note (Chrome extension)",
-  err_bad_request: "समझ नहीं आया for a message the app did not understand",
-  "playlist.number": "प्लेलिस्ट वाला नंबर for the position in the playlist",
-  "playlist.selected": "{total} में से {count} चुने गए: the order differs from English",
-  "error.thumbnail": "never shown today (thumbnails fail silently)",
-  "notice.accept": "समझ लिया for I understand (gender-neutral; समझ गया/गई would need the user's gender)",
-  "notice.drm": "कॉपी प्रोटेक्शन kept as the familiar term; न … न … for neither … nor",
-  "list.notAnswering": "फिर से कोशिश हो रही है for retrying (impersonal, no subject)",
-};
+// Strings whose Hindi is in doubt, with the doubt; marked ⚠ for the owner. The owner's
+// final review (2026-11-21) settled every earlier mark, so the list is empty until new
+// strings need one.
+const UNSURE = {};
 
 const cell = (s) => String(s).replace(/\|/g, "\\|").replace(/\n/g, " ");
 const show = (e) => (typeof e === "string" ? e : Object.entries(e).map(([k, v]) => `${k}: ${v}`).join(" · "));
