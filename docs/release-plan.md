@@ -2,15 +2,17 @@
 
 Status: **waiting for the owner's approval.** Nothing below is built yet. Branch `release-setup`, local commits only; the owner pushes. Decisions taken while building go in `docs/decisions-release.md`.
 
-Goal: a first public release, v0.1.0, built by GitHub Actions from a tag, as a **draft** GitHub release with a macOS `.dmg` per architecture, a Windows NSIS `.exe` installer, the Chrome extension `.zip`, and `SHA256SUMS`.
+Goal: a first public release, v0.1.0, built by GitHub Actions from a tag, as a **draft** GitHub release with a macOS `.dmg` per architecture, the Chrome extension `.zip`, `SHA256SUMS` and build-provenance attestations; a Windows NSIS `.exe` installer (beta) joins the first release it is ready for.
 
 Read before writing this: `CLAUDE.md`, `specs/stages.md` ("Release"), `docs/decisions-stage5.md` (Part 1: signing), `docs/stage5-brief.md` ("Later, not in Stage 5"), and the Windows code paths in `src-tauri/src/` (`handoff.rs`, `video.rs`, `manager.rs`, `mark.rs`, `picker.rs`, `clipboard.rs`, `component.rs`, `open.rs`).
 
 ## 0. Summary and my estimate
 
 - **macOS can ship as v0.1.0.** Everything except Developer ID signing has already run on this Mac (Part 1 and the final testing). The new work is CI, a DMG made *after* re-signing, and the signed/unsigned switch.
-- **Windows should ship in v0.1.0 as "beta, untested by hand", not as equal to macOS.** The tag stays `v0.1.0` (the suite rule allows only `vX.Y.Z`, so a `v0.1.0-beta` tag would fail the version check by design). The Windows file is named `…-windows-x64-setup-beta.exe`, and the release notes and README say "beta, untested by hand". Reasons: no person has run the app on Windows; CI can run unit and integration tests on `windows-latest`, but not the installer, SmartScreen, Chrome's native-messaging launch, the folder picker dialog, or a real YouTube download (datacenter IPs are often blocked). If the owner runs the Windows hand checks (section 9) on a real PC before publishing and they pass, the "-beta" label can be dropped from v0.2.0 on; I do not recommend dropping it for v0.1.0 itself.
-- If any Windows test in section 4 cannot be made to pass on `windows-latest`, the Windows installer is **left out** of v0.1.0 (not attached as beta). I will say which test failed.
+- **macOS is not blocked by Windows** (owner, F). The macOS and extension release is built first (section 7, phase A); the work then stops for the owner's history rewrite and push. Windows is added afterwards to the same two workflows (phase B) and **joins the first release it is ready for, as beta**, whether that is v0.1.0 or a later tag.
+- **Windows ships as "beta, untested by hand", never as equal to macOS.** Tags stay `vX.Y.Z` (the suite rule; a `v0.1.0-beta` tag fails the version check by design). The Windows file is named `…-windows-x64-setup-beta.exe`, and the release notes and README say "beta, untested by hand". Reasons: no person has run the app on Windows; CI can run unit and integration tests on `windows-latest`, but not the installer, SmartScreen, Chrome's native-messaging launch, the folder picker dialog, or a real YouTube download (datacenter IPs are often blocked). The "-beta" label is dropped only in a later release, after the Windows hand checks (section 9) have passed on a real PC.
+- Until every Windows test in section 4 passes on `windows-latest`, the release workflow does not build Windows at all (a job switch, off by default); a release is never held back for it.
+- **No release is published until the hand checks in section 9 pass on the built files of that draft** (owner, G).
 
 ## 1. Versions from the tag
 
@@ -22,6 +24,8 @@ Read before writing this: `CLAUDE.md`, `specs/stages.md` ("Release"), `docs/deci
 - Tests: `scripts/test/set-version.test.mjs` (`node --test`), on a copy of the four files in a temp folder: good tag, each bad tag form, a file already changed.
 
 ## 2. CI workflow: `.github/workflows/ci.yml`
+
+Phase A has the macOS row of the matrix and `bench`; `ffmpeg-windows` and `windows-latest` are added in phase B (section 7).
 
 Triggers: `push` (every branch) and `pull_request`. `permissions: contents: read`. `concurrency` cancels an older run of the same ref.
 
@@ -45,9 +49,11 @@ Trigger: `push` of tags `v*` only. Top level `permissions: {}`; build jobs get `
 ```
 version ─┬─ mac (aarch64) ──┐
          ├─ mac (x86_64) ───┤
-         ├─ ffmpeg-windows ─ windows ─┤── release (draft, SHA256SUMS)
-         └─ extension ──────┘
+         ├─ extension ──────┼── attest ── release (draft, SHA256SUMS)
+         └─ ffmpeg-windows ─ windows ─┘   (phase B; off until section 4 passes)
 ```
+
+- **Build provenance** (owner, H): an `attest` job runs GitHub's official `actions/attest-build-provenance` (pinned to a commit SHA) over every release file: both DMGs, the extension zip, the Windows installer when built, the ffmpeg source tarball and `SHA256SUMS`. That job alone has `id-token: write` and `attestations: write` (plus `contents: read`). The repository is public, so attestations are available without a paid plan. Anyone can check a file with `gh attestation verify <file> -R kumarsumit17/ks-download-manager`; `docs/release.md` and the README say how, and the release step itself runs that check on each file before creating the draft.
 
 - `version`: runs `set-version.mjs "$GITHUB_REF_NAME"`; a bad tag fails here and nothing else runs. Every later job runs the script again on its own checkout.
 - Each build job uploads its files with `actions/upload-artifact`; `release` downloads them, writes `SHA256SUMS` (`sha256sum` over every file, sorted), and creates the draft with the **`gh` CLI** that is preinstalled on the runners: `gh release create "$TAG" --draft --title … --notes-file notes.md <files>`.
@@ -69,8 +75,8 @@ version ─┬─ mac (aarch64) ──┐
 
 - `npm run tauri build -- --bundles nsis` with `bundle.windows.nsis.installMode: "currentUser"` (per-user, no admin) and `webviewInstallMode: downloadBootstrapper` (Windows 10/11 already have WebView2; the bootstrapper installs it per-user if not).
 - File: `ks-download-manager-vX.Y.Z-windows-x64-setup-beta.exe` (section 0).
-- **Secrets present** (`WINDOWS_CERTIFICATE` = base64 `.pfx`, `WINDOWS_CERTIFICATE_PASSWORD`): `bundle.windows.signCommand` (passed with `--config` only then) runs `signtool sign /fd sha256 /tr <RFC 3161 timestamp URL> /td sha256` on the app exe, our ffmpeg/ffprobe, and the installer. Honest caveat: since 2023, new code-signing certificates must live on a hardware token or cloud HSM and cannot be exported as `.pfx`; a pfx secret only works for an older exportable certificate. Cloud signing (for example Azure Artifact Signing) would need its own action and is a later decision, not v0.1.0.
-- **Secrets absent**: unsigned; notes say SmartScreen will show "Windows protected your PC" → **More info → Run anyway**.
+- **Unsigned** in the first Windows release; notes say SmartScreen will show "Windows protected your PC" → **More info → Run anyway**. No `.pfx` path is built (owner, I): new code-signing certificates can no longer be exported as `.pfx` files anyway.
+- **Intended route after the first release: SignPath Foundation** (free code signing for open-source projects). It needs a public code-signing policy page; a draft is written now as `docs/code-signing-policy.md` (who may commit, review and approve releases; that only binaries built by this repository's GitHub Actions from a tag are signed; the privacy statement that the app connects only for downloads the user starts; the "Free code signing provided by SignPath.io, certificate by SignPath Foundation" line, marked as not yet true). Applying, and SignPath's own GitHub action (third-party, so it needs an exception to the "official actions only" rule), are owner decisions for later and are not built now. `docs/release.md` notes this.
 
 ### 3.3 Extension
 
@@ -130,27 +136,32 @@ Unchanged mechanism: `scripts/sidecars.mjs` writes `src-tauri/binaries/licenses/
 
 - `README.md` install section: macOS (which DMG, drag to Applications, first open of an unsigned app), Windows (beta, SmartScreen, per-user install, uninstall from Settings → Apps), the extension (unzip, `chrome://extensions` → Developer mode → Load unpacked, and that it must stay in that folder), checking `SHA256SUMS` (`shasum -a 256 -c`, `Get-FileHash`).
 - `CHANGELOG.md` starting at `## 0.1.0 — <date>` (Keep a Changelog layout), written from the stage specs, not invented.
-- `docs/release.md` for the owner: each secret, where it comes from and how to add it (`gh secret set NAME < file`), how to tag (`git tag -a vX.Y.Z -m …` then `git push origin vX.Y.Z`), what the Actions run looks like, how to check the draft (download, compare `SHA256SUMS`, hand checks), how to publish, and how to retry a failed run.
+- `docs/release.md` for the owner: each secret, where it comes from and how to add it (`gh secret set NAME < file`), how to tag (`git tag -a vX.Y.Z -m …` then `git push origin vX.Y.Z`), what the Actions run looks like, how to check the draft (download, compare `SHA256SUMS`, `gh attestation verify`), how to publish, and how to retry a failed run. It states plainly: **the draft is not published until every hand check in section 9 has passed on the files attached to that draft** (not on a local build); a failed check means a fix and a new tag, never editing the draft's files by hand.
+- `docs/code-signing-policy.md`: draft for SignPath Foundation (section 3.2), not linked from the README until signing is set up.
 - `specs/stages.md` "Release" updated to what was built; `specs/log.md` line; `docs/THIRD_PARTY.md` gets the GitHub actions (with SHAs), the Windows yt-dlp/Deno/ffmpeg and the mingw-w64 runtime, and `windows-sys` if approved.
 
 ## 7. Order of work (one commit each, Conventional Commits, no attribution)
 
+**Phase A: macOS and the extension (not blocked by Windows)**
 1. `feat: set the version from the tag` (script + tests).
-2. `feat: windows sidecars` (pins, `sidecars.mjs`, `build-ffmpeg.sh` Windows target).
-3. `feat: windows hand-off over a named pipe` (+ registry, installer hooks, single instance).
-4. `fix: windows process, file and dialog paths` (no-window helper, UTF-8, explorer exit code, tests).
-5. `fix: do not register the chrome host from a disk image or translocated copy`.
-6. `ci: checks on macOS and Windows` → I cannot run GitHub Actions from here; the owner pushes the branch (not a tag) so CI runs, and I fix what fails from the logs they paste or that `gh run view --log-failed` shows.
-7. `ci: tag-driven draft release` (+ `make-dmg.sh`, notes template).
-8. `docs: release, install, changelog`.
+2. `fix: do not register the chrome host from a disk image or translocated copy` (section 5).
+3. `ci: checks on macOS` (`ci.yml`: the `check` job on `macos-latest` and `bench`) and `ci: tag-driven draft release for macOS and the extension` (`release.yml` with `version`, both mac jobs, `extension`, `attest`, `release`; `make-dmg.sh`, notes template), then `docs: release, install, changelog, code-signing policy draft` (README macOS + extension, `CHANGELOG.md`, `docs/release.md`, `docs/code-signing-policy.md`, specs).
+
+**Then I stop** for the owner's history rewrite and push. I cannot run GitHub Actions from here: once the branch is pushed (not a tag), CI runs, and I fix what fails from `gh run view --log-failed`. The first tag can be made once CI is green.
+
+**Phase B: Windows, on the same workflows**
+4. `feat: windows sidecars` (pins, `sidecars.mjs`, `build-ffmpeg.sh` Windows target, `ffmpeg-windows` job).
+5. `feat: windows hand-off over a named pipe` (+ registry, installer hooks, single instance).
+6. `fix: windows process, file and dialog paths` (no-window helper, UTF-8, explorer exit code, tests).
+7. `ci: windows checks` (`windows-latest` added to the `check` matrix) and, once all of section 4 passes there, `ci: windows beta installer in the release` (turns the Windows job on) + README Windows section.
 
 I will not create a tag, push, or publish.
 
 ## 8. Questions for the owner (answer with the approval)
 
-1. Approve `windows-sys` (already in `Cargo.lock`) as a direct dependency for the Windows same-user pipe check? Recommended: yes.
-2. Windows in v0.1.0 as "beta, untested by hand" (`…-setup-beta.exe`)? Recommended: yes.
-3. Ad-hoc macOS + unsigned Windows for v0.1.0 unless you add the secrets first? (The workflow handles both; this only decides the release notes you will see.)
+1. Approve `windows-sys` (already in `Cargo.lock`) as a direct dependency for the Windows same-user pipe check? Recommended: yes. (Needed only in phase B.)
+2. ~~Windows as beta~~: decided (F): beta, joins the first release it is ready for.
+3. Ad-hoc macOS for v0.1.0 unless you add the Apple secrets first? (The workflow handles both; this only decides the release notes you will see.)
 
 ## 9. Hand checks I cannot do from this session
 
@@ -172,4 +183,5 @@ I will not create a tag, push, or publish.
 - Chrome loads the unzipped release zip unpacked, the ID shown is `ikplfdbdfikcokpegkapjdedlgifmkbe`, and it reaches the installed app on each OS.
 
 **Release**
-- The draft has the four files (two DMGs, the Windows installer, the extension zip) plus the ffmpeg source and `SHA256SUMS`, the sums match, and the notes match how it was signed.
+- The draft has its files (two DMGs, the extension zip, and the Windows installer once phase B is in) plus the ffmpeg source and `SHA256SUMS`; the sums match, `gh attestation verify` passes for each file, and the notes match how it was signed.
+- All of the above pass on the files attached to the draft before it is published.
