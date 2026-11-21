@@ -30,6 +30,7 @@ const UNSURE = {
   "error.thumbnail": "never shown today (thumbnails fail silently)",
   "notice.accept": "समझ लिया for I understand (gender-neutral; समझ गया/गई would need the user's gender)",
   "notice.drm": "कॉपी प्रोटेक्शन kept as the familiar term; न … न … for neither … nor",
+  "list.notAnswering": "फिर से कोशिश हो रही है for retrying (impersonal, no subject)",
 };
 
 const cell = (s) => String(s).replace(/\|/g, "\\|").replace(/\n/g, " ");
