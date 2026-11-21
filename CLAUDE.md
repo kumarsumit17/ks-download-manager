@@ -60,7 +60,6 @@ npm run tauri build              # release bundle (.app/.dmg on macOS)
 ## Shared code (`ks-utility`)
 - Generic utility code shared across the KS-Suite apps lives in the `ks-utility` repository: TypeScript in `typescript/`, Rust in `rust/`. It is first-party, has no third-party dependencies, and knows nothing about this app. Application-specific logic stays in this repo.
 - It is a dependency pinned to one commit, the same in both manifests: `"ks-utility": "github:kumarsumit17/ks-utility#<commit>"` in `package.json`, and `ks-utility = { git = "https://github.com/kumarsumit17/ks-utility", rev = "<commit>" }` in `src-tauri/Cargo.toml` (and in `src-tauri/engine/Cargo.toml` if the engine uses it).
-- Pending (approved by the owner on 2026-11-21, not added yet because a stage was in progress): add both lines with commit `ced399ce3667f8643bcf55c9a20c03df051e9049`, run `npm install` and `cargo check`, commit `package-lock.json` and `Cargo.lock`, and list `ks-utility` in `docs/THIRD_PARTY.md` as first-party. Remove this bullet when done.
 - Before writing a generic helper, look in `ks-utility` and use it from there. If it is missing and another app would need it too, add it in the `ks-utility` repository, then move the pin here (change the commit, `npm install`, `cargo check`, commit both lock files).
 - The clean-room rule covers `ks-utility` too.
 
@@ -78,4 +77,4 @@ Rules:
 - If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
-- A committed graphify-out/graph.json is rewritten whole on every build, so a large diff to it in a pull request is expected. Do not flag it as churn or suggest skipping the graph rebuild or its hooks.
+- `graphify-out/` is generated and git-ignored: never commit it.

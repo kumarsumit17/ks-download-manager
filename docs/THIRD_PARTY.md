@@ -2,6 +2,12 @@
 
 Add one row per dependency in the commit that introduces it. Direct dependencies only; their own dependencies come with them under their own licences.
 
+## First-party (KS-Suite)
+
+| Component | Pinned commit | Licence | Used for |
+|---|---|---|---|
+| ks-utility | ced399ce3667f8643bcf55c9a20c03df051e9049 | MIT | Generic utilities shared by the KS-Suite apps; our own code, standard library only, no third-party dependencies. Declared in `package.json` (TypeScript part) and `src-tauri/Cargo.toml` (Rust part). Adds one entry to each lock file |
+
 ## Rust (`src-tauri/Cargo.toml`)
 
 | Component | Version | Licence | Used for |

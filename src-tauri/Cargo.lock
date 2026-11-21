@@ -1910,12 +1910,18 @@ name = "ks-download-manager"
 version = "0.0.0"
 dependencies = [
  "engine",
+ "ks-utility",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tokio",
 ]
+
+[[package]]
+name = "ks-utility"
+version = "0.0.0"
+source = "git+https://github.com/kumarsumit17/ks-utility?rev=ced399ce3667f8643bcf55c9a20c03df051e9049#ced399ce3667f8643bcf55c9a20c03df051e9049"
 
 [[package]]
 name = "libappindicator"

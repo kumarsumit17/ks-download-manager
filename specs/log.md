@@ -1,5 +1,6 @@
 # 2026-11-21
 
+* **Update**: `ks-utility` (first-party KS-Suite utilities) added as a dependency pinned to commit `ced399ce3667f8643bcf55c9a20c03df051e9049`, in `package.json` and `src-tauri/Cargo.toml`; listed in `docs/THIRD_PARTY.md`. Rules in `CLAUDE.md` (Shared code).
 * **Update**: Stage 4 review. [Download engine](engine.md) and [UI direction](ui.md): downloads are written to `<final name>.ksdownload` and renamed on success; leftover `.ksdownload` files without a matching map are deleted at start-up. [UI direction](ui.md): start-up restore off the critical path deferred to Stage 8. [Build stages](stages.md): marking downloaded files as coming from the internet (macOS quarantine, Windows Mark of the Web) in Stage 8 or 9.
 * **Update**: [UI direction](ui.md) gained "Stage 4 behaviour" (where the download list is saved, restore after restart, downloads that cannot be resumed, never overwriting, paths kept in Rust, per-connection bars) and "Deferred from Stage 4": clipboard pre-fill → Stage 8, folder picker → Stage 5, Zustand → Stage 5, TanStack Table/Virtual → Stage 8.
 * **Update**: [Download engine](engine.md): progress snapshots report each connection's current range; `ProbeInfo::resumable()` (Stage 4).
