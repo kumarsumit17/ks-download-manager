@@ -69,7 +69,7 @@ Separate programs shipped inside the app, run as child processes, never linked. 
 |---|---|---|---|---|
 | yt-dlp | 2026.10.26 (`yt-dlp_macos.zip`, unpacked build, universal) | Unlicense; bundled Python 3.14 (PSF-2.0) and libraries listed in its `_internal/THIRD_PARTY_LICENSES.txt` (shipped) | Official GitHub release, SHA-256 `20d98fa6…3ef1` from the release's `SHA2-256SUMS`, unmodified | Reading video sites and fetching the streams |
 | ffmpeg, ffprobe | 9.1 | LGPL-2.1-or-later (no GPL or non-free parts; zlib and Secure Transport from the system) | Built by `scripts/build-ffmpeg.sh` from the ffmpeg.org tarball, SHA-256 `1a4d394a…2433`; licence texts and source reference in `licenses/` | Joining video and audio, container fixes |
-| Deno | 2.9.8 | MIT; V8 (BSD-3-Clause), ICU (Unicode) and 1,048 Rust crates, with their licence texts in `licenses/deno-THIRD-PARTY.txt` (made by `scripts/deno-notices.mjs`) | Official GitHub release for the target architecture, SHA-256 pinned per architecture | The JavaScript runtime yt-dlp needs for YouTube |
+| Deno | 2.9.8 | MIT; V8 (BSD-3-Clause), ICU (Unicode) and 1,048 Rust crates, with their licence texts in `licenses/deno-THIRD-PARTY.txt` (made by `scripts/deno-notices.mjs`). 123 of the crates publish no licence file; for them the file gives the **standard text of each licence they declare** (SPDX license-list-data v3.29.0). Those texts come from the declared licence, not from the crate's own file, and the file says so | Official GitHub release for the target architecture, SHA-256 pinned per architecture | The JavaScript runtime yt-dlp needs for YouTube |
 
 ### Publisher signatures (checked 2026-11-21 with GnuPG 2, installed as a development tool)
 
