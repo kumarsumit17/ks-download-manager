@@ -245,7 +245,7 @@ async fn segmented(
         source: source.to_owned(),
         url,
         total: size,
-        if_range: validator.as_ref().and_then(Validator::if_range).map(str::to_owned),
+        if_range: Mutex::new(validator.as_ref().and_then(Validator::if_range).map(str::to_owned)),
         validator,
         destination: destination.to_path_buf(),
         table: Mutex::new(Table::new(workers, pending, done)),
@@ -305,7 +305,10 @@ struct Ctx {
     url: Url,
     total: u64,
     validator: Option<Validator>,
-    if_range: Option<String>,
+    /// Sent with every range request while the server honours it. Some servers ignore
+    /// `If-Range` with an ETag and send the whole file although nothing changed; then it is
+    /// dropped and every 206 reply's own validator is compared instead ([`Ctx::check_206`]).
+    if_range: Mutex<Option<String>>,
     destination: PathBuf,
     table: Mutex<Table>,
     counters: Arc<[AtomicU64]>,
@@ -334,13 +337,32 @@ impl Ctx {
         rangemap::save(&self.destination, &map).await
     }
 
-    /// A 200 to a ranged request: if the reply's validator differs from ours, the file
-    /// changed (If-Range did its job); if it is the same, the server just ignores ranges.
-    fn whole_file_reply(&self, headers: &HeaderMap) -> EngineError {
-        match (&self.if_range, probe::validator(headers)) {
-            (Some(_), Some(v)) if Some(&v) == self.validator.as_ref() => EngineError::RangeIgnored,
-            (Some(_), _) => EngineError::FileChanged,
-            (None, _) => EngineError::RangeIgnored,
+    fn if_range(&self) -> Option<String> {
+        self.if_range.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// A 200 to a ranged request. If the reply's validator differs from ours, the file
+    /// changed (If-Range did its job). If it is the same and we sent If-Range, the server
+    /// does not honour If-Range: stop sending it and try the range again. Without If-Range,
+    /// the server simply ignores ranges.
+    /// `sent` is the If-Range this request carried (another connection may have dropped
+    /// it since).
+    fn whole_file_reply(&self, sent: Option<&str>, headers: &HeaderMap) -> Failure {
+        match (sent, probe::validator(headers)) {
+            (Some(_), Some(v)) if Some(&v) == self.validator.as_ref() => {
+                *self.if_range.lock().unwrap_or_else(|e| e.into_inner()) = None;
+                Failure::Retry { error: EngineError::RangeIgnored, after: Some(Duration::ZERO) }
+            }
+            (Some(_), _) => Failure::Fatal(EngineError::FileChanged),
+            (None, _) => Failure::Fatal(EngineError::RangeIgnored),
+        }
+    }
+
+    /// A 206 whose validator is not ours comes from another version of the file.
+    fn check_206(&self, headers: &HeaderMap) -> Result<(), Failure> {
+        match (probe::validator(headers), &self.validator) {
+            (Some(got), Some(ours)) if &got != ours => Err(Failure::Fatal(EngineError::FileChanged)),
+            _ => Ok(()),
         }
     }
 }
@@ -511,14 +533,15 @@ async fn fetch(
 ) -> Result<(), Failure> {
     let (first, last) = (range.start, range.end - 1);
     let mut request = get(client, &ctx.url).header(RANGE, format!("bytes={first}-{last}"));
-    if let Some(v) = &ctx.if_range {
+    let sent = ctx.if_range();
+    if let Some(v) = &sent {
         // If the file changed, the server sends 200 and we restart rather than mix versions.
         request = request.header(IF_RANGE, v);
     }
     let mut response = request.send().await.map_err(EngineError::from)?;
     match response.status() {
-        StatusCode::PARTIAL_CONTENT => {}
-        StatusCode::OK => return Err(Failure::Fatal(ctx.whole_file_reply(response.headers()))),
+        StatusCode::PARTIAL_CONTENT => ctx.check_206(response.headers())?,
+        StatusCode::OK => return Err(ctx.whole_file_reply(sent.as_deref(), response.headers())),
         s => return Err(status_failure(s, response.headers())),
     }
     let got = response.headers().get(CONTENT_RANGE).and_then(|v| v.to_str().ok()).unwrap_or("(none)");

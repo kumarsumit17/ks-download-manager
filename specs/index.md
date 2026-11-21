@@ -11,6 +11,7 @@ okf_version: "0.2"
 * [UI direction](ui.md) - The main window, dialogs, look and feel, UI stack and quality bar for the desktop interface.
 * [Download engine](engine.md) - How the Rust engine downloads a file over many connections, resumes safely, and how the speed claim is proven.
 * [Video and playlist downloads](video-playlists.md) - Single-video and playlist downloads through yt-dlp and ffmpeg, the best-available-quality option, and their limits.
+* [Chrome extension and hand-off](extension.md) - What the Chrome extension does, its permissions, and how it hands URLs to the desktop app over native messaging restricted to our extension ID.
 
 # Policies
 

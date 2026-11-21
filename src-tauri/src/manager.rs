@@ -361,7 +361,7 @@ impl Manager {
         self.probes().insert(url.to_owned(), (Instant::now(), found.clone()));
         Ok(match found {
             Lookup::File(info) => {
-                let name = sanitize_file_name(&info.file_name);
+                let name = sanitize_file_name(&files::name_with_type(&info.file_name, info.content_type.as_deref()));
                 ProbeView { kind: Kind::File, category: files::category(&name), name, size: info.size, resumable: info.resumable() }
             }
             Lookup::Video(info) => ProbeView {
@@ -384,7 +384,8 @@ impl Manager {
             Lookup::Video(video) => return self.add_video(url, name, folder, start, &video),
         };
         let folder = files::check_folder(folder)?;
-        let name = sanitize_file_name(if name.trim().is_empty() { &info.file_name } else { name });
+        let suggested = files::name_with_type(&info.file_name, info.content_type.as_deref());
+        let name = sanitize_file_name(if name.trim().is_empty() { &suggested } else { name });
         let record = {
             let mut inner = self.lock();
             let taken = |p: &Path| inner.records.iter().any(|r| r.path == p);
@@ -451,6 +452,36 @@ impl Manager {
             self.resume(record.id)?;
         }
         Ok(self.lock().records.iter().find(|r| r.id == record.id).cloned().unwrap_or(record))
+    }
+
+    /// A download handed over by the Chrome extension. The link is checked against what
+    /// the extension said it is: an image must be an image file, a browser download must be
+    /// a file (not a page), a video must be a video page. Started at once, in `folder`.
+    pub async fn add_from_extension(self: &Arc<Self>, kind: crate::handoff::AddKind, url: &str, folder: &str) -> crate::handoff::Reply {
+        use crate::handoff::{AddKind, Reply};
+        let url = url.trim();
+        let found = match self.lookup_cached(url).await {
+            Ok(f) => f,
+            Err((message, code)) => return Reply::err(code.unwrap_or("lookup_failed"), message),
+        };
+        let fits = match (&found, kind) {
+            (Lookup::File(info), AddKind::Image) => {
+                info.content_type.as_deref().is_some_and(|t| t.starts_with("image/"))
+                    || files::category(&info.file_name) == Category::Images
+            }
+            (Lookup::File(_), AddKind::File | AddKind::Video) | (Lookup::Video(_), AddKind::Video) => true,
+            (Lookup::Video(_), AddKind::Image | AddKind::File) => false,
+        };
+        if !fits {
+            return Reply::err("wrong_kind", match kind {
+                AddKind::Image => "This link is not an image file.",
+                _ => "This link is not a file.",
+            });
+        }
+        match self.add(url, "", folder, true).await {
+            Ok(r) => Reply::ok(Some(r.id)),
+            Err(e) => Reply::err("add_failed", e),
+        }
     }
 
     /// Starts or resumes a queued, paused, failed or interrupted download.

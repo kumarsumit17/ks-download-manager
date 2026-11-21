@@ -4,6 +4,7 @@
 
 mod component;
 mod files;
+mod handoff;
 mod manager;
 mod open;
 mod store;
@@ -133,9 +134,63 @@ fn confirm_quit(app: &AppHandle) -> bool {
     true
 }
 
+/// Answers requests from the Chrome extension's native host (src/handoff.rs).
+struct ExtensionRequests(AppHandle);
+
+impl handoff::Handler for ExtensionRequests {
+    fn handle(&self, req: handoff::Request) -> std::pin::Pin<Box<dyn std::future::Future<Output = handoff::Reply> + Send + '_>> {
+        Box::pin(async move {
+            match req {
+                handoff::Request::Ping { .. } => handoff::Reply::ok(None),
+                handoff::Request::Show { .. } => {
+                    if let Some(w) = self.0.get_webview_window("main") {
+                        let _ = w.unminimize();
+                        let _ = w.show();
+                        let _ = w.set_focus();
+                    }
+                    handoff::Reply::ok(None)
+                }
+                handoff::Request::Add { kind, url, .. } => {
+                    let folder = match self.0.path().download_dir() {
+                        Ok(d) => d.to_string_lossy().into_owned(),
+                        Err(_) => return handoff::Reply::err("add_failed", "No downloads folder."),
+                    };
+                    let m = self.0.state::<Arc<Manager>>().inner().clone();
+                    m.add_from_extension(kind, &url, &folder).await
+                }
+            }
+        })
+    }
+}
+
 pub fn run() {
+    let args: Vec<String> = std::env::args().collect();
+    // Started by Chrome as the extension's native messaging host: no window, just relay.
+    if handoff::is_host_invocation(&args) {
+        let socket = handoff::data_dir_without_tauri().map(|d| handoff::socket_path(&d));
+        std::process::exit(socket.map_or(1, |s| handoff::run_host(&args, &s)));
+    }
+    // The extension's socket is also the single-instance lock: a second copy shows the
+    // first one's window and exits.
+    let socket = handoff::data_dir_without_tauri().map(|d| handoff::socket_path(&d));
+    let listener = match socket.as_deref().map(handoff::bind) {
+        Some(Ok(handoff::Bound::AlreadyRunning)) => {
+            if let Some(s) = &socket {
+                handoff::ask_to_show(s);
+            }
+            return;
+        }
+        #[cfg(unix)]
+        Some(Ok(handoff::Bound::Listener(l))) => Some(l),
+        Some(Err(e)) => {
+            eprintln!("the Chrome extension cannot reach the app: {e}");
+            None
+        }
+        None => None,
+    };
+
     let app = tauri::Builder::default()
-        .setup(|app| {
+        .setup(move |app| {
             let data = app.path().app_data_dir()?;
             let manager = Manager::new(store::path(&data), Arc::new(WindowEvents(app.handle().clone())));
             if let Some(tools) = video_tools(app, &data) {
@@ -144,6 +199,16 @@ pub fn run() {
             // Reads only the range maps of unfinished downloads; nothing starts by itself.
             tauri::async_runtime::block_on(manager.restore());
             app.manage(manager.clone());
+            #[cfg(unix)]
+            if let (Some(listener), Some(path)) = (listener, socket.clone()) {
+                let handler = Arc::new(ExtensionRequests(app.handle().clone()));
+                tauri::async_runtime::spawn(handoff::serve(listener, path, handler));
+            }
+            if let Ok(exe) = std::env::current_exe()
+                && let Err(e) = handoff::install_manifest(&exe)
+            {
+                eprintln!("could not register with Chrome: {e}");
+            }
             tauri::async_runtime::spawn(async move {
                 let mut ticker = tokio::time::interval(manager::TICK);
                 ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);

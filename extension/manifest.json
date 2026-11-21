@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "__MSG_extName__",
+  "description": "__MSG_extDescription__",
+  "version": "0.0.0",
+  "default_locale": "en",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4jH+Qt9Laz9yGbQZG+/wVAaUodwLlIbWyLfOSP3KEATujfylhnF1rI4UHkHpHEllSMBm7tt0s55JkDn7Ls++Qd2lHxDwqe7bewwGTcJmaetomFcDNLJPbOw5kXvTOLPSr+JZaeBxpJD05r+1aCWQw3M5ih7OaRJ2z5lLdkSpZ57I8nlYlsIo2t+EJ4SoFNBjvBv5FKHBBto3z0ER37B5BJgaUyjSuFc16leFXxyRKTK9Izr14OzYoKnixmOyhx9QDsm3suFg1URLaWihS0lzNp3j/HrwsrqPT+wuyr0jTOo7oo+ap8LXMUe5gPuxdiG1iyKfCObBjEH3zPud4J/iuQIDAQAB",
+  "minimum_chrome_version": "116",
+  "icons": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" },
+  "action": { "default_popup": "popup.html", "default_icon": { "16": "icons/16.png", "32": "icons/32.png" } },
+  "background": { "service_worker": "background.js" },
+  "permissions": ["nativeMessaging", "scripting", "storage", "activeTab", "contextMenus"],
+  "optional_permissions": ["downloads"],
+  "host_permissions": ["https://www.youtube.com/*", "https://x.com/*", "https://twitter.com/*"],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "content_scripts": [
+    { "matches": ["https://www.youtube.com/*"], "js": ["youtube.js"], "run_at": "document_idle" },
+    { "matches": ["https://x.com/*", "https://twitter.com/*"], "js": ["hover.js"], "run_at": "document_idle" }
+  ]
+}

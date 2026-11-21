@@ -67,3 +67,6 @@ graphify-out/
 
 # ---- Bundled programs (scripts/sidecars.mjs) ----
 src-tauri/binaries/
+
+# ---- Chrome extension build ----
+extension/dist/

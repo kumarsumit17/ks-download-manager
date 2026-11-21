@@ -28,6 +28,45 @@ pub fn category(name: &str) -> Category {
     }
 }
 
+/// The usual extension for a media type, for files whose address has none (an image on
+/// X is `…/media/<id>?format=jpg`). Only common, unambiguous types.
+pub fn extension_for(content_type: &str) -> Option<&'static str> {
+    Some(match content_type {
+        "image/jpeg" | "image/jpg" | "image/pjpeg" => "jpg",
+        "image/png" => "png",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        "image/avif" => "avif",
+        "image/heic" => "heic",
+        "image/svg+xml" => "svg",
+        "image/bmp" => "bmp",
+        "image/tiff" => "tiff",
+        "video/mp4" => "mp4",
+        "video/webm" => "webm",
+        "video/quicktime" => "mov",
+        "video/x-matroska" => "mkv",
+        "audio/mpeg" => "mp3",
+        "audio/mp4" | "audio/x-m4a" => "m4a",
+        "audio/ogg" => "ogg",
+        "audio/flac" => "flac",
+        "audio/wav" | "audio/x-wav" => "wav",
+        "application/pdf" => "pdf",
+        "application/zip" => "zip",
+        _ => return None,
+    })
+}
+
+/// `name`, with the extension of `content_type` added when it has none.
+pub fn name_with_type(name: &str, content_type: Option<&str>) -> String {
+    if Path::new(name).extension().is_some() {
+        return name.to_owned();
+    }
+    match content_type.and_then(extension_for) {
+        Some(ext) => format!("{name}.{ext}"),
+        None => name.to_owned(),
+    }
+}
+
 /// The save folder as an absolute path to an existing directory.
 pub fn check_folder(folder: &str) -> Result<PathBuf, String> {
     let path = Path::new(folder.trim());
@@ -100,6 +139,14 @@ mod tests {
         assert_eq!(category("a.jpeg"), Category::Images);
         assert_eq!(category("a.zip"), Category::Other);
         assert_eq!(category("noext"), Category::Other);
+    }
+
+    #[test]
+    fn names_without_extension_get_one_from_the_type() {
+        assert_eq!(name_with_type("HUwcJO6WgAAfBCd", Some("image/jpeg")), "HUwcJO6WgAAfBCd.jpg");
+        assert_eq!(name_with_type("photo.png", Some("image/jpeg")), "photo.png", "an existing extension is kept");
+        assert_eq!(name_with_type("download", Some("application/octet-stream")), "download");
+        assert_eq!(name_with_type("download", None), "download");
     }
 
     #[test]

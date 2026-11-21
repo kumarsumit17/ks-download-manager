@@ -8,7 +8,7 @@ A free download manager for images, audio and video, built for speed. The goal i
 |---|---|
 | **Platform** | Windows · macOS (desktop) |
 | **Tech stack** | Rust (download engine) · Tauri (desktop shell) · TypeScript + React with shadcn/ui and Lucide icons (interface) |
-| **Chrome extension** | TypeScript, Manifest V3 (under consideration) |
+| **Chrome extension** | TypeScript, Manifest V3, in `extension/` (loaded unpacked, not on the Chrome Web Store) |
 | **Status** | In development: Stages 1–4 are done; Stage 5 (Final) is being built part by part. See [stages](specs/stages.md) |
 
 ## Planned features
@@ -31,6 +31,19 @@ npm run tauri dev       # run with hot reload
 npm run bundle:mac      # release .app, then sign the bundled programs (ad-hoc unless an identity is given)
 ```
 
+## Chrome extension
+
+The extension adds a Download button on YouTube watch pages and Shorts, and on images on X (and on other sites you enable one by one). It only sends links to the desktop app; the app does the downloading. It never sends cookies or page content, so only media anyone can open without signing in works. Details: [specs/extension.md](specs/extension.md).
+
+It is not published on the Chrome Web Store. To install it:
+
+1. Build it: `npm install`, then `npm run build:extension`.
+2. Open the desktop app once, so it registers itself with Chrome.
+3. In Chrome, open `chrome://extensions`, turn on **Developer mode** (top right), click **Load unpacked** and choose the `extension/dist` folder.
+4. The extension's ID must be `ikplfdbdfikcokpegkapjdedlgifmkbe`; the app accepts no other.
+
+Chrome may show a notice about extensions in developer mode; that is expected for an unpacked extension.
+
 ## Clean-room implementation
 
 This is an independent implementation: no code or assets from other download managers. See [specs/clean-room.md](specs/clean-room.md).
@@ -47,7 +60,6 @@ You are responsible for having the right to download what you request. The app d
 ## Roadmap
 
 - **Now:** desktop app for Windows and macOS
-- **Maybe:** a Chrome extension that hands downloads to the desktop app
 - **Later:** Android is not planned for now and may be revisited in the future
 
 ## Release

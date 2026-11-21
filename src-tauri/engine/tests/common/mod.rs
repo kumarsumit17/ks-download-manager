@@ -47,6 +47,9 @@ pub struct ServerOptions {
     pub slow_at: Option<(u64, u64)>,
     /// Serve at most this many connections at once; answer 503 on the others (not the probe).
     pub max_connections: Option<usize>,
+    /// Answer any request carrying If-Range with 200 and the whole file, as some CDNs do
+    /// when If-Range holds an ETag.
+    pub if_range_unsupported: bool,
 }
 
 impl ServerOptions {
@@ -64,6 +67,7 @@ impl ServerOptions {
             drop_first: None,
             slow_at: None,
             max_connections: None,
+            if_range_unsupported: false,
         }
     }
 }
@@ -259,6 +263,9 @@ async fn serve(mut stream: TcpStream, shared: &Shared) -> std::io::Result<()> {
         && *v != etag
     {
         range = None; // file changed: send the whole (new) thing
+    }
+    if opts.if_range_unsupported && if_range.is_some() {
+        range = None;
     }
     if opts.ranges && !opts.ignore_range {
         extra.push_str("Accept-Ranges: bytes\r\n");

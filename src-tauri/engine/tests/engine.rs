@@ -318,6 +318,16 @@ async fn options_are_checked() {
 // ---- servers that misbehave ----
 
 #[tokio::test]
+async fn a_server_that_ignores_if_range_still_gets_a_segmented_download() {
+    // Seen on a large image CDN: ranges work, but If-Range with the ETag is answered 200.
+    let server = start(ServerOptions { if_range_unsupported: true, ..ServerOptions::new(300_000) }).await;
+    let outcome = fetch_ok(&server, 4).await;
+    assert!(outcome.segments.len() > 1, "still segmented");
+    let ranged = server.range_requests();
+    assert!(ranged.iter().any(|r| r.status == 206 && r.if_range.is_none()), "ranges were fetched without If-Range");
+}
+
+#[tokio::test]
 async fn server_ignoring_range_still_gives_a_correct_file() {
     let server = start(ServerOptions { ignore_range: true, ..ServerOptions::new(300_000) }).await;
     let outcome = fetch_ok(&server, 16).await;
