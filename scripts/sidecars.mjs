@@ -34,10 +34,11 @@ if (windows && process.platform !== "win32") throw new Error(`${triple}: run thi
 if (windows && !ffmpegFrom) throw new Error(`${triple}: pass --ffmpeg-from <dir> (see the top of this file)`);
 const arch = windows ? "windows-x86_64" : triple.startsWith("aarch64") ? "arm64" : "x86_64";
 const exe = windows ? ".exe" : "";
-// Zip files: macOS's ditto; Windows' own tar (bsdtar) reads zip files too.
+// Zip files: macOS's ditto; Windows' own tar (bsdtar, in System32) reads zip files too. Named
+// by its full path: Git Bash puts GNU tar first in PATH, which cannot read zip files.
 const unzip = (zip, into) => {
   mkdirSync(into, { recursive: true });
-  if (process.platform === "win32") execFileSync("tar", ["-xf", zip, "-C", into]);
+  if (process.platform === "win32") execFileSync(join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe"), ["-xf", zip, "-C", into]);
   else execFileSync("ditto", ["-x", "-k", zip, into]);
 };
 mkdirSync(cache, { recursive: true });
