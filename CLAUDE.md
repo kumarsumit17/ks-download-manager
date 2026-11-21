@@ -18,6 +18,9 @@ Free download manager for images, audio and video, with up to 20× faster downlo
 - Follow `docs/spec/clean-room.md`. Never read, copy or adapt source code, binaries or assets of other download managers. Implement only from our own specs and public standards.
 - Every dependency is listed with its licence in `docs/THIRD_PARTY.md`.
 
+## Engine and speed
+- Follow `docs/spec/engine.md`. The "up to 20×" claim is only made with measurements recorded in `docs/benchmarks.md`; never state a speed-up that was not measured.
+
 ## Video and playlists
 - Follow `docs/spec/video-playlists.md`: site support through yt-dlp as an unmodified sidecar, plus ffmpeg. No DRM bypass.
 

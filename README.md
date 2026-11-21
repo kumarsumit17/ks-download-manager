@@ -15,7 +15,7 @@ A free download manager for images, audio and video, built for speed: up to 20×
 
 - Download images, audio and video
 - Download single videos and whole playlists from YouTube and other video sites ([spec](docs/spec/video-playlists.md))
-- Up to 20× faster downloads
+- Up to 20× faster downloads than a single connection, by fetching each file over many connections at once ([how](docs/spec/engine.md))
 - Free, with no ads, analytics or tracking
 
 ## Interface

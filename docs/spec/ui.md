@@ -47,6 +47,23 @@ The design must be our own: no copied icons, skins, screenshots or wording from 
 - Native window chrome and menus on each platform (Windows title bar, macOS traffic lights and menu bar).
 - Fully usable from the keyboard: Ctrl/Cmd+N add, Space pause/resume, Delete remove, Ctrl/Cmd+F search.
 
+## UI stack
+- **React + TypeScript + Vite** for the interface.
+- **Tailwind CSS** with design tokens (colour, spacing, radius, type scale) defined once, so light and dark themes and the accent colour come from one place.
+- **Headless accessible components** (Radix-style primitives) for menus, dialogs, tooltips and tick boxes, styled by us. This gives correct keyboard and screen-reader behaviour without a stock look.
+- **Virtualised table** (TanStack Table + TanStack Virtual) for the download list.
+- **Small state store** (Zustand); download state lives in Rust and is streamed to the UI.
+- **Motion kept short:** 120-200 ms transitions on progress, row insert and dialogs; honour the system "reduce motion" setting.
+- **Native feel:** system font on each platform, native window controls, and translucent window material where the system offers it (Mica on Windows 11, vibrancy on macOS), with a solid fallback.
+- **One open icon set** with a permissive licence, recorded in `docs/THIRD_PARTY.md`.
+- Exact libraries and versions are confirmed when the project is generated and recorded in `docs/THIRD_PARTY.md`.
+
+## Quality bar
+- Starts to a usable window in under 1 second on a mid-range laptop.
+- 60 fps scrolling with 10,000 rows in the list.
+- Contrast meets WCAG AA in both themes; every action reachable by keyboard.
+- Crisp at 100 %, 150 % and 200 % display scaling.
+
 ## Performance rules
 - The window is interactive before the download list finishes loading.
 - The list is virtualised, so thousands of rows scroll smoothly.
