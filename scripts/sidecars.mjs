@@ -119,8 +119,8 @@ const mark = (name, hash) => writeFileSync(stamp(name), hash);
     let text =
       `ffmpeg ${version}, LGPL-2.1-or-later.\nSource: ${source}\nSHA-256: ${hash}\n` +
       `Built with scripts/build-ffmpeg.sh from the KS Download Manager repository; the configure\n` +
-      `line there is the complete build configuration. Download the source from the URL above and\n` +
-      `check it against the SHA-256.\n`;
+      `line there is the complete build configuration. The same tarball is attached to each release\n` +
+      `of KS Download Manager, and can be checked against the SHA-256 above.\n`;
     if (windows) {
       // zlib is linked into the Windows programs, with the mingw-w64 start-up code.
       copyFileSync(join(built, "zlib-LICENSE.txt"), join(licences, "zlib-LICENSE.txt"));

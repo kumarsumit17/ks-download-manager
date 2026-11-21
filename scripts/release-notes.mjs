@@ -46,7 +46,7 @@ export function notes(changelog, version, mac, windows = "none") {
   out += `- \`ks-download-manager-extension-v${version}.zip\`: unzip it to a folder you keep, open \`chrome://extensions\`, turn on **Developer mode**, choose **Load unpacked** and pick that folder. See the README.\n\n`;
   out += `### Checking the files\n\n`;
   out += `Each file has a build-provenance attestation: \`gh attestation verify <file> -R ${REPO}\`.\n\n`;
-  out += `The bundled ffmpeg and ffprobe are LGPL-2.1-or-later, built from ffmpeg ${FFMPEG.version}: source ${FFMPEG.source}, SHA-256 \`${FFMPEG.sha256}\`. The build details are in the app's \`licenses\` folder (\`ffmpeg-SOURCE.txt\`).\n\n`;
+  out += `The bundled ffmpeg and ffprobe are LGPL-2.1-or-later, built from ffmpeg ${FFMPEG.version}. Its exact source is attached as \`${FFMPEG.source.split("/").pop()}\` (from ${FFMPEG.source}, SHA-256 \`${FFMPEG.sha256}\`). The build details are in the app's \`licenses\` folder (\`ffmpeg-SOURCE.txt\`).\n\n`;
   out += `The app does not check for updates. New versions are published at https://github.com/${REPO}/releases.\n`;
   return out;
 }

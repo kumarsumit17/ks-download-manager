@@ -42,12 +42,12 @@ test("the notes match how the files were signed", () => {
   assert.doesNotMatch(signed, /Open Anyway/);
   assert.match(signed, /windows-x64-setup-beta\.exe/);
   assert.throws(() => notes(CL, "0.1.0", "maybe"), /unknown macOS signing/);
-  // Only the four release files are attached: no SHA256SUMS, no source tarball; the ffmpeg
-  // source is named by its official URL and pinned hash instead.
+  // Five release files: no SHA256SUMS; the ffmpeg source is attached and named with its
+  // official URL and pinned hash.
   for (const n of [adhoc, signed]) {
-    assert.doesNotMatch(n, /SHA256SUMS|ffmpeg-\*\.tar\.xz/);
+    assert.doesNotMatch(n, /SHA256SUMS/);
     assert.match(n, /gh attestation verify <file> -R kumarsumit17\/ks-download-manager/);
-    assert.ok(n.includes(`built from ffmpeg ${FFMPEG.version}: source ${FFMPEG.source}, SHA-256 \`${FFMPEG.sha256}\``));
+    assert.ok(n.includes(`built from ffmpeg ${FFMPEG.version}. Its exact source is attached as \`ffmpeg-${FFMPEG.version}.tar.xz\` (from ${FFMPEG.source}, SHA-256 \`${FFMPEG.sha256}\`)`));
   }
   // The real changelog has the section for the first release.
   assert.ok(changelogSection(readFileSync(join(root, "CHANGELOG.md"), "utf8"), "0.1.2").length > 0);
