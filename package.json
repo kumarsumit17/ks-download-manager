@@ -16,6 +16,7 @@
     "build:extension": "tsc -p extension/tsconfig.json && node extension/build.mjs",
     "test:extension": "node --test extension/test/",
     "test:ui": "node --test test/ui/",
+    "bench": "cargo test --release --manifest-path src-tauri/Cargo.toml -p engine --test bench benchmark_connections -- --ignored --nocapture",
     "hindi-review": "node scripts/hindi-review.mjs",
     "test:lang": "node node_modules/ks-utility/typescript/tools/lang.mjs check src/locales --chrome extension/_locales"
   },

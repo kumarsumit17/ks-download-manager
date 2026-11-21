@@ -12,7 +12,8 @@ Everything a fresh session needs to continue Stage 5 (Final) of ks-download-mana
 - **Commits:** ks-download-manager and the workspace repo: local only, never push. One or more commits per part, Conventional Commits.
 - **ks-utility may be pushed** (owner, after the Part 4 review): only the `main` branch and new version tags. Never force-push, never move or delete a tag, never push any other repo. Record each push in `docs/decisions-stage5.md`. No more stopping to ask for a push before re-pinning.
 - **The history rewrite stays deferred** (section 6): do not start it.
-- **Finish** by telling the owner to paste into Claude Cowork: "Follow the instructions in stage5-final-review.md." **No Claude attribution:** no `Co-Authored-By: Claude`, no `Claude-Session:`, no "Generated with Claude Code" lines. The owner is the only author.
+- **Finish** by telling the owner to paste into Claude Cowork: "Follow the instructions in stage5-final-review.md."
+- **No Claude attribution:** no `Co-Authored-By: Claude`, no `Claude-Session:`, no "Generated with Claude Code" lines. The owner is the only author.
 - **Never commit** `stage5-plan-review.md` (untracked, kept as the style example for the final review file), `src-tauri/binaries/` or `extension/dist/` (both git-ignored).
 - **Pre-approved:** the yt-dlp, ffmpeg/ffprobe and Deno binaries; tokio features; Zustand and TanStack Table/Virtual **only if** justified in the decisions log; GnuPG (Homebrew) as a development tool. **Anything else third-party: do not add it.** Write it ourselves (generic code in ks-utility), or leave the item undone and list it.
 - **Rules for the whole stage:**
@@ -51,7 +52,7 @@ Other local, unpushed commits:
 - ks-utility `a1d12b9`: docs: pin by version tag, versioning rules (`specs/usage.md`, rules, overview, README, CLAUDE.md).
 - KS-Suite workspace repo `6e17e8b`: docs: pin ks-utility by version tag, versioning rules (workspace `CLAUDE.md`, `specs/cross-repo.md`, `specs/log.md`).
 
-**Part 4 status:** Part 3 review fixes committed (`bc67b18`). ks-utility side of Part 4 committed (`6ea7fb4`) and tagged `v0.2.0` locally; workspace `CLAUDE.md` updated (`0b37916`). Pinned to `v0.2.0` (`77a1cfb`). App-side Part 4 work committed. ks-utility `v0.2.1` (fix: the language-file command inside `node_modules`, plus new Hindi terms) committed and tagged locally. Owner pushed `v0.2.1`; pinned in `b4c4908`; `npm run test:lang` wired. **Part 4 is done.** After the Part 4 review: owner's Hindi wording (ks-utility `v0.2.2`) and the crash-test fix. **Part 5 is done** (`3e849dd`, pin `v0.2.3` in `435d441`). Next: Part 6 (benchmarks). Decisions so far: `docs/decisions-stage5.md`, "Part 4".
+**Part 4 status:** Part 3 review fixes committed (`bc67b18`). ks-utility side of Part 4 committed (`6ea7fb4`) and tagged `v0.2.0` locally; workspace `CLAUDE.md` updated (`0b37916`). Pinned to `v0.2.0` (`77a1cfb`). App-side Part 4 work committed. ks-utility `v0.2.1` (fix: the language-file command inside `node_modules`, plus new Hindi terms) committed and tagged locally. Owner pushed `v0.2.1`; pinned in `b4c4908`; `npm run test:lang` wired. **Part 4 is done.** After the Part 4 review: owner's Hindi wording (ks-utility `v0.2.2`) and the crash-test fix. **Part 5 is done** (`3e849dd`, pin `v0.2.3` in `435d441`). **Part 6 is done** (benchmark, `docs/benchmarks.md`). Next: Part 7 (polish). Decisions so far: `docs/decisions-stage5.md`, "Part 4".
 
 Part 1 is "approved with changes" (done in `1c8e5cf`). Part 2 is "approved with changes" (done in `c1afa7c`). Part 3 (`ef4373a`, `7a7b9af`, `4956ff8`) is "approved with small changes": reservation markers, per-item leftover removal, the video speed-limit note (recorded in the decisions log).
 

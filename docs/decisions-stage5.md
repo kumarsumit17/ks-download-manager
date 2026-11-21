@@ -106,6 +106,20 @@ Open decisions taken while building Stage 5 (Final) without stopping for the own
 - **Tested for real** (ignored test `real_playlist_lookup_thumbnail_and_one_entry`, bundled yt-dlp, Deno and ffmpeg): the first YouTube channel's Videos tab looked up as a 1-entry playlist ("jawed - Videos"), its thumbnail fetched (29 KB WebP), the entry downloaded as `jawed - Videos/01 - Me at the zoo.mp4` (635 KB). A channel's main page went straight to its Videos tab (yt-dlp does that for a single tab), so the nested-tab rule is covered only by a unit test with yt-dlp's flat output.
 - **Not tested:** the picker and the grouped list in the running window (this session cannot see it); a long playlist with private or deleted entries against the live site (the parsing of those markers is unit-tested).
 
+## Part 6 — Benchmarks
+
+- **64 MiB at 1 MiB/s per connection instead of the spec's 1 GB at 1 MB/s.** Same per-connection rate, so the ideal ratios are the same; the single-connection run takes 64 s instead of 17 minutes, so the whole benchmark is about 100 s and can run in CI. `KSDM_BENCH_MIB` and `KSDM_BENCH_RATE_KIB` allow the full-size run. Alternative: the 1 GB file (about 35 minutes per run).
+- **Adaptive connections off** (owner, Part 3 review: say which): each row uses exactly that many connections from the first byte, so the table measures scaling, not the ramp-up. The real-world test uses the app's adaptive setting instead, because it answers "what does the app gain".
+- **Regression check compares speed-ups, not times,** against `src-tauri/engine/tests/bench-baseline.txt`; a drop of more than 10 % fails (spec). Under a per-connection limit the speed-ups do not depend on the machine, so one baseline serves CI and laptops. The benchmark is an ignored test run with `npm run bench` (release build), filtered to `benchmark_connections` so the real-world test never runs by accident. No CI workflow exists yet; one only needs to run `npm run bench`. Alternative: `criterion` (not pre-approved).
+- **Results** (Apple M5, macOS 27.2.1, two runs identical): 1.00, 4.00, 8.00, 15.97, 19.95, 31.78× for 1, 4, 8, 16, 20, 32 connections. The spec's target (at least 19× with 20) is met.
+- **Real-world test** (`real_world_single_against_engine`, ignored): `proof.ovh.net/files/100Mb.dat` 5.84 MiB/s with one connection, 6.22 MiB/s with the engine: 1.06×, because one connection already filled this line. `speedtest.tele2.net` could not be reached (connect timed out). Recorded as measured.
+- **Claims:** the README no longer says "up to 20×"; it gives the local 19.95× with its condition (a server that limits each connection) and the real-world 1.06×, and links `docs/benchmarks.md`. The app shows no speed claim (checked: no such text in the language files). `CLAUDE.md`'s rule ("only made with measurements") is unchanged.
+
+## Part 6 is done
+
+- **Commits:** the commit adding this section (`src-tauri/engine/tests/bench.rs`, `bench-baseline.txt`, `docs/benchmarks.md`, `npm run bench`, README, `specs/engine.md`).
+- **Checks:** `npm run bench` (check mode) passed against the baseline; `npm run build`, `test:lang`, `test:ui` 6/6, `test:extension` 6/6, `build:extension`, `cargo test -q` (workspace: 22 + 1 + 51 + 71 passed, 4 ignored, all network or benchmark tests), `cargo clippy -q --all-targets -- -D warnings` with no output; `graphify update .` run.
+
 ## Part 5 is done
 
 - **Commits:** `3e849dd` feat: playlists (picker, one row per entry grouped by playlist, thumbnails through Rust); `435d441` chore: pin ks-utility `v0.2.3`; the commit adding this section (`docs/hindi-review.md` regenerated). ks-utility: `96741cd` (`v0.2.3`, pushed).

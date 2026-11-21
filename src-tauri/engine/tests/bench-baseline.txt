@@ -1,0 +1,8 @@
+# Engine benchmark baseline: connections, speed-up against one connection.
+# 64 MiB file, 1024 KiB/s per connection, adaptive off. Written by KSDM_BENCH_RECORD=1 npm run bench.
+1 1.00
+4 4.00
+8 8.00
+16 15.98
+20 19.95
+32 31.87

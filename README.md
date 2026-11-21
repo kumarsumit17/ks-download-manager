@@ -2,7 +2,7 @@
 
 > Part of the [KS-Suite](https://github.com/kumarsumit17/KS-Suite).
 
-A free download manager for images, audio and video, built for speed. The goal is downloads up to 20× faster than a single connection, to be confirmed by measurements before it is claimed. No ads and no tracking.
+A free download manager for images, audio and video, built for speed: each file is fetched over many connections at once. No ads and no tracking.
 
 | | |
 |---|---|
@@ -15,7 +15,7 @@ A free download manager for images, audio and video, built for speed. The goal i
 
 - Download images, audio and video
 - Download single videos and whole playlists from YouTube and other video sites ([spec](specs/video-playlists.md))
-- Faster downloads by fetching each file over many connections at once, aiming for up to 20× a single connection where the server allows it; numbers will be published in `docs/benchmarks.md` once measured ([how](specs/engine.md))
+- Faster downloads by fetching each file over many connections at once. On a local test server that limits each connection, 20 connections were 19.95× as fast as one. That shows how the engine scales, not real-world speed: when one connection already fills your line, more connections add little (1.06× in our one real-world test). Numbers and conditions: [docs/benchmarks.md](docs/benchmarks.md) ([how](specs/engine.md))
 - Free, with no ads, analytics or tracking
 
 ## Interface
