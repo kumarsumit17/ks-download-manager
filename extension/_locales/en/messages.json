@@ -12,7 +12,7 @@
   "siteNotAvailable": { "message": "The image button cannot be used on this page." },
   "siteToggle": { "message": "Image button on $SITE$", "placeholders": { "site": { "content": "$1" } } },
   "downloadsToggle": { "message": "Send browser downloads to the app" },
-  "downloadsNote": { "message": "Off by default. Downloads that need a sign-in stay in Chrome, because only the link is sent." },
+  "downloadsNote": { "message": "Off by default. Chrome's download safety check does not apply to files sent to the app, so downloads Chrome warns about stay in Chrome. Downloads that need a sign-in stay in Chrome too, because only the link is sent. Single-use links may fail." },
   "err_app_not_installed": { "message": "App not found" },
   "err_app_not_found": { "message": "App did not start" },
   "err_app_not_running": { "message": "App not open" },

@@ -33,6 +33,10 @@ pub const MAX_MESSAGE: usize = 8 * 1024;
 const START_WAIT: Duration = Duration::from_secs(10);
 /// `sun_path` holds 104 bytes on macOS, including the final NUL.
 const MAX_SOCKET_PATH: usize = 103;
+/// The fallback socket folder's name, followed by the user ID.
+const FALLBACK_DIR: &str = "/tmp/ksdm-";
+/// How long the app waits for a connection's one line before closing it.
+const LINE_WAIT: Duration = Duration::from_secs(5);
 
 pub fn origin() -> String {
     format!("chrome-extension://{EXTENSION_ID}/")
@@ -223,6 +227,10 @@ fn start_app() -> bool {
 fn ask(socket: &Path, req: &Request) -> io::Result<Reply> {
     use std::io::{BufRead, BufReader};
     use std::os::unix::net::UnixStream;
+    if let Some(dir) = fallback_dir(socket) {
+        // Never talk to a socket in a folder someone else could have made.
+        check_private_dir(dir, current_uid()?)?;
+    }
     let mut s = UnixStream::connect(socket)?;
     s.set_read_timeout(Some(Duration::from_secs(120)))?;
     let mut line = serde_json::to_vec(req).map_err(io::Error::other)?;
@@ -242,26 +250,65 @@ fn ask(_socket: &Path, _req: &Request) -> io::Result<Reply> {
 
 /// The socket path: in the app data folder, or, if that path is too long for a Unix
 /// socket, in a private `/tmp/ksdm-<uid>/` folder. The host and the app compute it the
-/// same way.
+/// same way. The fallback folder is used only if it is a real folder (not a link), owned by
+/// us, with mode `0700` ([`check_private_dir`]); `bind` and `ask` refuse it otherwise.
 pub fn socket_path(data_dir: &Path) -> PathBuf {
     let preferred = data_dir.join("ext.sock");
     if preferred.as_os_str().len() <= MAX_SOCKET_PATH {
         return preferred;
     }
-    PathBuf::from(format!("/tmp/ksdm-{}", owner_id(data_dir).unwrap_or(0))).join("ext.sock")
+    // Without a user ID the folder name cannot be ours; `bind` and `ask` then refuse it.
+    let uid = current_uid().map_or_else(|_| "unknown".to_owned(), |u| u.to_string());
+    PathBuf::from(format!("{FALLBACK_DIR}{uid}")).join("ext.sock")
 }
 
+/// The fallback folder, if `socket` is in it.
+fn fallback_dir(socket: &Path) -> Option<&Path> {
+    socket.parent().filter(|d| d.to_str().is_some_and(|d| d.starts_with(FALLBACK_DIR)))
+}
+
+/// Our own user ID. std has no `geteuid` and no new crate is added, so it comes from
+/// `/usr/bin/id -u` once per process.
 #[cfg(unix)]
-fn owner_id(p: &Path) -> Option<u32> {
-    use std::os::unix::fs::MetadataExt;
-    // The data folder may not exist yet; the home folder always does.
-    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"));
-    std::fs::metadata(p).or_else(|_| std::fs::metadata(home)).ok().map(|m| m.uid())
+fn current_uid() -> io::Result<u32> {
+    static UID: std::sync::OnceLock<Option<u32>> = std::sync::OnceLock::new();
+    let uid = UID.get_or_init(|| {
+        let out = std::process::Command::new("/usr/bin/id").arg("-u").stderr(std::process::Stdio::null()).output().ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        String::from_utf8(out.stdout).ok()?.trim().parse().ok()
+    });
+    uid.ok_or_else(|| io::Error::other("could not read the user ID"))
 }
 
 #[cfg(not(unix))]
-fn owner_id(_p: &Path) -> Option<u32> {
-    None
+fn current_uid() -> io::Result<u32> {
+    Err(io::Error::new(io::ErrorKind::Unsupported, "no user IDs here"))
+}
+
+/// A folder in a shared place such as `/tmp` is trusted only if it is a real folder (not a
+/// link), owned by `uid`, and closed to everyone else (mode `0700`).
+#[cfg(unix)]
+fn check_private_dir(dir: &Path, uid: u32) -> io::Result<()> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let refuse = |why: &str| Err(io::Error::new(io::ErrorKind::PermissionDenied, format!("{}: {why}", dir.display())));
+    let meta = std::fs::symlink_metadata(dir)?;
+    if !meta.file_type().is_dir() {
+        return refuse("not a folder");
+    }
+    if meta.uid() != uid {
+        return refuse("owned by another user");
+    }
+    if meta.permissions().mode() & 0o7777 != 0o700 {
+        return refuse("not private (mode must be 0700)");
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn check_private_dir(_dir: &Path, _uid: u32) -> io::Result<()> {
+    Ok(())
 }
 
 /// The data folder the app uses (Tauri's `app_data_dir`), computed without Tauri for host
@@ -290,11 +337,10 @@ pub enum Bound {
 pub fn bind(path: &Path) -> io::Result<Bound> {
     use std::os::unix::fs::PermissionsExt;
     use std::os::unix::net::{UnixListener, UnixStream};
-    if let Some(dir) = path.parent() {
+    if let Some(dir) = fallback_dir(path) {
+        prepare_private_dir(dir)?;
+    } else if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
-        if dir.starts_with("/tmp") {
-            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
-        }
     }
     let listener = match UnixListener::bind(path) {
         Ok(l) => l,
@@ -317,6 +363,23 @@ pub fn bind(path: &Path) -> io::Result<Bound> {
     Ok(Bound::Listener(listener))
 }
 
+/// Creates the folder `0700` if it is missing, then checks it. An existing folder is never
+/// changed (it may not be ours): if it is not private, it is refused.
+#[cfg(unix)]
+fn prepare_private_dir(dir: &Path) -> io::Result<()> {
+    use std::os::unix::fs::DirBuilderExt;
+    match std::fs::DirBuilder::new().mode(0o700).create(dir) {
+        Ok(()) => {
+            // The umask may have taken bits away, never added any; make it exact.
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+        }
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
+        Err(e) => return Err(e),
+    }
+    check_private_dir(dir, current_uid()?)
+}
+
 #[cfg(not(unix))]
 pub fn bind(_path: &Path) -> io::Result<Bound> {
     Err(io::Error::new(io::ErrorKind::Unsupported, "Windows hand-off is not built yet"))
@@ -333,9 +396,15 @@ pub trait Handler: Send + Sync + 'static {
 }
 
 /// Serves the socket: one line of JSON in, one line out, per connection. Only connections
-/// from the socket owner's own user ID are answered.
+/// from the socket owner's own user ID are answered. A connection that sends no complete
+/// line within a few seconds is closed.
 #[cfg(unix)]
 pub async fn serve(listener: std::os::unix::net::UnixListener, path: PathBuf, handler: std::sync::Arc<dyn Handler>) {
+    serve_with(listener, path, handler, LINE_WAIT).await;
+}
+
+#[cfg(unix)]
+async fn serve_with(listener: std::os::unix::net::UnixListener, path: PathBuf, handler: std::sync::Arc<dyn Handler>, line_wait: Duration) {
     use std::os::unix::fs::MetadataExt;
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
     let Ok(()) = listener.set_nonblocking(true) else { return };
@@ -352,8 +421,9 @@ pub async fn serve(listener: std::os::unix::net::UnixListener, path: PathBuf, ha
             let (read, mut write) = stream.into_split();
             let mut line = String::new();
             let mut reader = BufReader::new(read.take(MAX_MESSAGE as u64));
-            if reader.read_line(&mut line).await.is_err() {
-                return;
+            match tokio::time::timeout(line_wait, reader.read_line(&mut line)).await {
+                Ok(Ok(_)) if line.ends_with('\n') => {}
+                _ => return, // too slow, cut short or failed: the connection is closed
             }
             let answer = match serde_json::from_str::<Request>(line.trim()) {
                 Err(_) => Reply::err("bad_request", "The message was not understood."),
@@ -497,6 +567,78 @@ mod tests {
         std::fs::write(&other, b"keep").unwrap();
         assert!(bind(&other).is_err());
         assert_eq!(std::fs::read(&other).unwrap(), b"keep");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_fallback_folder_must_be_a_private_folder_of_ours() {
+        use std::os::unix::fs::PermissionsExt;
+        let uid = current_uid().unwrap();
+        let base = std::env::temp_dir().join(format!("ksp-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+
+        let good = base.join("good");
+        prepare_private_dir(&good).unwrap();
+        assert_eq!(std::fs::metadata(&good).unwrap().permissions().mode() & 0o7777, 0o700, "created 0700");
+        check_private_dir(&good, uid).unwrap();
+        assert!(check_private_dir(&good, uid + 1).is_err(), "another user's folder is refused");
+
+        let open = base.join("open");
+        std::fs::create_dir(&open).unwrap();
+        std::fs::set_permissions(&open, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(prepare_private_dir(&open).is_err(), "a folder others can read is refused");
+        assert_eq!(std::fs::metadata(&open).unwrap().permissions().mode() & 0o7777, 0o755, "and left unchanged");
+
+        let link = base.join("link");
+        std::os::unix::fs::symlink(&good, &link).unwrap();
+        assert!(prepare_private_dir(&link).is_err(), "a link, even to a good folder, is refused");
+
+        let file = base.join("file");
+        std::fs::write(&file, b"").unwrap();
+        assert!(prepare_private_dir(&file).is_err(), "a file is refused");
+
+        // `bind` and `ask` apply it to the /tmp fallback only.
+        assert_eq!(fallback_dir(Path::new("/tmp/ksdm-501/ext.sock")), Some(Path::new("/tmp/ksdm-501")));
+        assert_eq!(fallback_dir(&base.join("ext.sock")), None);
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[cfg(unix)]
+    struct Echo;
+
+    #[cfg(unix)]
+    impl Handler for Echo {
+        fn handle(&self, _req: Request) -> std::pin::Pin<Box<dyn std::future::Future<Output = Reply> + Send + '_>> {
+            Box::pin(async { Reply::ok(None) })
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_connection_without_a_complete_line_is_closed() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let dir = std::env::temp_dir().join(format!("kss-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("s.sock");
+        let Bound::Listener(listener) = bind(&path).unwrap() else { panic!("bound") };
+        tokio::spawn(serve_with(listener, path.clone(), std::sync::Arc::new(Echo), Duration::from_millis(200)));
+
+        // Half a line, then silence: closed without an answer.
+        let mut slow = tokio::net::UnixStream::connect(&path).await.unwrap();
+        slow.write_all(br#"{"type":"ping""#).await.unwrap();
+        let mut got = Vec::new();
+        let read = tokio::time::timeout(Duration::from_secs(3), slow.read_to_end(&mut got)).await;
+        assert!(matches!(read, Ok(Ok(0))), "closed with nothing sent: {read:?} {got:?}");
+
+        // A complete line is still answered.
+        let mut ok = tokio::net::UnixStream::connect(&path).await.unwrap();
+        ok.write_all(b"{\"type\":\"ping\",\"v\":1}\n").await.unwrap();
+        let mut answer = String::new();
+        tokio::time::timeout(Duration::from_secs(3), ok.read_to_string(&mut answer)).await.unwrap().unwrap();
+        assert!(answer.contains("\"ok\":true"), "{answer}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

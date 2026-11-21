@@ -359,9 +359,14 @@ impl Ctx {
     }
 
     /// A 206 whose validator is not ours comes from another version of the file.
-    fn check_206(&self, headers: &HeaderMap) -> Result<(), Failure> {
+    /// While If-Range is sent, the server has already checked it, so a reply without a
+    /// validator is accepted. Once it has been dropped (`sent` is `None` although we have a
+    /// validator), nothing else proves the bytes are from our version: the reply must carry
+    /// a validator equal to ours.
+    fn check_206(&self, sent: Option<&str>, headers: &HeaderMap) -> Result<(), Failure> {
         match (probe::validator(headers), &self.validator) {
             (Some(got), Some(ours)) if &got != ours => Err(Failure::Fatal(EngineError::FileChanged)),
+            (None, Some(_)) if sent.is_none() => Err(Failure::Fatal(EngineError::FileChanged)),
             _ => Ok(()),
         }
     }
@@ -540,7 +545,7 @@ async fn fetch(
     }
     let mut response = request.send().await.map_err(EngineError::from)?;
     match response.status() {
-        StatusCode::PARTIAL_CONTENT => ctx.check_206(response.headers())?,
+        StatusCode::PARTIAL_CONTENT => ctx.check_206(sent.as_deref(), response.headers())?,
         StatusCode::OK => return Err(ctx.whole_file_reply(sent.as_deref(), response.headers())),
         s => return Err(status_failure(s, response.headers())),
     }

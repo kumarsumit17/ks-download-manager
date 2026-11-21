@@ -37,3 +37,9 @@ export function replyText(r: Reply): string {
   const key = `err_${r.code ?? "unknown"}`;
   return chrome.i18n.getMessage(key) || chrome.i18n.getMessage("err_unknown");
 }
+
+/** Chrome's verdict allows a hand-off: "safe", or "accepted" (the user chose to keep it).
+ * Every warning, and every scan still running, keeps the download in Chrome. */
+export function isSafe(danger: unknown): boolean {
+  return danger === "safe" || danger === "accepted";
+}

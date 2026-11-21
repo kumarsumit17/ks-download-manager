@@ -42,17 +42,29 @@ function start() {
   };
 
   // Sites often lay a transparent element over the image (X does), so the image is found
-  // under the pointer rather than taken from the event target.
+  // under the pointer rather than taken from the event target. The look-up runs at most
+  // once per animation frame, with the latest pointer position.
+  let pointer: { x: number; y: number } | null = null;
+  let frame = 0;
+  const look = () => {
+    frame = 0;
+    if (!pointer) return;
+    const img = imageAt(pointer.x, pointer.y);
+    if (img !== current) {
+      current = img;
+      if (img) place(img);
+      btn.show(img !== null);
+    }
+  };
   document.addEventListener(
     "mousemove",
     (e) => {
-      if (e.composedPath().includes(btn.host)) return;
-      const img = imageAt(e.clientX, e.clientY);
-      if (img !== current) {
-        current = img;
-        if (img) place(img);
-        btn.show(img !== null);
+      if (e.composedPath().includes(btn.host)) {
+        pointer = null; // on the button: keep it where it is
+        return;
       }
+      pointer = { x: e.clientX, y: e.clientY };
+      if (!frame) frame = requestAnimationFrame(look);
     },
     { passive: true },
   );

@@ -50,6 +50,8 @@ pub struct ServerOptions {
     /// Answer any request carrying If-Range with 200 and the whole file, as some CDNs do
     /// when If-Range holds an ETag.
     pub if_range_unsupported: bool,
+    /// Leave the ETag out of 206 replies other than the probe's.
+    pub no_validator_on_206: bool,
 }
 
 impl ServerOptions {
@@ -68,6 +70,7 @@ impl ServerOptions {
             slow_at: None,
             max_connections: None,
             if_range_unsupported: false,
+            no_validator_on_206: false,
         }
     }
 }
@@ -285,6 +288,9 @@ async fn serve(mut stream: TcpStream, shared: &Shared) -> std::io::Result<()> {
         None => ("200 OK".to_owned(), &data[..], opts.content_length),
     };
     entry.status = if range.is_some() { 206 } else { 200 };
+    if opts.no_validator_on_206 && !probe && range.is_some() {
+        extra = extra.replace(&format!("ETag: {etag}\r\n"), "");
+    }
     shared.log.lock().unwrap().push(entry);
 
     let mut drop_after = opts.drop_after;

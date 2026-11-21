@@ -2,7 +2,7 @@
 // accepts requests only from this extension's own content scripts and popup; web pages
 // cannot message it (the manifest has no `externally_connectable`).
 
-import { HOST, type Reply, type ToBackground, isHttpUrl } from "./messages";
+import { HOST, type Reply, type ToBackground, isHttpUrl, isSafe } from "./messages";
 import { YOUTUBE_LINK_PATTERNS, youtubeVideoUrl } from "./site-rules";
 
 async function toApp(message: object): Promise<Reply> {
@@ -103,6 +103,8 @@ chrome.contextMenus.onClicked.addListener((info) => {
 // it on. Chrome's download is paused while the app checks the link; if the app takes it,
 // Chrome's copy is cancelled and removed from Chrome's list, otherwise Chrome carries on.
 // The app gets only the URL (no cookies), so downloads that need a sign-in stay in Chrome.
+// A download Chrome flags as dangerous, or is still checking, is never taken over: Chrome's
+// safety check does not apply to a file the app downloads.
 
 const handled = new Set<number>();
 let watching = false;
@@ -115,12 +117,19 @@ function watchDownloads() {
 
 async function offer(item: chrome.downloads.DownloadItem) {
   if (handled.has(item.id) || item.state !== "in_progress" || item.byExtensionId || item.incognito) return;
+  if (!isSafe(item.danger)) return;
   const { handOffDownloads } = await chrome.storage.local.get("handOffDownloads");
   if (handOffDownloads !== true) return;
   const url = item.finalUrl || item.url;
   if (!isHttpUrl(url)) return;
   handled.add(item.id);
   await chrome.downloads.pause(item.id).catch(() => {});
+  // Chrome may have flagged it in the meantime: look again before handing it over.
+  const [now] = await chrome.downloads.search({ id: item.id }).catch(() => []);
+  if (!now || !isSafe(now.danger)) {
+    await chrome.downloads.resume(item.id).catch(() => {});
+    return;
+  }
   const r = await send("file", url);
   if (r.ok) {
     await chrome.downloads.cancel(item.id).catch(() => {});

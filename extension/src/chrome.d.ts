@@ -88,7 +88,12 @@ declare namespace chrome {
       byExtensionId?: string;
       incognito: boolean;
       mime: string;
+      /** Chrome's safety verdict: "safe", "accepted" (the user kept it), or a warning or a
+       * scan still running ("file", "url", "content", "uncommon", "host", "unwanted",
+       * "asyncScanning", ...). */
+      danger: string;
     }
+    function search(q: { id: number }): Promise<DownloadItem[]>;
     function pause(id: number): Promise<void>;
     function resume(id: number): Promise<void>;
     function cancel(id: number): Promise<void>;

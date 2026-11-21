@@ -328,6 +328,32 @@ async fn a_server_that_ignores_if_range_still_gets_a_segmented_download() {
 }
 
 #[tokio::test]
+async fn after_dropping_if_range_matching_validators_complete() {
+    // Same server as above: every 206 carries our ETag, so the download completes.
+    let server = start(ServerOptions { if_range_unsupported: true, ..ServerOptions::new(300_000) }).await;
+    let outcome = fetch_ok(&server, 4).await;
+    assert_eq!(outcome.resumed, 0);
+    assert_eq!(server.requests().iter().filter(|r| r.probe).count(), 1, "no restart was needed");
+}
+
+#[tokio::test]
+async fn after_dropping_if_range_a_206_without_validator_is_a_changed_file() {
+    // Nothing proves these 206 replies come from our version: never mix them into the file.
+    let server = start(ServerOptions {
+        if_range_unsupported: true,
+        no_validator_on_206: true,
+        ..ServerOptions::new(300_000)
+    })
+    .await;
+    let out = TempFile::new();
+    let r = download(&server.url, &out.0, opts(4)).await;
+    assert!(matches!(r, Err(EngineError::FileChanged)), "got {r:?}");
+    assert_eq!(server.requests().iter().filter(|r| r.probe).count(), 2, "restarted once, then gave up");
+    assert!(!out.0.exists(), "no mixed file is left behind");
+    assert!(!out.map().exists(), "and no range map");
+}
+
+#[tokio::test]
 async fn server_ignoring_range_still_gives_a_correct_file() {
     let server = start(ServerOptions { ignore_range: true, ..ServerOptions::new(300_000) }).await;
     let outcome = fetch_ok(&server, 16).await;
