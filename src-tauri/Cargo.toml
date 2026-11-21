@@ -32,8 +32,9 @@ ks-utility = { git = "https://github.com/kumarsumit17/ks-utility", tag = "v0.2.3
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 # process: runs the bundled yt-dlp; io-util/macros: reads its output, stops it on pause;
-# net: the Unix socket the Chrome extension's native host talks to.
-tokio = { version = "1.54.1", features = ["time", "process", "io-util", "macros", "rt", "net"] }
+# net: the Unix socket the Chrome extension's native host talks to; sync: the limit on
+# thumbnail fetches at once.
+tokio = { version = "1.54.1", features = ["time", "process", "io-util", "macros", "rt", "net", "sync"] }
 
 [dev-dependencies]
 tokio = { version = "1.54.1", features = ["time", "rt", "macros", "fs"] }

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use reqwest::StatusCode;
 use reqwest::header::{CONTENT_DISPOSITION, CONTENT_RANGE, CONTENT_TYPE, ETAG, HeaderMap, LAST_MODIFIED, RANGE};
 
@@ -111,10 +113,10 @@ pub async fn fetch_text(url: &str, max: usize) -> Result<String, EngineError> {
     String::from_utf8(body).map_err(|_| EngineError::Network("the reply is not text".into()))
 }
 
-/// Fetches a small resource (at most `max` bytes) into memory, for the few non-download
-/// requests the user starts, such as a playlist's thumbnails. Fails with `TooMuchData` as
+/// Fetches a small resource (at most `max` bytes) into memory, following redirects (GitHub
+/// serves release files through one). Fails with `TooMuchData` as
 /// soon as the reply passes `max`, so a large reply is never read whole.
-pub async fn fetch_bytes(url: &str, max: usize) -> Result<Vec<u8>, EngineError> {
+async fn fetch_bytes(url: &str, max: usize) -> Result<Vec<u8>, EngineError> {
     let url = parse_url(url)?;
     let client = client()?;
     let mut resp = get(&client, &url).send().await?;
@@ -129,6 +131,43 @@ pub async fn fetch_bytes(url: &str, max: usize) -> Result<Vec<u8>, EngineError> 
         body.extend_from_slice(&chunk);
     }
     Ok(body)
+}
+
+/// A client for small fetches that must stay where they were sent, such as a playlist's
+/// thumbnails: it never follows a redirect (a 3xx reply is an error), and every request,
+/// body included, must finish within `timeout`. Build one and share it: it keeps one
+/// connection pool.
+#[derive(Clone)]
+pub struct SmallClient(reqwest::Client);
+
+impl SmallClient {
+    pub fn new(timeout: Duration) -> Result<Self, EngineError> {
+        reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(timeout)
+            .connect_timeout(timeout)
+            .user_agent(concat!("KS-Download-Manager/", env!("CARGO_PKG_VERSION")))
+            .build()
+            .map(Self)
+            .map_err(EngineError::from)
+    }
+
+    /// The body of `url` (at most `max` bytes). A redirect fails with its status.
+    pub async fn get(&self, url: &str, max: usize) -> Result<Vec<u8>, EngineError> {
+        let url = parse_url(url)?;
+        let mut resp = get(&self.0, &url).send().await?;
+        if !resp.status().is_success() {
+            return Err(EngineError::HttpStatus(resp.status().as_u16()));
+        }
+        let mut body = Vec::new();
+        while let Some(chunk) = resp.chunk().await? {
+            if body.len() + chunk.len() > max {
+                return Err(EngineError::TooMuchData);
+            }
+            body.extend_from_slice(&chunk);
+        }
+        Ok(body)
+    }
 }
 
 pub(crate) fn validator(headers: &HeaderMap) -> Option<Validator> {

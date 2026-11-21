@@ -25,5 +25,5 @@ pub use download::{
 };
 pub use error::EngineError;
 pub use limits::{Adaptive, ConnectionBudget, HostLimits, MIN_PER_CONNECTION, SpeedLimit};
-pub use probe::{ProbeInfo, Validator, fetch_bytes, fetch_text, probe};
+pub use probe::{ProbeInfo, SmallClient, Validator, fetch_text, probe};
 pub use retry::RetryPolicy;

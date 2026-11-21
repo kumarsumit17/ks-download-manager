@@ -1004,3 +1004,47 @@ async fn a_budget_of_one_means_one_connection() {
     assert_eq!(most, 1, "never more than one connection");
     assert!(server.range_requests().len() >= 2, "the planned ranges were fetched one after another");
 }
+
+// ---- Small fetches (thumbnails) ----
+
+/// Serves one fixed reply to every connection; `hang` keeps the connection open after it.
+async fn raw_server(reply: &'static str, hang: bool) -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        while let Ok((mut s, _)) = listener.accept().await {
+            tokio::spawn(async move {
+                let mut buf = [0u8; 4096];
+                let _ = s.read(&mut buf).await;
+                let _ = s.write_all(reply.as_bytes()).await;
+                if hang {
+                    tokio::time::sleep(Duration::from_secs(3600)).await;
+                }
+            });
+        }
+    });
+    format!("http://{addr}/thumb.jpg")
+}
+
+#[tokio::test]
+async fn a_small_fetch_never_follows_a_redirect() {
+    let url = raw_server("HTTP/1.1 302 Found\r\nLocation: http://169.254.169.254/latest\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", false).await;
+    let client = engine::SmallClient::new(Duration::from_secs(5)).unwrap();
+    let r = client.get(&url, 1024).await;
+    assert!(matches!(r, Err(EngineError::HttpStatus(302))), "got {r:?}");
+}
+
+#[tokio::test]
+async fn a_small_fetch_has_an_overall_time_limit_and_a_size_limit() {
+    // Headers at once, then a body that never comes.
+    let slow = raw_server("HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nabc", true).await;
+    let client = engine::SmallClient::new(Duration::from_millis(300)).unwrap();
+    let t = Instant::now();
+    assert!(client.get(&slow, 1024).await.is_err());
+    assert!(t.elapsed() < Duration::from_secs(3), "took {:?}", t.elapsed());
+
+    let ok = raw_server("HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello", false).await;
+    assert_eq!(client.get(&ok, 1024).await.unwrap(), b"hello");
+    assert!(matches!(client.get(&ok, 4).await, Err(EngineError::TooMuchData)));
+}

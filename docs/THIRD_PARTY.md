@@ -16,7 +16,7 @@ Add one row per dependency in the commit that introduces it. Direct dependencies
 | tauri-build | 2.7.6 | Apache-2.0 OR MIT | Build step for the Tauri app |
 | serde | 1.0.229 | MIT OR Apache-2.0 | Download list records sent to the interface and saved to disk. Feature: derive |
 | serde_json | 1.0.154 | MIT OR Apache-2.0 | `downloads.json` (the saved download list) |
-| tokio | 1.54.1 | MIT | The 250 ms progress ticker and the wait on quit; since Stage 5 also running yt-dlp and system tools (`xattr`, `pbpaste`, `osascript`) and reading their output, and the Chrome extension's Unix socket. Features: time, process, io-util, macros, rt, net (tests also use fs) |
+| tokio | 1.54.1 | MIT | The 250 ms progress ticker and the wait on quit; since Stage 5 also running yt-dlp and system tools (`xattr`, `pbpaste`, `osascript`) and reading their output, and the Chrome extension's Unix socket; `sync` limits thumbnail fetches at once (Final review). Features: time, process, io-util, macros, rt, net, sync (tests also use fs) |
 
 Stage 5 turned on tokio's `process` feature, which brings two packages into `Cargo.lock` (482 → 484 entries): signal-hook-registry 1.4.8 (MIT OR Apache-2.0) and errno 0.3.15 (MIT OR Apache-2.0).
 

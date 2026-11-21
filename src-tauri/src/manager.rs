@@ -38,6 +38,10 @@ const PLAYLIST_FRESH: Duration = Duration::from_secs(30 * 60);
 const PLAYLISTS_KEPT: usize = 8;
 /// A thumbnail larger than this is not shown.
 const THUMBNAIL_MAX: usize = 1024 * 1024;
+/// A thumbnail request, body included, must finish within this.
+const THUMBNAIL_TIMEOUT: Duration = Duration::from_secs(15);
+/// Thumbnails fetched at once; the picker asks for the ones it shows.
+const THUMBNAILS_AT_ONCE: usize = 4;
 /// How long quitting waits for downloads to save their range maps.
 const QUIT_WAIT: Duration = Duration::from_secs(3);
 /// A running download with no new byte for this long shows "Server not answering,
@@ -223,6 +227,10 @@ pub struct Manager {
     leftovers: Mutex<Option<Vec<leftovers::Found>>>,
     /// Playlists looked up for the picker, by link.
     playlists: Mutex<HashMap<String, (Instant, VideoInfo)>>,
+    /// One client for every thumbnail (no redirects, 15 s per request), and a limit on
+    /// how many run at once.
+    thumbnails: Option<engine::SmallClient>,
+    thumbnail_slots: tokio::sync::Semaphore,
     /// Set when [`Manager::restore`] is done. Until then the list is not shown and nothing
     /// is started, so the window can open before the saved list is checked (Part 7).
     restored: AtomicBool,
@@ -346,6 +354,8 @@ impl Manager {
             default_folder: Mutex::new(None),
             leftovers: Mutex::new(None),
             playlists: Mutex::new(HashMap::new()),
+            thumbnails: engine::SmallClient::new(THUMBNAIL_TIMEOUT).ok(),
+            thumbnail_slots: tokio::sync::Semaphore::new(THUMBNAILS_AT_ONCE),
             restored: AtomicBool::new(false),
         })
     }
@@ -613,7 +623,8 @@ impl Manager {
 
     /// The thumbnail of a playlist entry the picker shows, fetched through Rust so the
     /// page's content policy can stay `img-src 'self' data:`. Only playlists looked up in
-    /// this session, only `https`, at most 1 MB, and only JPEG, PNG, WebP or GIF.
+    /// this session, only `https`, no redirects (so the address checked is the one
+    /// fetched), 15 s per request, 4 at once, at most 1 MB, and only JPEG, PNG, WebP or GIF.
     pub async fn thumbnail(&self, url: &str, index: u32) -> Result<Vec<u8>, Msg> {
         let link = self
             .kept_playlist(url.trim())
@@ -621,7 +632,9 @@ impl Manager {
             .and_then(|e| e.thumbnail)
             .filter(|t| t.starts_with("https://"))
             .ok_or_else(|| msg!("error.thumbnail"))?;
-        let bytes = engine::fetch_bytes(&link, THUMBNAIL_MAX).await.map_err(|_| msg!("error.thumbnail"))?;
+        let client = self.thumbnails.as_ref().ok_or_else(|| msg!("error.thumbnail"))?;
+        let _slot = self.thumbnail_slots.acquire().await.map_err(|_| msg!("error.thumbnail"))?;
+        let bytes = client.get(&link, THUMBNAIL_MAX).await.map_err(|_| msg!("error.thumbnail"))?;
         image_type(&bytes).ok_or_else(|| msg!("error.thumbnail"))?;
         Ok(bytes)
     }
