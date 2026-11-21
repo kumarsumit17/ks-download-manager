@@ -50,12 +50,14 @@ The design must be our own: no copied icons, skins, screenshots or wording from 
 ## UI stack
 - **React + TypeScript + Vite** for the interface.
 - **Tailwind CSS** with design tokens (colour, spacing, radius, type scale) defined once, so light and dark themes and the accent colour come from one place.
-- **Headless accessible components** (Radix-style primitives) for menus, dialogs, tooltips and tick boxes, styled by us. This gives correct keyboard and screen-reader behaviour without a stock look.
+- **[shadcn/ui](https://ui.shadcn.com/)** for components (buttons, dialogs, menus, tick boxes, tooltips, table, progress, tabs). Its components are added to our repo as source files, so we own and restyle them; they bring correct keyboard and screen-reader behaviour. Add only the components actually used.
+- **Our own theme on top:** set the accent colour, radius and spacing tokens ourselves so the app does not look like an unmodified shadcn template.
 - **Virtualised table** (TanStack Table + TanStack Virtual) for the download list.
 - **Small state store** (Zustand); download state lives in Rust and is streamed to the UI.
 - **Motion kept short:** 120-200 ms transitions on progress, row insert and dialogs; honour the system "reduce motion" setting.
 - **Native feel:** system font on each platform, native window controls, and translucent window material where the system offers it (Mica on Windows 11, vibrancy on macOS), with a solid fallback.
-- **One open icon set** with a permissive licence, recorded in `docs/THIRD_PARTY.md`.
+- **Icons: [Lucide](https://lucide.dev/)** (the set shadcn/ui uses by default), one consistent stroke weight and size throughout. No icons from other download managers.
+- shadcn/ui and Lucide are open-source dependencies: record both with their licences in `docs/THIRD_PARTY.md`.
 - Exact libraries and versions are confirmed when the project is generated and recorded in `docs/THIRD_PARTY.md`.
 
 ## Quality bar

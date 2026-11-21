@@ -7,7 +7,7 @@ A free download manager for images, audio and video, built for speed: up to 20×
 | | |
 |---|---|
 | **Platform** | Windows · macOS (desktop) |
-| **Tech stack** | Rust (download engine) · Tauri (desktop shell) · TypeScript + React (interface) |
+| **Tech stack** | Rust (download engine) · Tauri (desktop shell) · TypeScript + React with shadcn/ui and Lucide icons (interface) |
 | **Chrome extension** | TypeScript, Manifest V3 (under consideration) |
 | **Status** | Planned: this repository holds the project structure; app code is still to come |
 
