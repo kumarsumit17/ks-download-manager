@@ -44,6 +44,8 @@ Other local, unpushed commits:
 - ks-utility `a1d12b9`: docs: pin by version tag, versioning rules (`specs/usage.md`, rules, overview, README, CLAUDE.md).
 - KS-Suite workspace repo `6e17e8b`: docs: pin ks-utility by version tag, versioning rules (workspace `CLAUDE.md`, `specs/cross-repo.md`, `specs/log.md`).
 
+**Part 4 status:** Part 3 review fixes committed (`bc67b18`). ks-utility side of Part 4 committed (`6ea7fb4`) and tagged `v0.2.0` locally; workspace `CLAUDE.md` updated (`0b37916`). **Next:** once the owner has pushed ks-utility and the tag, pin the app to `v0.2.0` (its own commit), then do the app-side Part 4 work (section 4, "In ks-download-manager"). Decisions so far: `docs/decisions-stage5.md`, "Part 4".
+
 Part 1 is "approved with changes" (done in `1c8e5cf`). Part 2 is "approved with changes" (done in `c1afa7c`). Part 3 (`ef4373a`, `7a7b9af`, `4956ff8`) is "approved with small changes": reservation markers, per-item leftover removal, the video speed-limit note (recorded in the decisions log).
 
 ## 3a. Part 2 review fixes (do first, as their own commit, before continuing Part 3)
