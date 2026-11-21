@@ -4,7 +4,7 @@ All notable changes to KS Download Manager. The layout follows [Keep a Changelog
 
 ## [Unreleased]
 
-## [0.1.0] - unreleased
+## [0.1.0] - 2026-11-21
 
 The first public release: macOS (Apple silicon and Intel) and the Chrome extension, plus a Windows installer as a **beta, untested by hand** (its automated tests pass on Windows Server 2025 in CI; no person has run it on a Windows PC yet).
 
@@ -17,5 +17,6 @@ The first public release: macOS (Apple silicon and Intel) and the Chrome extensi
 - Chrome extension (loaded unpacked): a Download button on YouTube watch pages and Shorts, a button for the largest version of an image on X and on other sites you enable, and optional hand-off of ordinary browser downloads. It sends links only, never cookies or page content.
 - Limits on total connections and active downloads, an optional speed limit, queues, categories with their own save folders, a settings screen and a "prefer MP4" setting.
 - English and Hindi throughout the app and the extension; the language follows the system and can be chosen in settings.
-- Downloaded files are marked as coming from the internet (the macOS quarantine attribute).
+- Downloaded files are marked as coming from the internet (the quarantine attribute on macOS, the Mark of the Web on Windows).
+- Windows 10 and 11 installer, **beta, untested by hand**: per-user, not code-signed, registers the app with Chrome and removes that registration when uninstalled.
 - First-run notice: you are responsible for having the right to download what you request.
