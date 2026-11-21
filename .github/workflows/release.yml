@@ -1,0 +1,303 @@
+# Tag-driven draft release (docs/release.md). Pushing a tag vX.Y.Z on main builds the
+# macOS disk images and the Chrome extension, attests every file, and creates a DRAFT
+# GitHub release. Nothing is published by this workflow.
+# Runner images are named versions, never -latest (docs/decisions-release.md).
+# Actions are GitHub's own, pinned to a full commit SHA (version in the comment).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26"
+      - name: The tag is vMAJOR.MINOR.PATCH
+        id: v
+        run: |
+          node scripts/set-version.mjs "$GITHUB_REF_NAME"
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: The tagged commit is on main
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_REF_NAME points to $GITHUB_SHA, which is not on main. Merge into main first and tag there (docs/release.md)."
+            exit 1
+          fi
+      - name: CHANGELOG.md has a dated section for this version
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          if ! grep -Eq "^## \[${V//./\\.}\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md needs a line '## [$V] - YYYY-MM-DD' (docs/release.md)."
+            exit 1
+          fi
+
+  mac:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - triple: aarch64-apple-darwin
+            arch: arm64
+          - triple: x86_64-apple-darwin
+            arch: x64
+    runs-on: macos-15
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      APP: src-tauri/target/${{ matrix.triple }}/release/bundle/macos/KS Download Manager.app
+      DMG: ks-download-manager-v${{ needs.version.outputs.version }}-macos-${{ matrix.arch }}.dmg
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26"
+          cache: npm
+      - run: node scripts/set-version.mjs "$GITHUB_REF_NAME"
+      - name: Signing mode (Developer ID only when every Apple secret is set)
+        id: mode
+        env:
+          C: ${{ secrets.APPLE_CERTIFICATE }}
+          P: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          S: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          I: ${{ secrets.APPLE_ID }}
+          W: ${{ secrets.APPLE_PASSWORD }}
+          T: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          n=0
+          for v in "$C" "$P" "$S" "$I" "$W" "$T"; do [ -n "$v" ] && n=$((n + 1)); done
+          case $n in
+            6) echo "mode=developer-id" >> "$GITHUB_OUTPUT" ;;
+            0) echo "mode=ad-hoc" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::Only $n of the 6 Apple secrets are set. Set all six (Developer ID) or none (ad hoc); see docs/release.md."; exit 1 ;;
+          esac
+      - name: Rust target
+        run: rustup target add ${{ matrix.triple }}
+      - name: Cache bundled programs
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: src-tauri/binaries
+          key: sidecars-${{ matrix.triple }}-${{ hashFiles('src-tauri/sidecars.json', 'scripts/build-ffmpeg.sh', 'scripts/sidecars.mjs', 'scripts/deno-notices.mjs') }}
+      - run: npm ci
+      - name: Bundled programs (hash-checked; ffmpeg built from source)
+        run: node scripts/sidecars.mjs ${{ matrix.triple }}
+      # No Apple secrets in this step's environment: Tauri would otherwise sign and notarise
+      # by itself, before scripts/sign-macos.sh re-signs the bundled programs.
+      - name: Build the app
+        run: npm run tauri build -- --target ${{ matrix.triple }} --bundles app
+      - name: Licence files are in the app
+        run: |
+          L="$APP/Contents/Resources/licenses"
+          for f in yt-dlp-LICENSE.txt ffmpeg-COPYING.LGPLv2.1 ffmpeg-LICENSE.md ffmpeg-SOURCE.txt deno-LICENSE.md deno-THIRD-PARTY.txt; do
+            [ -s "$L/$f" ] || { echo "::error::missing licence file: $f"; exit 1; }
+          done
+          [ -s "$APP/Contents/Resources/yt-dlp/_internal/THIRD_PARTY_LICENSES.txt" ] || { echo "::error::missing yt-dlp THIRD_PARTY_LICENSES.txt"; exit 1; }
+          grep -q "Standard licence texts" "$L/deno-THIRD-PARTY.txt" || { echo "::error::deno notices without the standard licence texts"; exit 1; }
+      - name: Bundled programs run
+        run: |
+          M="$APP/Contents/MacOS"
+          run() { if [ "${{ matrix.arch }}" = x64 ]; then arch -x86_64 "$@"; else "$@"; fi; }
+          if [ "${{ matrix.arch }}" = x64 ] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+            echo "::warning::Rosetta is not available on this runner: the x86_64 programs were not run (hand check)."
+            exit 0
+          fi
+          run "$M/ffmpeg" -hide_banner -version | head -1
+          run "$M/ffprobe" -hide_banner -version | head -1
+          run "$M/deno" --version | head -1
+          run "$APP/Contents/Resources/yt-dlp/yt-dlp_macos" --version
+      - name: Import the Developer ID certificate
+        if: steps.mode.outputs.mode == 'developer-id'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          KC="$RUNNER_TEMP/release.keychain-db"
+          KP=$(openssl rand -hex 24)
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KP" "$KC"
+          security set-keychain-settings -lut 3600 "$KC"
+          security unlock-keychain -p "$KP" "$KC"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KC" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KP" "$KC" >/dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+      - name: Sign, notarise and staple the app (Developer ID)
+        if: steps.mode.outputs.mode == 'developer-id'
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          sh scripts/sign-macos.sh "$APP" "$APPLE_SIGNING_IDENTITY"
+          sh scripts/notarize-macos.sh "$APP"
+      - name: Sign the app (ad hoc)
+        if: steps.mode.outputs.mode == 'ad-hoc'
+        run: sh scripts/sign-macos.sh "$APP" -
+      - name: Make the disk image
+        run: |
+          mkdir -p release
+          sh scripts/make-dmg.sh "$APP" "release/$DMG"
+      - name: Sign, notarise and staple the disk image (Developer ID)
+        if: steps.mode.outputs.mode == 'developer-id'
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "release/$DMG"
+          sh scripts/notarize-macos.sh "release/$DMG"
+          spctl -a -t open --context context:primary-signature -vv "release/$DMG"
+      - name: Remove the temporary keychain
+        if: always() && steps.mode.outputs.mode == 'developer-id'
+        run: security delete-keychain "$RUNNER_TEMP/release.keychain-db" || true
+      - run: echo "${{ steps.mode.outputs.mode }}" > release/signing-macos-${{ matrix.arch }}.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mac-${{ matrix.arch }}
+          path: release/
+          if-no-files-found: error
+
+  extension:
+    needs: version
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      ZIP: ks-download-manager-extension-v${{ needs.version.outputs.version }}.zip
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26"
+          cache: npm
+      - run: node scripts/set-version.mjs "$GITHUB_REF_NAME"
+      - run: npm ci
+      - run: npm run build:extension
+      - name: Zip (manifest.json at the top of the zip)
+        run: |
+          mkdir -p release
+          (cd extension/dist && zip -q -r -X "../../release/$ZIP" .)
+      - name: The zipped manifest gives our extension ID
+        run: |
+          D=$(mktemp -d)
+          unzip -q "release/$ZIP" manifest.json -d "$D"
+          node scripts/extension-id.mjs "$D/manifest.json" ikplfdbdfikcokpegkapjdedlgifmkbe
+          node -e 'const a=require(process.argv[1]).key,b=require(process.argv[2]).key; if(a!==b){console.error("key differs from the repository manifest");process.exit(1)}' "$D/manifest.json" "$PWD/extension/manifest.json"
+          V=$(node -p 'require(process.argv[1]).version' "$D/manifest.json")
+          [ "$V" = "${{ needs.version.outputs.version }}" ] || { echo "::error::zipped manifest version $V"; exit 1; }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: extension
+          path: release/
+          if-no-files-found: error
+
+  # Phase B (Windows, beta) is added here once every Windows test passes on windows-2025
+  # (docs/release-plan.md, section 4). Until then no Windows file is built.
+
+  attest:
+    needs: [version, mac, extension]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: artifacts
+      - name: Collect the files, the ffmpeg source and SHA256SUMS
+        run: |
+          mkdir -p files meta
+          find artifacts -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' \) -exec mv {} files/ \;
+          find artifacts -type f -name 'signing-*.txt' -exec mv {} meta/ \;
+          SRC=$(jq -r .ffmpeg.source src-tauri/sidecars.json)
+          SHA=$(jq -r .ffmpeg.sha256 src-tauri/sidecars.json)
+          curl -fsSL -o "files/$(basename "$SRC")" "$SRC"
+          echo "$SHA  files/$(basename "$SRC")" | sha256sum -c -
+          (cd files && sha256sum $(ls | LC_ALL=C sort) > SHA256SUMS)
+          cat files/SHA256SUMS
+          ls meta
+      - name: Build provenance for every file
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: files/*
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-files
+          path: |
+            files/
+            meta/
+          if-no-files-found: error
+
+  release:
+    needs: [version, attest]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.ref_name }}
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-files
+          path: .
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26"
+      - name: Check the sums and the attestation of every file
+        run: |
+          (cd files && sha256sum -c SHA256SUMS)
+          for f in files/*; do gh attestation verify "$f" -R "$GH_REPO" > /dev/null && echo "attested: $(basename "$f")"; done
+      - name: Release notes
+        run: |
+          A=$(cat meta/signing-macos-arm64.txt); X=$(cat meta/signing-macos-x64.txt)
+          [ "$A" = "$X" ] || { echo "::error::the two macOS builds were signed differently ($A, $X)"; exit 1; }
+          W=none; ls files/*.exe >/dev/null 2>&1 && W=unsigned
+          node scripts/release-notes.mjs "$VERSION" "$A" "$W" > notes.md
+          cat notes.md
+      - name: Create the draft (an existing draft for this tag is replaced; a published release is never touched)
+        run: |
+          if state=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [ "$state" = "true" ]; then
+              gh release delete "$TAG" --yes
+            else
+              echo "::error::$TAG is already published; make a new tag instead (docs/release.md)."
+              exit 1
+            fi
+          fi
+          gh release create "$TAG" --draft --verify-tag --title "KS Download Manager $VERSION" --notes-file notes.md files/*

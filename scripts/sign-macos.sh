@@ -26,8 +26,19 @@ UNSIGNED=0
 while IFS= read -r f; do
   if file -b "$f" | grep -q "^Mach-O"; then
     if ! sign "$f" 2>/dev/null; then
-      UNSIGNED=$((UNSIGNED + 1))
-      echo "not signed (malformed framework copy, see docs/decisions-stage5.md): $f" >&2
+      case "$f" in
+        */_internal/Python.framework/*) ;;
+        *) echo "could not sign: $f" >&2; exit 1 ;;
+      esac
+      if [ "$ID" = "-" ]; then
+        UNSIGNED=$((UNSIGNED + 1))
+        echo "not signed (malformed framework copy, see docs/decisions-stage5.md): $f" >&2
+      else
+        # Notarisation rejects any unsigned Mach-O. This copy is never loaded (PyInstaller
+        # loads _internal/Python), so with a real identity it is removed instead.
+        rm -f "$f"
+        echo "removed (malformed framework copy, not loaded; docs/decisions-release.md): $f" >&2
+      fi
     fi
   fi
 done < "$LIST"
