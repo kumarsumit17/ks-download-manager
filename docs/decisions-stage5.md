@@ -106,6 +106,11 @@ Open decisions taken while building Stage 5 (Final) without stopping for the own
 - **Tested for real** (ignored test `real_playlist_lookup_thumbnail_and_one_entry`, bundled yt-dlp, Deno and ffmpeg): the first YouTube channel's Videos tab looked up as a 1-entry playlist ("jawed - Videos"), its thumbnail fetched (29 KB WebP), the entry downloaded as `jawed - Videos/01 - Me at the zoo.mp4` (635 KB). A channel's main page went straight to its Videos tab (yt-dlp does that for a single tab), so the nested-tab rule is covered only by a unit test with yt-dlp's flat output.
 - **Not tested:** the picker and the grouped list in the running window (this session cannot see it); a long playlist with private or deleted entries against the live site (the parsing of those markers is unit-tested).
 
+## Part 5 is done
+
+- **Commits:** `3e849dd` feat: playlists (picker, one row per entry grouped by playlist, thumbnails through Rust); `435d441` chore: pin ks-utility `v0.2.3`; the commit adding this section (`docs/hindi-review.md` regenerated). ks-utility: `96741cd` (`v0.2.3`, pushed).
+- **Checks:** `npm run build` ok; `npm run test:lang` ok; `npm run test:ui` 6/6; `npm run test:extension` 6/6; `npm run build:extension` ok; `cargo test -q` (workspace): 22 + 51 + 71 passed, 2 ignored (network tests; `real_playlist_lookup_thumbnail_and_one_entry` run by hand and passed); `cargo clippy -q --all-targets -- -D warnings`: no output; ks-utility `npm test` 17/17; `graphify update .` run.
+
 ## Part 4 review (owner, approved)
 
 - **Hindi wording, the owner's choice:** `toolbar.deleteHint` डिलीट करें (Delete बटन); extension `err_bad_url` इस लिंक से डाउनलोड नहीं हो सकता; `common.language.system` सिस्टम की भाषा; `engine.rangeIgnored` सर्वर फ़ाइल को हिस्सों में नहीं भेज रहा।; `error.tempFolder` टेंप फ़ोल्डर नहीं बन पाया: {detail}।; `list.status` स्टेटस. In the term list: Status स्टेटस (avoid स्थिति) and Temporary folder टेंप फ़ोल्डर (avoid अस्थायी), both now **approved**. No other Hindi string used स्थिति or अस्थायी. The three ⚠ marks these settle were removed from `docs/hindi-review.md`; the others stay, approved as written with Part 4.
