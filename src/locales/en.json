@@ -30,6 +30,8 @@
   "video": "Video",
   "preferMp4": "Prefer MP4",
   "preferMp4Hint": "Among streams of the best resolution, H.264 and AAC are chosen, which play everywhere, including QuickTime. The resolution is never lowered.",
+  "settings.clipboard": "Fill in a link from the clipboard",
+  "settings.clipboardHint": "When Add download opens, a web link you copied is filled in. Nothing else on the clipboard is read into the app.",
   "updateVideo": "Update video component",
   "updating": "Updating…",
   "upToDate": "Already the newest version ({version}).",

@@ -19,6 +19,8 @@ export interface Settings {
   language: string;
   /** The first-run notice was accepted. */
   noticeSeen: boolean;
+  /** Add download fills in a link from the clipboard (on by default). */
+  clipboardPrefill: boolean;
 }
 
 /** A leftover download file or temp folder found by the last scan. */

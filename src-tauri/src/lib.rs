@@ -62,9 +62,14 @@ async fn list_downloads(m: Downloads<'_>) -> Result<Vec<Record>, msg::Msg> {
     Ok(m.list())
 }
 
-/// The clipboard's link for Add download, only when it holds exactly one web link.
+/// The clipboard's link for Add download, only when it holds exactly one web link and
+/// the setting is on.
 #[tauri::command]
-async fn clipboard_link() -> Result<Option<String>, msg::Msg> {
+async fn clipboard_link(m: Downloads<'_>) -> Result<Option<String>, msg::Msg> {
+    // Off in Settings: the clipboard is not read at all.
+    if !m.settings().clipboard_prefill {
+        return Ok(None);
+    }
     Ok(clipboard::link().await)
 }
 
@@ -319,7 +324,18 @@ pub fn run() {
             // the list is sent once this is done, and nothing starts before it.
             tauri::async_runtime::spawn({
                 let manager = manager.clone();
-                async move { manager.restore().await }
+                async move {
+                    let restore = tauri::async_runtime::spawn({
+                        let manager = manager.clone();
+                        async move { manager.restore().await }
+                    });
+                    // A panic in the restore must not leave the window empty: the list is
+                    // then shown as it was loaded.
+                    if let Err(e) = restore.await {
+                        eprintln!("checking the saved downloads failed: {e}");
+                        manager.restore_done();
+                    }
+                }
             });
             // Leftover download files: looked for after start-up, never removed by itself.
             tauri::async_runtime::spawn({

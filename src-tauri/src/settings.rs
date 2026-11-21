@@ -36,6 +36,9 @@ pub struct Settings {
     pub language: String,
     /// The first-run notice (the user's responsibility, no DRM bypass) was accepted.
     pub notice_seen: bool,
+    /// Add download fills in a web link from the clipboard. Off: the clipboard is never
+    /// read.
+    pub clipboard_prefill: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -73,6 +76,7 @@ impl Default for Settings {
             prefer_mp4: false,
             language: "system".into(),
             notice_seen: false,
+            clipboard_prefill: true,
         }
     }
 }
@@ -164,6 +168,7 @@ mod tests {
             prefer_mp4: false,
             language: "fr".into(),
             notice_seen: true,
+            clipboard_prefill: false,
         }
         .checked();
         assert_eq!((s.max_active, s.total_connections, s.per_download, s.speed_limit), (1, MAX_TOTAL_CONNECTIONS, 32, None));
@@ -172,5 +177,7 @@ mod tests {
         // Older files without a field get its default.
         let partial: OnDisk = serde_json::from_str(r#"{"version":1,"settings":{"maxActive":2}}"#).unwrap();
         assert_eq!((partial.settings.per_download, partial.settings.language.as_str()), (engine::DEFAULT_CONNECTIONS, "system"));
+        assert!(partial.settings.clipboard_prefill, "pre-fill is on for settings saved before the switch existed");
+        assert!(!partial.settings.notice_seen);
     }
 }

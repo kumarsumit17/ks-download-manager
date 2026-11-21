@@ -234,6 +234,8 @@ pub struct Manager {
     /// Set when [`Manager::restore`] is done. Until then the list is not shown and nothing
     /// is started, so the window can open before the saved list is checked (Part 7).
     restored: AtomicBool,
+    /// Wakes [`Manager::wait_restored`] when `restored` is set.
+    restored_notify: tokio::sync::Notify,
 }
 
 fn now_ms() -> u64 {
@@ -357,6 +359,7 @@ impl Manager {
             thumbnails: engine::SmallClient::new(THUMBNAIL_TIMEOUT).ok(),
             thumbnail_slots: tokio::sync::Semaphore::new(THUMBNAILS_AT_ONCE),
             restored: AtomicBool::new(false),
+            restored_notify: tokio::sync::Notify::new(),
         })
     }
 
@@ -494,14 +497,27 @@ impl Manager {
         }
         self.save(&inner);
         drop(inner);
+        self.restore_done();
+    }
+
+    /// Opens the list and lets waiting downloads start. Called when [`Manager::restore`]
+    /// ends, and by the app if the restore failed (a panic), so the window never stays
+    /// empty: the list is then shown as it was loaded.
+    pub fn restore_done(self: &Arc<Self>) {
         self.restored.store(true, Ordering::SeqCst);
+        self.restored_notify.notify_waiters();
         self.schedule();
     }
 
     /// Waits until the saved list has been checked ([`Manager::restore`]).
     pub async fn wait_restored(&self) {
-        while !self.restored.load(Ordering::SeqCst) {
-            tokio::time::sleep(Duration::from_millis(10)).await;
+        loop {
+            // Registered before the check, so a wake between the two is not missed.
+            let woken = self.restored_notify.notified();
+            if self.restored.load(Ordering::SeqCst) {
+                return;
+            }
+            woken.await;
         }
     }
 
@@ -703,8 +719,12 @@ impl Manager {
             self.events.changed(r);
         }
         if start {
+            // One entry that cannot be resumed (deleted meanwhile) does not undo the add:
+            // the others still start, and that row keeps its own state.
             for r in &records {
-                self.resume(r.id)?;
+                if let Err(e) = self.resume(r.id) {
+                    eprintln!("could not start playlist entry {}: {e}", r.id);
+                }
             }
         }
         Ok(records.len())
@@ -1036,7 +1056,7 @@ impl Manager {
             EngineError::Cancelled => RunError::Cancelled,
             e => RunError::Failed(engine_message(&e)),
         })?;
-        self.complete(record.id, &path, &part)?;
+        self.complete(record.id, &path, &part).await?;
         let _ = std::fs::remove_file(&owner);
         Ok(outcome)
     }
@@ -1054,7 +1074,7 @@ impl Manager {
                 RunError::Coded(message, code)
             }
         })?;
-        let (_, bytes) = self.complete_video(record.id, &file)?;
+        let (_, bytes) = self.complete_video(record.id, &file).await?;
         let current = self.lock().records.iter().find(|r| r.id == record.id).cloned();
         remove_video_temp(current.as_ref().unwrap_or(record));
         Ok(bytes)
@@ -1090,8 +1110,8 @@ impl Manager {
     /// Gives a finished video its final name: the title with the extension yt-dlp chose
     /// (mp4 or mkv), reserved now in the destination folder ("name (1).ext" when taken),
     /// then the file is renamed over the reservation, as [`Manager::complete`] does.
-    fn complete_video(&self, id: u64, file: &Path) -> Result<(PathBuf, u64), RunError> {
-        self.mark_downloaded(id, file);
+    async fn complete_video(&self, id: u64, file: &Path) -> Result<(PathBuf, u64), RunError> {
+        self.mark_downloaded(id, file).await;
         let mut inner = self.lock();
         let r = inner.records.iter().find(|r| r.id == id).ok_or_else(|| RunError::Failed(msg!("error.noSuchDownload")))?;
         let folder = r.path.parent().ok_or_else(|| RunError::Failed(msg!("error.noFolder")))?.to_path_buf();
@@ -1118,18 +1138,23 @@ impl Manager {
     /// Marks a finished file as downloaded from the internet before it gets its final name
     /// (`mark.rs`), so it never appears there unmarked. A file system that cannot carry the
     /// mark does not fail the download; it is logged.
-    fn mark_downloaded(&self, id: u64, file: &Path) {
+    /// It runs the system's `xattr`, so it waits on a blocking thread, outside the lock.
+    async fn mark_downloaded(&self, id: u64, file: &Path) {
         let url = self.lock().records.iter().find(|r| r.id == id).map(|r| r.url.clone()).unwrap_or_default();
-        if let Err(e) = mark::mark_from_internet(file, &url) {
-            eprintln!("could not mark {} as downloaded from the internet: {e}", file.display());
+        let path = file.to_path_buf();
+        let result = tokio::task::spawn_blocking(move || mark::mark_from_internet(&path, &url)).await;
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => eprintln!("could not mark {} as downloaded from the internet: {e}", file.display()),
+            Err(e) => eprintln!("could not mark {} as downloaded from the internet: {e}", file.display()),
         }
     }
 
     /// Renames the finished `.ksdownload` file to its final name. That name is held by our
     /// empty reservation file, which is replaced; if something else is there now, the file
     /// gets a free "name (n).ext" instead, so nothing is overwritten.
-    fn complete(&self, id: u64, path: &Path, part: &Path) -> Result<PathBuf, RunError> {
-        self.mark_downloaded(id, part);
+    async fn complete(&self, id: u64, path: &Path, part: &Path) -> Result<PathBuf, RunError> {
+        self.mark_downloaded(id, part).await;
         let mut inner = self.lock();
         // Our reservation, or the name is free again (claimed with create_new, so a file
         // that appears meanwhile is never replaced).
@@ -1820,6 +1845,21 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn a_failed_restore_still_opens_the_list() {
+        let dir = temp_dir();
+        let m = Manager::new(store::path(&dir.join("data")), Arc::new(Log::default()));
+        let waiter = tokio::spawn({
+            let m = m.clone();
+            async move { m.wait_restored().await }
+        });
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert!(!waiter.is_finished());
+        m.restore_done(); // what the app calls when the restore task panicked
+        tokio::time::timeout(Duration::from_secs(1), waiter).await.expect("woken at once").unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn nothing_starts_and_no_list_is_given_before_the_saved_list_is_checked() {
         let dir = temp_dir();
@@ -2135,8 +2175,8 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    #[test]
-    fn a_finished_download_replaces_only_its_own_reservation() {
+    #[tokio::test]
+    async fn a_finished_download_replaces_only_its_own_reservation() {
         let dir = temp_dir();
         let held = record(1, &dir, "held.zip", Status::Downloading);
         let taken = record(2, &dir, "taken.zip", Status::Downloading);
@@ -2149,19 +2189,19 @@ mod tests {
         let (m, _) = manager(&dir, &[held.clone(), taken.clone(), missing.clone()]);
 
         // Our empty reservation is replaced.
-        assert_eq!(m.complete(1, &held.path, &files::part(&held.path)).unwrap(), held.path);
+        assert_eq!(m.complete(1, &held.path, &files::part(&held.path)).await.unwrap(), held.path);
         assert_eq!(std::fs::read(&held.path).unwrap(), b"complete download");
         assert!(!files::part(&held.path).exists());
 
         // Something else took the name: kept, and the download gets "name (1)".
-        let new = m.complete(2, &taken.path, &files::part(&taken.path)).unwrap();
+        let new = m.complete(2, &taken.path, &files::part(&taken.path)).await.unwrap();
         assert_eq!(new, dir.join("taken (1).zip"));
         assert_eq!(std::fs::read(&taken.path).unwrap(), b"the user's own file");
         assert_eq!(std::fs::read(&new).unwrap(), b"complete download");
         assert_eq!((get(&m, 2).name.as_str(), get(&m, 2).path), ("taken (1).zip", new.clone()));
 
         // The reservation was removed: the name is free again and is used.
-        assert_eq!(m.complete(3, &missing.path, &files::part(&missing.path)).unwrap(), missing.path);
+        assert_eq!(m.complete(3, &missing.path, &files::part(&missing.path)).await.unwrap(), missing.path);
         assert_eq!(std::fs::read(&missing.path).unwrap(), b"complete download");
 
         // Every finished file is marked as downloaded from the internet (Part 7); the
@@ -2220,8 +2260,8 @@ mod tests {
         t
     }
 
-    #[test]
-    fn a_finished_video_takes_its_real_extension_and_never_overwrites() {
+    #[tokio::test]
+    async fn a_finished_video_takes_its_real_extension_and_never_overwrites() {
         let dir = temp_dir();
         let v = video(1, &dir, "Big Buck Bunny.mp4", Status::Downloading);
         // The user already has a file with the final name.
@@ -2231,7 +2271,7 @@ mod tests {
         std::fs::write(temp.join("video.mkv"), b"merged video").unwrap();
         let (m, _) = manager(&dir, std::slice::from_ref(&v));
 
-        let (target, bytes) = m.complete_video(1, &temp.join("video.mkv")).unwrap();
+        let (target, bytes) = m.complete_video(1, &temp.join("video.mkv")).await.unwrap();
         assert_eq!(target, dir.join("Big Buck Bunny (1).mkv"));
         assert_eq!(bytes, 12);
         assert_eq!(std::fs::read(dir.join("Big Buck Bunny.mkv")).unwrap(), b"the user's own");

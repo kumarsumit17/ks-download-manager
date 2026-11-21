@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Ban, ListVideo } from "lucide-react";
 import { t } from "@/lib/i18n";
 import { api } from "./api";
 import { clickEntry, formatDuration, imageType, toggleAll } from "./playlist";
+import { visibleRange } from "./windowing";
 import type { PlaylistView } from "./types";
 
 interface Props {
@@ -17,12 +18,26 @@ interface Props {
  * The playlist picker (specs/video-playlists.md): every available entry ticked when it
  * opens, Select all with a count, shift-click for ranges, title, duration and thumbnail
  * per entry, unavailable entries marked and never ticked.
+ *
+ * Windowed like the download list: only the entries in view (plus a few) are drawn, so a
+ * playlist of thousands opens at once. A thumbnail is asked for when its entry is drawn;
+ * no observer is needed, and Rust fetches at most 4 at a time.
  */
 export function PlaylistPicker({ url, playlist, ticked, onTicked }: Props) {
   const anchor = useRef<number | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [rowHeight, setRowHeight] = useState(49);
   const available = playlist.entries.filter((e) => !e.unavailable).length;
   const all = available > 0 && ticked.size === available;
+
+  // The real row height, measured from a drawn entry.
+  useLayoutEffect(() => {
+    const h = scroller.current?.querySelector<HTMLElement>("li[data-entry]")?.getBoundingClientRect().height;
+    if (h && Math.abs(h - rowHeight) > 0.1) setRowHeight(h);
+  });
+  const viewport = scroller.current?.clientHeight ?? 256;
+  const range = visibleRange(playlist.entries.length, rowHeight, scrollTop, viewport);
 
   return (
     <div className="grid gap-2">
@@ -50,10 +65,17 @@ export function PlaylistPicker({ url, playlist, ticked, onTicked }: Props) {
           {t("playlist.selected", { count: ticked.size, total: available })}
         </span>
       </label>
-      <div ref={scroller} role="group" aria-label={t("playlist.entries")} className="max-h-64 overflow-auto rounded-md border">
+      <div
+        ref={scroller}
+        role="group"
+        aria-label={t("playlist.entries")}
+        onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+        className="max-h-64 overflow-auto rounded-md border"
+      >
         <ul>
-          {playlist.entries.map((e) => (
-            <li key={e.index} className="border-b border-border/60 last:border-b-0">
+          {range.before > 0 && <li aria-hidden style={{ height: range.before }} />}
+          {playlist.entries.slice(range.start, range.end).map((e) => (
+            <li key={e.index} data-entry className="border-b border-border/60 last:border-b-0">
               <label
                 className={
                   "flex items-center gap-3 px-2 py-1.5 text-sm " + (e.unavailable ? "text-muted-foreground" : "hover:bg-muted/60")
@@ -72,7 +94,7 @@ export function PlaylistPicker({ url, playlist, ticked, onTicked }: Props) {
                     onTicked(next.ticked);
                   }}
                 />
-                <Thumbnail url={url} index={e.index} show={e.hasThumbnail && !e.unavailable} root={scroller} />
+                <Thumbnail url={url} index={e.index} show={e.hasThumbnail && !e.unavailable} />
                 <span className="w-7 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{e.index}</span>
                 <span className="min-w-0 flex-1 truncate">{e.title || t("common.unknown")}</span>
                 {e.unavailable ? (
@@ -85,51 +107,55 @@ export function PlaylistPicker({ url, playlist, ticked, onTicked }: Props) {
               </label>
             </li>
           ))}
+          {range.after > 0 && <li aria-hidden style={{ height: range.after }} />}
         </ul>
       </div>
     </div>
   );
 }
 
-/** Loads one thumbnail through Rust when it scrolls into view, as a data URL. */
-function Thumbnail({ url, index, show, root }: { url: string; index: number; show: boolean; root: React.RefObject<HTMLDivElement | null> }) {
-  const [src, setSrc] = useState<string | null>(null);
-  const box = useRef<HTMLSpanElement>(null);
+/** Thumbnails already loaded, so scrolling back does not fetch them again. Capped. */
+const loaded = new Map<string, string>();
+const LOADED_MAX = 300;
+
+function remember(key: string, src: string) {
+  loaded.set(key, src);
+  if (loaded.size > LOADED_MAX) {
+    const oldest = loaded.keys().next().value;
+    if (oldest !== undefined) loaded.delete(oldest);
+  }
+}
+
+/** One entry's thumbnail, fetched through Rust when the entry is drawn, as a data URL. */
+function Thumbnail({ url, index, show }: { url: string; index: number; show: boolean }) {
+  const key = `${url}#${index}`;
+  const [src, setSrc] = useState<string | null>(() => loaded.get(key) ?? null);
 
   useEffect(() => {
-    if (!show || !box.current) return;
+    if (!show || loaded.has(key)) return;
     let cancelled = false;
-    const load = () => {
-      api.thumbnail(url, index).then(
-        (buf) => {
-          const bytes = new Uint8Array(buf);
-          const type = imageType(bytes);
-          if (!type || cancelled) return;
-          const reader = new FileReader();
-          reader.onload = () => !cancelled && typeof reader.result === "string" && setSrc(reader.result);
-          reader.readAsDataURL(new Blob([bytes], { type }));
-        },
-        () => {},
-      );
-    };
-    const seen = new IntersectionObserver(
-      (items) => {
-        if (items.some((i) => i.isIntersecting)) {
-          seen.disconnect();
-          load();
-        }
+    api.thumbnail(url, index).then(
+      (buf) => {
+        const bytes = new Uint8Array(buf);
+        const type = imageType(bytes);
+        if (!type) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result !== "string") return;
+          remember(key, reader.result);
+          if (!cancelled) setSrc(reader.result);
+        };
+        reader.readAsDataURL(new Blob([bytes], { type }));
       },
-      { root: root.current, rootMargin: "200px" },
+      () => {},
     );
-    seen.observe(box.current);
     return () => {
       cancelled = true;
-      seen.disconnect();
     };
-  }, [url, index, show, root]);
+  }, [url, index, show, key]);
 
   return (
-    <span ref={box} className="block h-9 w-16 shrink-0 overflow-hidden rounded bg-muted" aria-hidden>
+    <span className="block h-9 w-16 shrink-0 overflow-hidden rounded bg-muted" aria-hidden>
       {src && <img src={src} alt="" className="size-full object-cover" />}
     </span>
   );

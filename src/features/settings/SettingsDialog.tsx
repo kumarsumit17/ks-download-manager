@@ -258,6 +258,23 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
 
               <Separator />
 
+              <Section title={t("add.title")}>
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={s.clipboardPrefill}
+                    onChange={(e) => setS({ ...s, clipboardPrefill: e.target.checked })}
+                    className="mt-0.5 size-4 accent-primary"
+                  />
+                  <span>
+                    {t("settings.clipboard")}
+                    <span className="block text-xs text-muted-foreground">{t("settings.clipboardHint")}</span>
+                  </span>
+                </label>
+              </Section>
+
+              <Separator />
+
               <Section title={t("video")}>
                 <label className="flex items-start gap-2 text-sm">
                   <input
