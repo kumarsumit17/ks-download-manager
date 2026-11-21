@@ -4,10 +4,11 @@
 //! written and synced, then renamed over the old one, so a crash leaves either the old
 //! list or the new one, never half of one.
 
-use std::fs::{self, File};
-use std::io::{ErrorKind, Write};
+use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
+use ks_utility::atomic::write_atomic;
 use serde::{Deserialize, Serialize};
 
 use crate::files::Category;
@@ -87,18 +88,8 @@ pub fn save(file: &Path, downloads: &[Record]) -> std::io::Result<()> {
     }
     let json = serde_json::to_vec_pretty(&OnDisk { version: VERSION, downloads: downloads.to_vec() })
         .map_err(std::io::Error::other)?;
-    let tmp = with_suffix(file, ".tmp");
-    {
-        let mut f = File::create(&tmp)?;
-        f.write_all(&json)?;
-        f.sync_all()?;
-    }
-    fs::rename(&tmp, file)?;
-    #[cfg(unix)]
-    if let Some(dir) = file.parent() {
-        File::open(dir)?.sync_all()?;
-    }
-    Ok(())
+    // One writer: every save runs under the manager's lock.
+    write_atomic(file, &json)
 }
 
 fn with_suffix(p: &Path, suffix: &str) -> PathBuf {
@@ -156,19 +147,6 @@ mod tests {
         assert!(load(&file).is_empty());
         assert_eq!(fs::read(with_suffix(&file, ".bad")).unwrap(), b"{ not json");
         assert!(!file.exists());
-        fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn a_leftover_temp_file_does_not_matter() {
-        let dir = temp_dir();
-        let file = path(&dir);
-        save(&file, &[record(1)]).unwrap();
-        // A crash between writing the temp file and renaming it leaves the old list intact.
-        fs::write(with_suffix(&file, ".tmp"), b"half wri").unwrap();
-        assert_eq!(load(&file), vec![record(1)]);
-        save(&file, &[record(2)]).unwrap();
-        assert_eq!(load(&file), vec![record(2)]);
         fs::remove_dir_all(&dir).unwrap();
     }
 }

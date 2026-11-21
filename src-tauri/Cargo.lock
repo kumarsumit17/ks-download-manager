@@ -822,6 +822,7 @@ checksum = "4ef6b89e5b37196644d8796de5268852ff179b44e96276cf4290264843743bb7"
 name = "engine"
 version = "0.0.0"
 dependencies = [
+ "ks-utility",
  "reqwest",
  "tokio",
 ]
@@ -1921,7 +1922,7 @@ dependencies = [
 [[package]]
 name = "ks-utility"
 version = "0.0.0"
-source = "git+https://github.com/kumarsumit17/ks-utility?rev=ced399ce3667f8643bcf55c9a20c03df051e9049#ced399ce3667f8643bcf55c9a20c03df051e9049"
+source = "git+https://github.com/kumarsumit17/ks-utility?rev=f772fa830929e18ac2705d83a0807ce4c8ccdb85#f772fa830929e18ac2705d83a0807ce4c8ccdb85"
 
 [[package]]
 name = "libappindicator"

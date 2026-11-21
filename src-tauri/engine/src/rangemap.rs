@@ -20,8 +20,9 @@
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard};
 
-use tokio::io::AsyncWriteExt;
+use ks_utility::atomic::{temp_path, write_atomic};
 
 use crate::probe::Validator;
 use crate::ranges::Range;
@@ -119,30 +120,56 @@ pub(crate) async fn load(destination: &Path) -> Option<RangeMap> {
     RangeMap::decode(&text)
 }
 
-/// Replaces the map atomically (write, sync, rename).
+/// Serialises every write and removal of a range map. `write_atomic` allows one writer
+/// per path, and a write runs on a blocking thread that keeps going even when the
+/// download that started it is dropped or aborted mid-checkpoint (a crash, a cancelled
+/// task). Without this lock that orphaned write could collide with the next download's
+/// write of the same map.
+///
+/// The lock serialises map writes but does not order them: an orphaned write that takes
+/// the lock after a fresh start's `remove` or `save` still lands, and can bring back a
+/// stale map. So callers must stop a download with its cancel token (`DownloadOptions::cancel`),
+/// which lets every checkpoint, including the last one, finish before the download returns,
+/// and must never drop or abort the download future mid-checkpoint.
+/// Writes are a few hundred bytes every 2 s per download, so one lock for all is enough.
+static MAP_IO: Mutex<()> = Mutex::new(());
+
+fn map_io() -> MutexGuard<'static, ()> {
+    // A poisoned lock only means a writer panicked; the files are still consistent.
+    MAP_IO.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Replaces the map atomically (write a temp file, sync, rename, sync the folder).
 pub(crate) async fn save(destination: &Path, map: &RangeMap) -> std::io::Result<()> {
     let text = map
         .encode()
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "range map value has a line break"))?;
+    // Covers the map only; the caller syncs the download file before saving it.
     let final_path = path(destination);
-    let tmp = with_suffix(&final_path, ".tmp");
-    let mut f = tokio::fs::File::create(&tmp).await?;
-    f.write_all(text.as_bytes()).await?;
-    f.sync_all().await?;
-    drop(f);
-    tokio::fs::rename(&tmp, &final_path).await
+    tokio::task::spawn_blocking(move || {
+        let _one_at_a_time = map_io();
+        write_atomic(&final_path, text.as_bytes())
+    })
+    .await
+    .map_err(std::io::Error::other)?
 }
 
-/// Removes the map (and a stray temp file); a missing file is not an error.
+/// Removes the map (and a stray temp file); a missing file is not an error. Waits for any
+/// write still in progress, so a removed map stays removed.
 pub(crate) async fn remove(destination: &Path) -> std::io::Result<()> {
     let p = path(destination);
-    for f in [with_suffix(&p, ".tmp"), p] {
-        match tokio::fs::remove_file(&f).await {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
-            _ => {}
+    tokio::task::spawn_blocking(move || {
+        let _one_at_a_time = map_io();
+        for f in [temp_path(&p), p] {
+            match std::fs::remove_file(&f) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
+                _ => {}
+            }
         }
-    }
-    Ok(())
+        Ok(())
+    })
+    .await
+    .map_err(std::io::Error::other)?
 }
 
 #[cfg(test)]

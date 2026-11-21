@@ -21,18 +21,10 @@ pub(crate) const MIN_STEAL: u64 = 64 * 1024;
 /// A slot's own speed is trusted only after it has run this long.
 const MEASURE_AFTER: Duration = Duration::from_millis(100);
 
-/// A half-open byte range `[start, end)`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Range {
-    pub start: u64,
-    pub end: u64,
-}
-
-impl Range {
-    pub fn len(self) -> u64 {
-        self.end - self.start
-    }
-}
+// Half-open byte ranges, the merging set of written bytes and `gaps` are generic: they
+// live in ks-utility.
+pub(crate) use ks_utility::ranges::{Range, gaps};
+use ks_utility::ranges::RangeSet;
 
 #[derive(Debug)]
 struct Slot {
@@ -59,7 +51,7 @@ pub(crate) struct Table {
     worker_rate: Vec<Option<f64>>,
     pending: VecDeque<Range>,
     /// Bytes written to the file, merged and sorted.
-    written: Vec<Range>,
+    written: RangeSet,
     /// Every finished assignment, for `DownloadOutcome::segments`.
     fetched: Vec<Segment>,
     /// Workers that have not exited (or retired) yet.
@@ -72,7 +64,7 @@ impl Table {
             slots: (0..workers).map(|_| None).collect(),
             worker_rate: vec![None; workers],
             pending: pending.into_iter().filter(|r| r.end > r.start).collect(),
-            written,
+            written: written.into_iter().collect(),
             fetched: Vec::new(),
             active: workers,
         }
@@ -129,22 +121,11 @@ impl Table {
 
     /// Records bytes that are now in the file.
     pub fn wrote(&mut self, r: Range) {
-        if r.end <= r.start {
-            return;
-        }
-        let i = self.written.partition_point(|w| w.end < r.start);
-        let mut merged = r;
-        let mut j = i;
-        while j < self.written.len() && self.written[j].start <= merged.end {
-            merged.start = merged.start.min(self.written[j].start);
-            merged.end = merged.end.max(self.written[j].end);
-            j += 1;
-        }
-        self.written.splice(i..j, [merged]);
+        self.written.insert(r);
     }
 
     pub fn written(&self) -> &[Range] {
-        &self.written
+        self.written.as_slice()
     }
 
     /// Finished assignments in file order.
@@ -204,22 +185,6 @@ impl Table {
         let elapsed = now.duration_since(s.since);
         (elapsed >= MEASURE_AFTER && s.pos > s.start).then(|| (s.pos - s.start) as f64 / elapsed.as_secs_f64())
     }
-}
-
-/// The parts of `[0, size)` not covered by `done` (sorted, non-overlapping).
-pub(crate) fn gaps(done: &[Range], size: u64) -> Vec<Range> {
-    let mut out = Vec::new();
-    let mut at = 0;
-    for d in done {
-        if d.start > at {
-            out.push(Range { start: at, end: d.start });
-        }
-        at = at.max(d.end);
-    }
-    if at < size {
-        out.push(Range { start: at, end: size });
-    }
-    out
 }
 
 #[cfg(test)]
@@ -314,27 +279,6 @@ mod tests {
         t.next(2, t1).expect("steals");
         assert_eq!(t.current(0), Some(before_0), "the fast fresh slot is left alone");
         assert!(t.current(1).unwrap().end < before_1.end, "the slow one is split");
-    }
-
-    #[test]
-    fn written_set_merges() {
-        let mut t = Table::new(1, Vec::new(), Vec::new());
-        t.wrote(Range { start: 10, end: 20 });
-        t.wrote(Range { start: 30, end: 40 });
-        t.wrote(Range { start: 0, end: 5 });
-        assert_eq!(t.written().len(), 3);
-        t.wrote(Range { start: 20, end: 30 });
-        assert_eq!(t.written(), &[Range { start: 0, end: 5 }, Range { start: 10, end: 40 }]);
-        t.wrote(Range { start: 3, end: 12 });
-        assert_eq!(t.written(), &[Range { start: 0, end: 40 }]);
-    }
-
-    #[test]
-    fn gaps_are_the_complement() {
-        let done = [Range { start: 0, end: 5 }, Range { start: 10, end: 20 }];
-        assert_eq!(gaps(&done, 25), vec![Range { start: 5, end: 10 }, Range { start: 20, end: 25 }]);
-        assert_eq!(gaps(&[], 7), vec![Range { start: 0, end: 7 }]);
-        assert_eq!(gaps(&[Range { start: 0, end: 7 }], 7), vec![]);
     }
 
     #[test]

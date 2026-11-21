@@ -468,7 +468,7 @@ async fn worker(ctx: &Ctx, id: usize, cancel: &CancelToken, abort: &CancelToken)
     while ctx.table().next(id, Instant::now()).is_some() {
         let mut failures = 0u32;
         loop {
-            let Some(range) = ctx.table().current(id).filter(|r| r.len() > 0) else { break };
+            let Some(range) = ctx.table().current(id).filter(|r| !r.is_empty()) else { break };
             let result = tokio::select! {
                 biased;
                 _ = stopped(cancel, abort) => Err(Failure::Fatal(EngineError::Cancelled)),

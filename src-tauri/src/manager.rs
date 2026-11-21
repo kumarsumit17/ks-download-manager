@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use ks_utility::file_name::sanitize_file_name;
 use engine::{CancelToken, DownloadOptions, DownloadOutcome, EngineError, ProbeInfo, Progress};
 use serde::Serialize;
 
@@ -222,7 +223,7 @@ impl Manager {
         let url = url.trim();
         let info = engine::probe(url).await.map_err(|e| sentence(&e))?;
         self.probes().insert(url.to_owned(), (Instant::now(), info.clone()));
-        let name = files::sanitize_name(&info.file_name);
+        let name = sanitize_file_name(&info.file_name);
         Ok(ProbeView { category: files::category(&name), name, size: info.size, resumable: info.resumable() })
     }
 
@@ -233,7 +234,7 @@ impl Manager {
         let url = url.trim();
         let info = self.probe_cached(url).await?;
         let folder = files::check_folder(folder)?;
-        let name = files::sanitize_name(if name.trim().is_empty() { &info.file_name } else { name });
+        let name = sanitize_file_name(if name.trim().is_empty() { &info.file_name } else { name });
         let record = {
             let mut inner = self.lock();
             let taken = |p: &Path| inner.records.iter().any(|r| r.path == p);
@@ -368,7 +369,9 @@ impl Manager {
     /// The final path to download for: the download's own name when its `.ksdownload` file
     /// has a matching range map (resume) or the empty reservation file still holds the
     /// name; otherwise a new free name in the same folder, and any leftover `.ksdownload`
-    /// file of the old name is removed. An existing file is never overwritten.
+    /// file of the old name is removed. An existing file is never overwritten. The name is
+    /// taken from `record.path`, not `record.name`, so a damaged list cannot ask for one
+    /// that is not a single file name.
     async fn destination(&self, record: &Record) -> Result<PathBuf, String> {
         if own_partial(&record.url, &record.path).await.is_some() || is_reservation(&record.path) {
             return Ok(record.path.clone());
@@ -378,7 +381,8 @@ impl Manager {
         let folder = files::check_folder(&folder.to_string_lossy())?;
         let mut inner = self.lock();
         let taken = |p: &Path| inner.records.iter().any(|r| r.id != record.id && r.path == p);
-        let path = files::reserve(&folder, &record.name, &taken).map_err(|e| format!("Could not create the file: {e}."))?;
+        let name = record.path.file_name().map_or_else(|| "download".into(), |n| n.to_string_lossy().into_owned());
+        let path = files::reserve(&folder, &name, &taken).map_err(|e| format!("Could not create the file: {e}."))?;
         if let Some(r) = inner.records.iter_mut().find(|r| r.id == record.id) {
             r.name = path.file_name().map_or(r.name.clone(), |n| n.to_string_lossy().into_owned());
             r.path = path.clone();
@@ -761,6 +765,29 @@ mod tests {
         assert!(gone(&other.path));
         assert!(is_reservation(&other.path));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_damaged_name_does_not_stop_the_destination() {
+        // downloads.json edited or damaged: `name` is not a single file name, `path` is.
+        let outer = temp_dir();
+        let dir = outer.join("downloads");
+        std::fs::create_dir(&dir).unwrap();
+        let mut records = Vec::new();
+        for (id, bad) in [(1, "../evil.bin"), (2, ""), (3, "/abs/x"), (4, "a/b")] {
+            let r = Record { name: bad.into(), ..record(id, &dir, &format!("file{id}.bin"), Status::Interrupted) };
+            std::fs::write(&r.path, b"precious").unwrap();
+            records.push(r);
+        }
+        let (m, _) = manager(&dir, &records);
+        for r in &records {
+            let new = m.destination(r).await.unwrap();
+            assert_eq!(new, dir.join(format!("file{} (1).bin", r.id)), "name {:?}", r.name);
+            assert_eq!(std::fs::read(&r.path).unwrap(), b"precious");
+            assert_eq!(get(&m, r.id).name, format!("file{} (1).bin", r.id));
+        }
+        assert!(!outer.join("evil.bin").exists(), "nothing created outside the folder");
+        std::fs::remove_dir_all(&outer).unwrap();
     }
 
     #[tokio::test]

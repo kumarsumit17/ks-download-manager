@@ -1,6 +1,9 @@
 use reqwest::StatusCode;
 use reqwest::header::{CONTENT_DISPOSITION, CONTENT_RANGE, ETAG, HeaderMap, LAST_MODIFIED, RANGE};
 
+use ks_utility::content_disposition::{content_disposition_filename, percent_decode};
+use ks_utility::file_name::sanitize_file_name;
+
 use crate::error::EngineError;
 use crate::http::{ContentRange, client, get, parse_content_range, parse_url};
 
@@ -95,7 +98,8 @@ pub(crate) fn validator(headers: &HeaderMap) -> Option<Validator> {
 }
 
 fn file_name(headers: &HeaderMap, url: &reqwest::Url) -> String {
-    let from_header = headers.get(CONTENT_DISPOSITION).and_then(|v| v.to_str().ok()).and_then(disposition_name);
+    let from_header =
+        headers.get(CONTENT_DISPOSITION).and_then(|v| v.to_str().ok()).and_then(content_disposition_filename);
     let from_url = || {
         url.path_segments()
             .and_then(|mut s| s.next_back().map(str::to_owned))
@@ -105,53 +109,10 @@ fn file_name(headers: &HeaderMap, url: &reqwest::Url) -> String {
     from_header.or_else(from_url).map(|n| sanitize(&n)).filter(|n| !n.is_empty()).unwrap_or_else(|| "download".into())
 }
 
-/// `filename*=UTF-8''name` (RFC 6266/8187) wins over `filename="name"`.
-fn disposition_name(value: &str) -> Option<String> {
-    let params: Vec<(String, String)> = value
-        .split(';')
-        .skip(1)
-        .filter_map(|p| p.split_once('='))
-        .map(|(k, v)| (k.trim().to_ascii_lowercase(), v.trim().to_owned()))
-        .collect();
-    let extended = params.iter().find(|(k, _)| k == "filename*").and_then(|(_, v)| {
-        let (charset, rest) = v.split_once('\'')?;
-        let (_lang, encoded) = rest.split_once('\'')?;
-        charset.eq_ignore_ascii_case("utf-8").then(|| percent_decode(encoded))
-    });
-    extended.or_else(|| {
-        params.iter().find(|(k, _)| k == "filename").map(|(_, v)| v.trim_matches('"').to_owned())
-    })
-}
-
-fn percent_decode(s: &str) -> String {
-    let bytes = s.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    let hex = |b: u8| (b as char).to_digit(16).map(|d| d as u8);
-    while i < bytes.len() {
-        // Work on bytes, not str slices: a multi-byte character after '%' must not panic.
-        if bytes[i] == b'%'
-            && i + 2 < bytes.len()
-            && let (Some(h), Some(l)) = (hex(bytes[i + 1]), hex(bytes[i + 2]))
-        {
-            out.push(h << 4 | l);
-            i += 3;
-            continue;
-        }
-        out.push(bytes[i]);
-        i += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-/// Keeps only the last path component and replaces characters no file system accepts.
+/// Keeps only the last path component, then makes it a safe file name.
 fn sanitize(name: &str) -> String {
     let last = name.rsplit(['/', '\\']).next().unwrap_or(name);
-    let cleaned: String = last
-        .chars()
-        .map(|c| if c.is_control() || matches!(c, ':' | '*' | '?' | '"' | '<' | '>' | '|') { '_' } else { c })
-        .collect();
-    cleaned.trim().trim_matches('.').trim().to_owned()
+    sanitize_file_name(last)
 }
 
 #[cfg(test)]
@@ -159,23 +120,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn disposition_forms() {
-        assert_eq!(disposition_name("attachment; filename=\"a b.zip\"").as_deref(), Some("a b.zip"));
-        assert_eq!(disposition_name("attachment; filename=plain.txt").as_deref(), Some("plain.txt"));
-        assert_eq!(
-            disposition_name("attachment; filename=\"x.bin\"; filename*=UTF-8''caf%C3%A9.bin").as_deref(),
-            Some("café.bin")
-        );
-        assert_eq!(disposition_name("inline"), None);
-    }
-
-    #[test]
     fn names_are_made_safe() {
         assert_eq!(sanitize("../../etc/passwd"), "passwd");
         assert_eq!(sanitize("a:b?.txt"), "a_b_.txt");
-        assert_eq!(sanitize(".."), "");
-        assert_eq!(percent_decode("a%20b%zz%4"), "a b%zz%4");
-        assert_eq!(percent_decode("%é%"), "%é%");
+        assert_eq!(sanitize(".."), "download");
     }
 
     #[test]

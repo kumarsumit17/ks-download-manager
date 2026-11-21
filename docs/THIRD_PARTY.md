@@ -6,7 +6,7 @@ Add one row per dependency in the commit that introduces it. Direct dependencies
 
 | Component | Pinned commit | Licence | Used for |
 |---|---|---|---|
-| ks-utility | ced399ce3667f8643bcf55c9a20c03df051e9049 | MIT | Generic utilities shared by the KS-Suite apps; our own code, standard library only, no third-party dependencies. Declared in `package.json` (TypeScript part) and `src-tauri/Cargo.toml` (Rust part). Adds one entry to each lock file |
+| ks-utility | f772fa830929e18ac2705d83a0807ce4c8ccdb85 | MIT | Generic utilities shared by the KS-Suite apps; our own code, standard library only, no third-party dependencies. Declared in `package.json` (TypeScript part), `src-tauri/Cargo.toml` and `src-tauri/engine/Cargo.toml` (Rust part). Used for HTTP-date and `Retry-After`, backoff with jitter, `Content-Range`, `Content-Disposition`, byte-range sets, atomic writes, file-name sanitising and free names, and size/speed/time formatting. Adds one entry to each lock file |
 
 ## Rust (`src-tauri/Cargo.toml`)
 
