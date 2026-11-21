@@ -19,6 +19,15 @@ pub struct ProbeInfo {
     pub file_name: String,
 }
 
+impl ProbeInfo {
+    /// True when a download of this file can be paused and resumed: the server supports
+    /// ranges, the size is known and not zero, and it gave a strong validator (an ETag that
+    /// is not weak, or Last-Modified). Otherwise stopping the download loses what it has.
+    pub fn resumable(&self) -> bool {
+        self.ranges && self.size.is_some_and(|s| s > 0) && self.validator.as_ref().is_some_and(Validator::is_strong)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Validator {
     ETag(String),
@@ -26,6 +35,11 @@ pub enum Validator {
 }
 
 impl Validator {
+    /// Strong enough to prove a partial file belongs to this version (usable in `If-Range`).
+    pub fn is_strong(&self) -> bool {
+        self.if_range().is_some()
+    }
+
     /// The value to send in `If-Range`. Weak ETags are not allowed there (RFC 9110, 13.1.5).
     pub(crate) fn if_range(&self) -> Option<&str> {
         match self {

@@ -54,6 +54,28 @@ struct ProgressInner {
     /// Bytes already in the file when the download was resumed.
     base: AtomicU64,
     per_connection: RwLock<Arc<[AtomicU64]>>,
+    /// Reads each connection's current range while a download runs; `None` otherwise.
+    ranges: RwLock<Option<RangeSource>>,
+}
+
+/// The range one connection is working on: the half-open byte range `[start, end)`, of
+/// which `[start, position)` has arrived. `end` can move down while the connection works,
+/// when an idle connection takes over the upper part of the range.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ConnectionRange {
+    pub start: u64,
+    pub position: u64,
+    pub end: u64,
+}
+
+/// Called only when a snapshot is taken (a few times a second), never per chunk.
+#[derive(Clone)]
+pub(crate) struct RangeSource(pub(crate) Arc<dyn Fn() -> Vec<Option<ConnectionRange>> + Send + Sync>);
+
+impl std::fmt::Debug for RangeSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("RangeSource")
+    }
 }
 
 /// A point-in-time copy of [`Progress`].
@@ -66,6 +88,11 @@ pub struct ProgressSnapshot {
     pub received: u64,
     /// Bytes received per connection in this run (connections take new ranges as they go).
     pub per_connection: Vec<u64>,
+    /// The range each connection is working on, in the same order as `per_connection`.
+    /// `None` for a connection between ranges, finished or retired, and for every
+    /// connection once the download has stopped. A single-connection download whose size
+    /// is unknown reports `None` too.
+    pub connections: Vec<Option<ConnectionRange>>,
 }
 
 impl Default for Progress {
@@ -74,6 +101,7 @@ impl Default for Progress {
             total: AtomicU64::new(UNKNOWN),
             base: AtomicU64::new(0),
             per_connection: RwLock::new(Arc::from(Vec::new())),
+            ranges: RwLock::new(None),
         }))
     }
 }
@@ -86,10 +114,14 @@ impl Progress {
     pub fn snapshot(&self) -> ProgressSnapshot {
         let total = self.0.total.load(Ordering::Relaxed);
         let per: Vec<u64> = self.counters().iter().map(|c| c.load(Ordering::Relaxed)).collect();
+        let source = self.0.ranges.read().unwrap_or_else(|e| e.into_inner()).clone();
+        let mut connections = source.map(|s| (s.0)()).unwrap_or_default();
+        connections.resize(per.len(), None);
         ProgressSnapshot {
             total: (total != UNKNOWN).then_some(total),
             received: self.0.base.load(Ordering::Relaxed) + per.iter().sum::<u64>(),
             per_connection: per,
+            connections,
         }
     }
 
@@ -99,6 +131,11 @@ impl Progress {
         let fresh: Vec<AtomicU64> = (0..connections).map(|_| AtomicU64::new(0)).collect();
         // A poisoned lock only means a reader panicked; the counters are still valid.
         *self.0.per_connection.write().unwrap_or_else(|e| e.into_inner()) = Arc::from(fresh);
+    }
+
+    /// Installs (or with `None` removes) the reader for the connections' current ranges.
+    pub(crate) fn set_ranges(&self, source: Option<RangeSource>) {
+        *self.0.ranges.write().unwrap_or_else(|e| e.into_inner()) = source;
     }
 
     pub(crate) fn set_base(&self, resumed: u64) {

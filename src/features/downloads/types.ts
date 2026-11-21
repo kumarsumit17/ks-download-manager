@@ -1,21 +1,62 @@
 export type Category = "video" | "audio" | "images" | "other";
-export type Status = "downloading" | "paused" | "queued" | "finished" | "failed";
+export type Status = "queued" | "downloading" | "paused" | "finished" | "failed" | "interrupted";
 
-export interface Download {
-  id: string;
-  name: string;
+/** One download as Rust stores it (src-tauri/src/store.rs, `Record`). */
+export interface DownloadRecord {
+  id: number;
   url: string;
+  name: string;
+  /** Shown only; commands always name a download by id, never by path. */
+  path: string;
   category: Category;
   status: Status;
   /** Total size in bytes; null when the server did not say. */
   size: number | null;
   received: number;
-  /** Bytes per second; 0 when not downloading. */
-  speed: number;
-  connections: number;
-  queue: string;
+  /** The server supports resuming; otherwise the download cannot be paused. */
+  resumable: boolean;
+  error: string | null;
   addedAt: number;
 }
+
+/** A connection's current range [start, end), of which [start, position) has arrived. */
+export interface ConnectionTick {
+  start: number;
+  position: number;
+  end: number;
+  speed: number;
+}
+
+/** Live numbers for one running download, sent a few times a second. */
+export interface Tick {
+  id: number;
+  size: number | null;
+  received: number;
+  speed: number;
+  connections: (ConnectionTick | null)[];
+}
+
+export interface Download extends DownloadRecord {
+  /** Bytes per second; 0 when not downloading. */
+  speed: number;
+  connections: (ConnectionTick | null)[];
+  /** Every download is in the main queue until queues arrive (Stage 5). */
+  queue: string;
+}
+
+export interface ProbeView {
+  name: string;
+  size: number | null;
+  resumable: boolean;
+  category: Category;
+}
+
+export interface Active {
+  running: number;
+  notResumable: number;
+}
+
+export const MAIN_QUEUE = "Main queue";
 
 export type Filter =
   | { kind: "all" }
@@ -42,3 +83,20 @@ export function matches(d: Download, f: Filter): boolean {
 export function sameFilter(a: Filter, b: Filter): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
+
+/** What the toolbar, menu and keys may do with a download. */
+export function canResume(d: Download): boolean {
+  return ["queued", "paused", "failed", "interrupted"].includes(d.status);
+}
+
+export function canPause(d: Download): boolean {
+  return d.status === "downloading" && d.resumable;
+}
+
+/** Running, but pausing would lose what it has (no resume support on the server). */
+export function cannotPause(d: Download): boolean {
+  return d.status === "downloading" && !d.resumable;
+}
+
+export const CANNOT_PAUSE =
+  "This server does not support resuming, so this download cannot be paused or resumed. Stopping it loses what it has downloaded.";

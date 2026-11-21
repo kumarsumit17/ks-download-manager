@@ -13,6 +13,7 @@
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
+use crate::control::ConnectionRange;
 use crate::download::Segment;
 
 /// Never split off less than this; smaller requests cost more in round trips than they save.
@@ -107,6 +108,14 @@ impl Table {
     /// The part of worker `id`'s range not yet claimed.
     pub fn current(&self, id: usize) -> Option<Range> {
         self.slots.get(id)?.as_ref().map(|s| Range { start: s.pos, end: s.end })
+    }
+
+    /// Every worker's current assignment as `[start, end)` with `pos` claimed so far.
+    pub fn assignments(&self) -> Vec<Option<ConnectionRange>> {
+        self.slots
+            .iter()
+            .map(|s| s.as_ref().map(|s| ConnectionRange { start: s.start, position: s.pos, end: s.end }))
+            .collect()
     }
 
     /// Claims up to `len` bytes at the front of worker `id`'s range.
@@ -228,6 +237,33 @@ mod tests {
         assert_eq!(t.claim(0, 100), Some(Claim { offset: 4, len: 6, finished: true }));
         assert_eq!(t.claim(0, 1), Some(Claim { offset: 10, len: 0, finished: true }));
         assert_eq!(t.next(0, now), None, "nothing left, nothing to steal");
+    }
+
+    #[test]
+    fn assignments_follow_claims_and_steals() {
+        let now = Instant::now();
+        let mut t = Table::new(3, vec![Range { start: 0, end: 4 * MB }], Vec::new());
+        assert_eq!(t.assignments(), vec![None, None, None], "nobody has started");
+        t.next(0, now);
+        t.claim(0, MB);
+        assert_eq!(t.assignments()[0], Some(ConnectionRange { start: 0, position: MB, end: 4 * MB }));
+        // Worker 1 takes the upper half of what worker 0 has left; worker 0's end moves down.
+        let stolen = t.next(1, now).expect("steals");
+        let mid = MB + 3 * MB / 2;
+        assert_eq!(stolen, Range { start: mid, end: 4 * MB });
+        assert_eq!(
+            t.assignments(),
+            vec![
+                Some(ConnectionRange { start: 0, position: MB, end: mid }),
+                Some(ConnectionRange { start: mid, position: mid, end: 4 * MB }),
+                None,
+            ]
+        );
+        // A worker that finds nothing left has no assignment.
+        t.claim(0, 4 * MB);
+        t.claim(1, 4 * MB);
+        assert_eq!(t.next(0, now), None);
+        assert_eq!(t.assignments()[0], None);
     }
 
     #[test]

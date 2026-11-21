@@ -39,6 +39,8 @@ The app is built one stage per request. Each stage ends with a build that runs, 
 
 ## Stage 8 — Polish
 - First-run notice (user's responsibility, no DRM bypass), keyboard reachability, contrast, reduce-motion, 10,000-row scroll test, window material (Mica / vibrancy).
+- Start-up restore of the download list off the critical path (see [ui](ui.md#deferred-from-stage-4)).
+- Mark downloaded files as coming from the internet: the `com.apple.quarantine` attribute on macOS and the Mark of the Web (`Zone.Identifier` stream) on Windows, so the system warns before opening them. In Stage 8, or at the latest in Stage 9 with the Windows build.
 
 ## Stage 9 — Release
 - Windows build, signing via `SIGNING_*` secrets in CI, tag-driven versions, release workflow.

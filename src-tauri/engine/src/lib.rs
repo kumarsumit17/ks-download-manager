@@ -17,7 +17,7 @@ mod rangemap;
 mod ranges;
 mod retry;
 
-pub use control::{CancelToken, Progress, ProgressSnapshot};
+pub use control::{CancelToken, ConnectionRange, Progress, ProgressSnapshot};
 pub use download::{
     DEFAULT_CONNECTIONS, DownloadOptions, DownloadOutcome, MAX_CONNECTIONS, SavedState, Segment, discard, download,
     saved_state,

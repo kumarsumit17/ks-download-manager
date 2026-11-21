@@ -10,7 +10,7 @@ use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt, BufWriter};
 use tokio::task::JoinSet;
 
-use crate::control::{CancelToken, Progress};
+use crate::control::{CancelToken, ConnectionRange, Progress, RangeSource};
 use crate::error::EngineError;
 use crate::http::{ContentRange, client, get, parse_content_range, parse_url};
 use crate::probe::{self, ProbeInfo, Validator, probe};
@@ -179,6 +179,23 @@ pub async fn download(url: &str, destination: &Path, options: DownloadOptions) -
     }
 }
 
+/// Publishes the connections' ranges in `progress` while alive, and stops when dropped,
+/// so snapshots taken after the download stopped show no connection at work.
+struct ShowRanges<'a>(&'a Progress);
+
+impl<'a> ShowRanges<'a> {
+    fn new(progress: &'a Progress, source: RangeSource) -> Self {
+        progress.set_ranges(Some(source));
+        Self(progress)
+    }
+}
+
+impl Drop for ShowRanges<'_> {
+    fn drop(&mut self) {
+        self.0.set_ranges(None);
+    }
+}
+
 /// Errors after which the partial file is worth keeping for a resume. `Internal` is kept
 /// too: it is our bug, not bad data, and every byte in the map was verified when written.
 fn keeps_partial(e: &EngineError) -> bool {
@@ -236,6 +253,12 @@ async fn segmented(
         retry: options.retry.clone(),
         flush_every: options.checkpoint_interval,
     });
+    // Snapshots read the table only while this download runs (also if the caller drops it).
+    let weak = Arc::downgrade(&ctx);
+    let _ranges = ShowRanges::new(
+        &options.progress,
+        RangeSource(Arc::new(move || weak.upgrade().map(|c| c.table().assignments()).unwrap_or_default())),
+    );
 
     let mut result = match ctx.checkpoint().await {
         Ok(()) => run_workers(&ctx, workers, &options.cancel, options.checkpoint_interval).await,
@@ -539,6 +562,17 @@ async fn single(info: ProbeInfo, destination: &Path, options: &DownloadOptions) 
     let counters = options.progress.counters();
     let counter = counters.first().ok_or_else(|| EngineError::Internal("missing counter".into()))?;
     let policy = &options.retry;
+    // One connection, front to back. With an unknown size there is no range to show.
+    let _ranges = info.size.map(|size| {
+        let counters = counters.clone();
+        ShowRanges::new(
+            &options.progress,
+            RangeSource(Arc::new(move || {
+                let position = counters.first().map_or(0, |c| c.load(Ordering::Relaxed)).min(size);
+                vec![Some(ConnectionRange { start: 0, position, end: size })]
+            })),
+        )
+    });
 
     let attempts = async {
         let client = client()?;

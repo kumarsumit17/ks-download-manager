@@ -8,8 +8,8 @@ use std::time::{Duration, Instant};
 
 use common::{ETAG, RetryAfter, ServerOptions, TestServer, start};
 use engine::{
-    CancelToken, DEFAULT_CONNECTIONS, DownloadOptions, DownloadOutcome, EngineError, Progress, RetryPolicy, Segment,
-    Validator, discard, download, probe, saved_state,
+    CancelToken, ConnectionRange, DEFAULT_CONNECTIONS, DownloadOptions, DownloadOutcome, EngineError, ProbeInfo,
+    Progress, ProgressSnapshot, RetryPolicy, Segment, Validator, discard, download, probe, saved_state,
 };
 
 /// A fresh path in the system temp folder; removed (with its range map) when dropped.
@@ -105,6 +105,32 @@ async fn probe_range_capable() {
     assert_eq!(info.file_name, "file.bin");
 }
 
+#[test]
+fn resumable_needs_ranges_a_known_size_and_a_strong_validator() {
+    let base = ProbeInfo {
+        final_url: "http://127.0.0.1/f".into(),
+        size: Some(1000),
+        ranges: true,
+        validator: Some(Validator::ETag("\"v1\"".into())),
+        file_name: "f".into(),
+    };
+    assert!(base.resumable());
+    assert!(ProbeInfo { validator: Some(Validator::LastModified("Tue, 01 Dec 2026 10:00:00 GMT".into())), ..base.clone() }.resumable());
+    assert!(!ProbeInfo { validator: Some(Validator::ETag("W/\"v1\"".into())), ..base.clone() }.resumable(), "weak ETag");
+    assert!(!ProbeInfo { validator: None, ..base.clone() }.resumable(), "no validator");
+    assert!(!ProbeInfo { ranges: false, ..base.clone() }.resumable(), "no range support");
+    assert!(!ProbeInfo { size: None, ..base.clone() }.resumable(), "unknown size");
+    assert!(!ProbeInfo { size: Some(0), ..base }.resumable(), "empty file");
+}
+
+#[tokio::test]
+async fn probe_reports_resumable() {
+    let server = start(ServerOptions::new(1000)).await;
+    assert!(probe(&server.url).await.unwrap().resumable());
+    let server = start(ServerOptions { etag: false, ..ServerOptions::new(1000) }).await;
+    assert!(!probe(&server.url).await.unwrap().resumable());
+}
+
 #[tokio::test]
 async fn probe_not_range_capable() {
     let server = start(ServerOptions { ranges: false, ..ServerOptions::new(1000) }).await;
@@ -165,6 +191,83 @@ async fn progress_reports_every_connection() {
     assert_eq!(snap.per_connection.len(), 8);
     // 25,000 bytes per range is below the size worth splitting, so nothing is stolen.
     assert!(snap.per_connection.iter().all(|&n| n == 25_000));
+}
+
+/// Every reported range lies inside the file, its unfetched parts never overlap, and the
+/// list lines up with `per_connection`.
+fn assert_ranges_sane(snap: &ProgressSnapshot, size: u64) {
+    assert_eq!(snap.connections.len(), snap.per_connection.len());
+    let mut open: Vec<(u64, u64)> = Vec::new();
+    for r in snap.connections.iter().flatten() {
+        assert!(r.start <= r.position && r.position <= r.end && r.end <= size, "{r:?}");
+        open.push((r.position, r.end));
+    }
+    open.sort();
+    assert!(open.windows(2).all(|w| w[0].1 <= w[1].0), "unfetched parts overlap: {open:?}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn progress_reports_each_connections_current_range() {
+    let size: u64 = 2_000_000;
+    let server = start(ServerOptions { rate: Some(512 * 1024), ..ServerOptions::new(size) }).await;
+    let out = TempFile::new();
+    let progress = Progress::new();
+    let options = DownloadOptions { progress: progress.clone(), ..opts(4) };
+    let (url, path) = (server.url.clone(), out.0.clone());
+    let task = tokio::spawn(async move { download(&url, &path, options).await });
+
+    wait_for(&progress, size / 4).await;
+    let snap = progress.snapshot();
+    assert_ranges_sane(&snap, size);
+    let working: Vec<ConnectionRange> = snap.connections.iter().flatten().copied().collect();
+    assert!(!working.is_empty(), "connections at work report their range");
+    assert!(working.iter().any(|r| r.position > r.start), "some bytes arrived: {working:?}");
+
+    task.await.unwrap().expect("download should succeed");
+    let done = progress.snapshot();
+    assert_eq!(done.connections.len(), 4);
+    assert!(done.connections.iter().all(Option::is_none), "no ranges once finished: {:?}", done.connections);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cancelled_download_reports_no_ranges() {
+    let size: u64 = 2_000_000;
+    let server = start(ServerOptions { rate: Some(128 * 1024), ..ServerOptions::new(size) }).await;
+    let out = TempFile::new();
+    let (progress, cancel) = (Progress::new(), CancelToken::new());
+    let options = DownloadOptions { progress: progress.clone(), cancel: cancel.clone(), ..opts(4) };
+    let (url, path) = (server.url.clone(), out.0.clone());
+    let task = tokio::spawn(async move { download(&url, &path, options).await });
+    wait_for(&progress, 1).await;
+    assert!(progress.snapshot().connections.iter().any(Option::is_some));
+    cancel.cancel();
+    assert!(matches!(task.await.unwrap(), Err(EngineError::Cancelled)));
+    assert!(progress.snapshot().connections.iter().all(Option::is_none));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn single_connection_reports_its_range_when_the_size_is_known() {
+    let size: u64 = 1_000_000;
+    for content_length in [true, false] {
+        let server = start(ServerOptions { ranges: false, content_length, rate: Some(512 * 1024), ..ServerOptions::new(size) }).await;
+        let out = TempFile::new();
+        let progress = Progress::new();
+        let options = DownloadOptions { progress: progress.clone(), ..opts(8) };
+        let (url, path) = (server.url.clone(), out.0.clone());
+        let task = tokio::spawn(async move { download(&url, &path, options).await });
+        wait_for(&progress, size / 4).await;
+        let snap = progress.snapshot();
+        assert_ranges_sane(&snap, size);
+        if content_length {
+            let r = snap.connections[0].expect("one range from 0 to the end");
+            assert_eq!((r.start, r.end), (0, size));
+            assert!(r.position > 0);
+        } else {
+            assert_eq!(snap.connections, vec![None], "no range without a size");
+        }
+        task.await.unwrap().expect("download should succeed");
+        assert_eq!(progress.snapshot().connections, vec![None]);
+    }
 }
 
 // ---- fallbacks ----

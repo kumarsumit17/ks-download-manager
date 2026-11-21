@@ -1909,8 +1909,12 @@ dependencies = [
 name = "ks-download-manager"
 version = "0.0.0"
 dependencies = [
+ "engine",
+ "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
+ "tokio",
 ]
 
 [[package]]

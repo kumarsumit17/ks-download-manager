@@ -1,8 +1,15 @@
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
-import { ArrowDown, ArrowUp } from "lucide-react";
+import { ArrowDown, ArrowUp, Ban, Copy, ExternalLink, FolderOpen, Pause, Play, Trash2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
-import type { Download, Status } from "./types";
+import { CANNOT_PAUSE, type Download, type Status, canPause, canResume, cannotPause } from "./types";
 import { formatBytes, formatDate, formatSpeed, formatTimeLeft } from "./format";
 
 type SortKey = "name" | "size" | "status" | "speed" | "timeLeft" | "addedAt";
@@ -22,9 +29,20 @@ const statusLabel: Record<Status, string> = {
   queued: "Queued",
   finished: "Finished",
   failed: "Failed",
+  interrupted: "Interrupted",
 };
 
-const rowId = (id: string) => `download-row-${id}`;
+/** What the row menu (and double-click) can do; each acts on the download's id. */
+export interface RowActions {
+  open: (d: Download) => void;
+  openFolder: (d: Download) => void;
+  resume: (d: Download) => void;
+  pause: (d: Download) => void;
+  copyLink: (d: Download) => void;
+  remove: (d: Download) => void;
+}
+
+const rowId = (id: number) => `download-row-${id}`;
 
 function timeLeft(d: Download): number | null {
   if (d.status !== "downloading" || d.speed <= 0 || d.size === null) return null;
@@ -50,11 +68,13 @@ function sortValue(d: Download, k: SortKey): number | string {
 
 interface Props {
   downloads: Download[];
-  selectedId: string | null;
-  onSelect: (id: string | null) => void;
+  selectedId: number | null;
+  onSelect: (id: number | null) => void;
+  actions: RowActions;
+  loaded: boolean;
 }
 
-export function DownloadList({ downloads, selectedId, onSelect }: Props) {
+export function DownloadList({ downloads, selectedId, onSelect, actions, loaded }: Props) {
   const [sort, setSort] = useState<{ key: SortKey; asc: boolean }>({ key: "addedAt", asc: false });
 
   const rows = useMemo(() => {
@@ -68,7 +88,14 @@ export function DownloadList({ downloads, selectedId, onSelect }: Props) {
     return out;
   }, [downloads, sort]);
 
+  const selected = rows.find((r) => r.id === selectedId) ?? null;
+
   const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Enter" && selected?.status === "finished") {
+      e.preventDefault();
+      actions.open(selected);
+      return;
+    }
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
     e.preventDefault();
     if (rows.length === 0) return;
@@ -83,6 +110,8 @@ export function DownloadList({ downloads, selectedId, onSelect }: Props) {
   }, [selectedId, rows]);
 
   return (
+    <ContextMenu>
+    <ContextMenuTrigger asChild>
     <div className="min-h-0 flex-1 overflow-auto">
       <table
         role="grid"
@@ -129,12 +158,24 @@ export function DownloadList({ downloads, selectedId, onSelect }: Props) {
                 id={rowId(d.id)}
                 aria-selected={selected}
                 onClick={() => onSelect(d.id)}
+                onContextMenu={() => onSelect(d.id)}
+                onDoubleClick={() => d.status === "finished" && actions.open(d)}
                 className={cn(
                   "h-9 scroll-mt-8 border-b border-border/60 transition-colors duration-120",
                   selected ? "bg-primary/12" : "hover:bg-muted/60",
                 )}
               >
-                <td className="truncate px-3" title={d.url}>{d.name}</td>
+                <td className="px-3" title={d.url}>
+                  <span className="flex items-center gap-1.5">
+                    <span className="truncate">{d.name}</span>
+                    {cannotPause(d) && (
+                      <span title={CANNOT_PAUSE} className="flex shrink-0 items-center gap-1 text-xs text-amber-700 dark:text-amber-300">
+                        <Ban className="size-3.5" aria-hidden />
+                        Can't pause
+                      </span>
+                    )}
+                  </span>
+                </td>
                 <td className="px-3 text-right tabular-nums">{formatBytes(d.size)}</td>
                 <td className="px-3">
                   {d.status === "downloading" && d.size === null ? (
@@ -150,7 +191,10 @@ export function DownloadList({ downloads, selectedId, onSelect }: Props) {
                       </span>
                     </div>
                   ) : (
-                    <span className={cn("text-xs", d.status === "failed" ? "text-destructive" : "text-muted-foreground")}>
+                    <span
+                      title={d.error ?? undefined}
+                      className={cn("text-xs", d.status === "failed" ? "text-destructive" : "text-muted-foreground")}
+                    >
                       {statusLabel[d.status]}
                     </span>
                   )}
@@ -163,9 +207,35 @@ export function DownloadList({ downloads, selectedId, onSelect }: Props) {
           })}
         </tbody>
       </table>
-      {rows.length === 0 && (
+      {loaded && rows.length === 0 && (
         <p className="p-8 text-center text-sm text-muted-foreground">No downloads here yet.</p>
       )}
     </div>
+    </ContextMenuTrigger>
+    {selected && (
+      <ContextMenuContent className="w-52">
+        <ContextMenuItem disabled={selected.status !== "finished"} onSelect={() => actions.open(selected)}>
+          <ExternalLink aria-hidden /> Open
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => actions.openFolder(selected)}>
+          <FolderOpen aria-hidden /> Open folder
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem disabled={!canResume(selected)} onSelect={() => actions.resume(selected)}>
+          <Play aria-hidden /> Resume
+        </ContextMenuItem>
+        <ContextMenuItem disabled={!canPause(selected)} onSelect={() => actions.pause(selected)}>
+          <Pause aria-hidden /> {cannotPause(selected) ? "Pause (not possible)" : "Pause"}
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => actions.copyLink(selected)}>
+          <Copy aria-hidden /> Copy link
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem variant="destructive" onSelect={() => actions.remove(selected)}>
+          <Trash2 aria-hidden /> Delete
+        </ContextMenuItem>
+      </ContextMenuContent>
+    )}
+    </ContextMenu>
   );
 }
