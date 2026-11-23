@@ -4,6 +4,16 @@ All notable changes to KS Download Manager. The layout follows [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-11-23
+
+The same app as 0.1.2; this release completes its files.
+
+### Changed
+
+- The release includes the exact ffmpeg source the bundled ffmpeg and ffprobe are built from (`ffmpeg-9.1.tar.xz`, LGPL-2.1-or-later), next to the two macOS disk images, the Windows installer (beta, untested by hand) and the Chrome extension. 0.1.2 was published without it.
+- `licenses/ffmpeg-SOURCE.txt` in the app says the source tarball is attached to each release.
+- Releases are published by the release workflow directly from the version tag, once every build and check has passed.
+
 ## [0.1.2] - 2026-11-22
 
 v0.1.0 and v0.1.1 were tagged but never released; both tags are kept as they are, and this is the same app, released as 0.1.2. v0.1.0 pointed to a commit whose changelog section was not yet dated, so the release workflow stopped before building anything. For v0.1.1 the workflow failed to package the Chrome extension (an environment variable named `ZIP`, which `zip` reads as its own options), so no draft was made.
