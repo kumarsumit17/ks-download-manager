@@ -409,7 +409,7 @@ Every interface string of KS Download Manager in English and Hindi, for the owne
 | Key | English | Hindi |
 |---|---|---|
 | `extName` | KS Download Manager | KS Download Manager |
-| `extDescription` | Sends videos, images and downloads to the KS Download Manager desktop app. Only links are sent. | वीडियो, इमेज और डाउनलोड KS Download Manager डेस्कटॉप ऐप को भेजता है। सिर्फ़ लिंक भेजे जाते हैं। |
+| `extDescription` | Sends videos, images and downloads to the KS Download Manager desktop app. Browser downloads go to the app with the cookies they need. | वीडियो, इमेज और डाउनलोड KS Download Manager डेस्कटॉप ऐप को भेजता है। ब्राउज़र के डाउनलोड ज़रूरी कुकी के साथ ऐप में जाते हैं। |
 | `download` | Download | डाउनलोड करें |
 | `sending` | Sending… | भेज रहे हैं… |
 | `sent` | Sent to the app | ऐप को भेज दिया |
@@ -423,7 +423,10 @@ Every interface string of KS Download Manager in English and Hindi, for the owne
 | `siteNotAvailable` | The image button cannot be used on this page. | इस पेज पर इमेज बटन का इस्तेमाल नहीं किया जा सकता। |
 | `siteToggle` | Image button on $SITE$ | $SITE$ पर इमेज बटन |
 | `downloadsToggle` | Send browser downloads to the app | ब्राउज़र के डाउनलोड ऐप को भेजें |
-| `downloadsNote` | Off by default. Chrome's download safety check does not apply to files sent to the app, so downloads Chrome warns about stay in Chrome. Downloads that need a sign-in stay in Chrome too, because only the link is sent. Single-use links may fail. | डिफ़ॉल्ट रूप से बंद। ऐप को भेजी गई फ़ाइलों पर Chrome की डाउनलोड सुरक्षा जांच लागू नहीं होती, इसलिए जिन डाउनलोड पर Chrome चेतावनी देता है, वे Chrome में ही रहते हैं। जिन डाउनलोड के लिए लॉगिन चाहिए, वे भी Chrome में रहते हैं, क्योंकि सिर्फ़ लिंक भेजा जाता है। एक ही बार चलने वाले लिंक शायद काम न करें। |
+| `downloadsNote` | On by default: downloads you start in Chrome go to the app, which you can pause, resume and track there. With each one go that site's cookies for the file, the page it came from and Chrome's identification, so files that need your sign-in work too; the app uses them only for that download and never saves them. Downloads Chrome warns about stay in Chrome, as do downloads in private windows. | डिफ़ॉल्ट रूप से चालू: Chrome में शुरू किए गए डाउनलोड ऐप में जाते हैं, जहां आप उन्हें रोक, फिर से शुरू और ट्रैक कर सकते हैं। हर डाउनलोड के साथ उस साइट की उस फ़ाइल वाली कुकी, वह पेज जहां से वह आया और Chrome की पहचान भी जाती है, ताकि लॉगिन वाली फ़ाइलें भी डाउनलोड हो सकें; ऐप इन्हें सिर्फ़ उसी डाउनलोड के लिए इस्तेमाल करता है और कभी सेव नहीं करता। जिन डाउनलोड पर Chrome चेतावनी देता है, वे Chrome में ही रहते हैं, और प्राइवेट विंडो के डाउनलोड भी। |
+| `lastSent` | Last download ($HOST$): sent to the app. | पिछला डाउनलोड ($HOST$): ऐप को भेजा गया। |
+| `lastKept` | Last download ($HOST$) stayed in Chrome: $WHY$ | पिछला डाउनलोड ($HOST$) Chrome में रहा: $WHY$ |
+| `err_chrome_warned` | Chrome flagged it, so Chrome keeps it | Chrome ने इसे चिह्नित किया, इसलिए यह Chrome में रहा |
 | `err_app_not_installed` | App not found | ऐप नहीं मिला |
 | `err_app_not_found` | App did not start | ऐप शुरू नहीं हुआ |
 | `err_app_not_running` | App not open | ऐप खुला नहीं है |

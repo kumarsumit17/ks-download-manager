@@ -1,31 +1,35 @@
 ---
 type: Specification
 title: Chrome extension and hand-off
-description: What the Chrome extension does, its permissions, and how it hands URLs to the desktop app over native messaging restricted to our extension ID.
+description: What the Chrome extension does, its permissions, and how it hands links (and, for browser downloads, the cookies they need) to the desktop app over native messaging restricted to our extension ID.
 tags: [extension, chrome, native-messaging, security]
 ---
 
 # Chrome extension and hand-off
 
-The extension only hands over URLs. All downloading stays in the Rust app. It never sends cookies, page content or the address of the page the user is on, so only publicly reachable media works. It is loaded unpacked (not published on the Chrome Web Store); install steps are in the README.
+The extension hands links to the app; all downloading stays in the Rust app. For the video and image buttons only the link is sent, so only publicly reachable media works there. For a download Chrome starts (Browser downloads, below) the site's cookies for that file, the page it came from and Chrome's identification go with the link, like IDM's extension, so files that need the browser's sign-in work too. Page content is never sent. It is loaded unpacked (not published on the Chrome Web Store); install steps are in the README.
 
 ## What it does
 - **YouTube:** on watch pages and Shorts, one floating **Download** button (bottom right). One click sends `https://www.youtube.com/watch?v=<id>` (playlist, time and tracking parameters dropped); the app downloads the best available quality ([video-playlists](video-playlists.md)). youtu.be links open a watch page, where the button appears. Right-clicking a link to a YouTube video or a youtu.be link on any page offers **Download video with KS Download Manager**. The button floats instead of sitting in YouTube's toolbar, because YouTube's page structure changes often; it depends only on the address.
 - **X (x.com, twitter.com):** hovering an image shown at least 100×100 px shows **Download**, which sends the address of the largest version (`name=orig` on `pbs.twimg.com`; see `extension/src/site-rules.ts`).
-- **Other sites:** the same hover button, **off by default**. The user turns it on for one site in the toolbar popup, which asks Chrome for that one site's permission (optional host permission) and registers the hover script for it alone. The largest candidate is chosen from standard HTML only: a link around the image pointing straight at an image file, else the widest `srcset` candidate (or highest density), else the image's own address. `data:` and `blob:` images are skipped. The image under the pointer is looked up (`elementsFromPoint`, because sites lay transparent elements over images) at most once per animation frame.
-- **Browser downloads (optional, off by default):** the popup can send ordinary Chrome downloads to the app. Turning it on asks for the optional `downloads` permission (Chrome shows "Manage your downloads"). Chrome's download is paused while the app checks the link; if the app takes it, Chrome's copy is cancelled and removed from Chrome's list, otherwise Chrome resumes it. A download Chrome marks as dangerous (`danger` other than `safe` or `accepted`), or is still scanning, is never taken over; the verdict is read again after pausing. Downloads that need a sign-in, a form post or a `blob:` address stay in Chrome. The option's description tells the user that Chrome's download safety check does not apply to files sent to the app, that downloads needing a sign-in stay in Chrome, and that single-use links may fail (the app fetches the link a second time).
+- **Other sites:** the same hover button, **off by default**. The user turns it on for one site in the toolbar popup, which registers the hover script for that site alone (the switch shows whether that site's script is registered). The largest candidate is chosen from standard HTML only: a link around the image pointing straight at an image file, else the widest `srcset` candidate (or highest density), else the image's own address. `data:` and `blob:` images are skipped. The image under the pointer is looked up (`elementsFromPoint`, because sites lay transparent elements over images) at most once per animation frame.
+- **Browser downloads (on by default, like IDM):** every download Chrome starts goes to the app, where it is tracked, paused and resumed like any other; the popup's **Send browser downloads to the app** switch turns this off (`handOffDownloads: false`, saved by the background worker so it holds even if the popup closes). The `onCreated` listener is registered when the worker starts. Chrome's download is paused while the app checks the link; if the app takes it, Chrome's copy is cancelled and removed from Chrome's list, otherwise Chrome resumes it.
+  - **Sent with it:** the site's cookies for the file's link (`chrome.cookies.getAll({url})`, joined as one `Cookie` value, at most 16 KB), the page the download came from (`referrer`, http(s) only) and Chrome's `navigator.userAgent`, as `headers` on the `add` message (`kind: file` only). Anything that is not printable ASCII is left out. The app sends the cookies only to the link's own host (never to a host a redirect leads to), uses all three only for that download, and keeps them in memory: they are never written to disk, so after an app restart an unfinished download resumes without them.
+  - **Stays in Chrome:** a download Chrome flags (`danger` other than `safe`, `accepted`, `allowlistedByPolicy`, `deepScannedSafe` or none yet; read again after pausing), downloads in private windows, ones another extension started, `blob:` and `data:` files, and any the app refuses (for example a link that answers with a web page). Chrome rates most files only after creating the download, so an unrated download is handed over; the app marks every file it saves as downloaded from the internet, so the system still checks it.
+  - **What happened:** the outcome of the last download (`lastHandOff`: sent, or the reply code) is shown in the popup as "Last download (site): sent to the app" or why it stayed in Chrome.
+  - Earlier versions required a `danger` of `safe` at creation, which Chrome rarely reports yet, and saved the switch only after Chrome's permission prompt, which closes the popup: so nothing was ever handed over. Both are fixed by the rules above.
 
 ## Permissions
 | Permission | Why |
 |---|---|
 | `nativeMessaging` | Talk to the app |
 | `scripting` | Register the hover script for a site the user enabled |
-| `storage` | Remember the browser-downloads switch |
+| `storage` | Remember the browser-downloads switch and the last outcome |
 | `activeTab` | Read the current tab's address in the popup, only when the user opens it |
 | `contextMenus` | The menu item on YouTube links |
-| Host: `https://www.youtube.com/*`, `https://x.com/*`, `https://twitter.com/*` | The built-in buttons |
-| Optional host: `https://*/*`, `http://*/*` | Granted one site at a time, only when the user enables the image button there |
-| Optional: `downloads` | Only when the user turns on the browser-downloads hand-off |
+| `downloads` | Hand Chrome's downloads to the app (on by default) |
+| `cookies` | Read the site's cookies for a download being handed over, for that download only |
+| Host: `https://*/*`, `http://*/*` | Needed to read a site's cookies for its downloads; also covers the built-in buttons and the per-site image button. Chrome shows "Read and change all your data on all websites". |
 
 No `externally_connectable`: web pages cannot message the extension. The background worker accepts messages only from its own scripts (`sender.id`). The page button lives in a closed shadow root and reacts only to trusted clicks (`event.isTrusted`), so a page cannot press it.
 

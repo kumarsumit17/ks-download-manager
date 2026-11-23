@@ -8,6 +8,11 @@ All notable changes to KS Download Manager. The layout follows [Keep a Changelog
 
 - App updates: the app checks GitHub once a day for a newer version (a switch in Settings turns this off) and has a **Check for updates** button. When one is found, it downloads the installer for your system, checks its SHA-256 and opens it: on macOS you drag the new app into Applications, on Windows the installer starts and the app closes.
 - The Chrome extension's popup says when a newer version is out, with a link to the release.
+- Downloads you start in Chrome go to the app, on by default, like IDM: you track, pause and resume them there. With each one go that site's cookies for the file, the page it came from and Chrome's identification, so downloads that need your sign-in work too; the app uses them only for that download, sends the cookies only to that site and never saves them. The popup shows what happened to the last download.
+
+### Fixed
+
+- Sending browser downloads to the app never worked: the extension waited for a safety rating Chrome rarely gives at that point, and the switch was not saved when Chrome's permission prompt closed the popup.
 
 ## [0.1.3] - 2026-11-23
 

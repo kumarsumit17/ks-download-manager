@@ -2,7 +2,7 @@
 // accepts requests only from this extension's own content scripts and popup; web pages
 // cannot message it (the manifest has no `externally_connectable`).
 
-import { HOST, type Reply, type ToBackground, isHttpUrl, isSafe } from "./messages";
+import { HOST, type Reply, type ToBackground, browserHeaders, isDangerous, isHttpUrl } from "./messages";
 import { YOUTUBE_LINK_PATTERNS, youtubeVideoUrl } from "./site-rules";
 
 async function toApp(message: object): Promise<Reply> {
@@ -98,49 +98,61 @@ chrome.contextMenus.onClicked.addListener((info) => {
   if (url) void send("video", url);
 });
 
-// ---- Optional: hand ordinary browser downloads to the app ------------------------------
-// Off by default. Needs the optional "downloads" permission, asked for when the user turns
-// it on. Chrome's download is paused while the app checks the link; if the app takes it,
-// Chrome's copy is cancelled and removed from Chrome's list, otherwise Chrome carries on.
-// The app gets only the URL (no cookies), so downloads that need a sign-in stay in Chrome.
-// A download Chrome flags as dangerous, or is still checking, is never taken over: Chrome's
-// safety check does not apply to a file the app downloads.
+// ---- Hand browser downloads to the app -----------------------------------------------
+// On by default; the popup's switch turns it off (`handOffDownloads: false`). Every download
+// Chrome starts is paused while the app checks the link; if the app takes it, Chrome's copy
+// is cancelled and removed from Chrome's list, otherwise Chrome carries on. With the link go
+// the site's cookies for it, the page it came from and Chrome's identification, so a site
+// that serves the file only to this browser session serves it to the app too; the app uses
+// them for that download only and never saves them. A download Chrome flags as dangerous
+// stays in Chrome: Chrome's safety check does not apply to a file the app downloads.
+// The last outcome is kept (`lastHandOff`) so the popup can say what happened.
 
 const handled = new Set<number>();
-let watching = false;
 
-function watchDownloads() {
-  if (watching || !chrome.downloads?.onCreated) return;
-  watching = true;
-  chrome.downloads.onCreated.addListener((item) => void offer(item));
+async function handOffOn(): Promise<boolean> {
+  const { handOffDownloads } = await chrome.storage.local.get("handOffDownloads");
+  return handOffDownloads !== false;
+}
+
+function note(code: string, url: string) {
+  let host = "";
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    host = "";
+  }
+  void chrome.storage.local.set({ lastHandOff: { at: Date.now(), code, host } });
 }
 
 async function offer(item: chrome.downloads.DownloadItem) {
-  if (handled.has(item.id) || item.state !== "in_progress" || item.byExtensionId || item.incognito) return;
-  if (!isSafe(item.danger)) return;
-  const { handOffDownloads } = await chrome.storage.local.get("handOffDownloads");
-  if (handOffDownloads !== true) return;
   const url = item.finalUrl || item.url;
-  if (!isHttpUrl(url)) return;
+  // Chrome's own pages, files made by a page (blob:, data:) and private windows are left alone.
+  if (handled.has(item.id) || item.state !== "in_progress" || item.incognito || !isHttpUrl(url)) return;
+  // A download another extension started is that extension's.
+  if (item.byExtensionId) return;
+  if (!(await handOffOn())) return;
+  if (isDangerous(item.danger)) return note("chrome_warned", url);
   handled.add(item.id);
   await chrome.downloads.pause(item.id).catch(() => {});
   // Chrome may have flagged it in the meantime: look again before handing it over.
   const [now] = await chrome.downloads.search({ id: item.id }).catch(() => []);
-  if (!now || !isSafe(now.danger)) {
-    await chrome.downloads.resume(item.id).catch(() => {});
-    return;
+  if (!now || now.state !== "in_progress" || isDangerous(now.danger)) {
+    if (now?.state === "in_progress") await chrome.downloads.resume(item.id).catch(() => {});
+    return note("chrome_warned", url);
   }
-  const r = await send("file", url);
+  const cookies = await chrome.cookies.getAll({ url }).catch(() => []);
+  const headers = browserHeaders(cookies, now.referrer, navigator.userAgent);
+  const r = await toApp({ type: "add", v: 1, kind: "file", url, headers });
   if (r.ok) {
     await chrome.downloads.cancel(item.id).catch(() => {});
     await chrome.downloads.erase({ id: item.id }).catch(() => {});
+    note("sent", url);
   } else {
     await chrome.downloads.resume(item.id).catch(() => {});
+    note(r.code ?? "unknown", url);
   }
 }
 
-watchDownloads();
-// The permission may be granted while the worker runs.
-chrome.permissions.onAdded.addListener((p) => {
-  if (p.permissions?.includes("downloads")) watchDownloads();
-});
+// Registered when the worker starts, so Chrome wakes the worker for every new download.
+chrome.downloads.onCreated.addListener((item) => void offer(item));

@@ -55,8 +55,34 @@ export function replyText(r: Reply): string {
   return chrome.i18n.getMessage(key) || chrome.i18n.getMessage("err_unknown");
 }
 
-/** Chrome's verdict allows a hand-off: "safe", or "accepted" (the user chose to keep it).
- * Every warning, and every scan still running, keeps the download in Chrome. */
-export function isSafe(danger: unknown): boolean {
-  return danger === "safe" || danger === "accepted";
+/** Chrome flags this download: a warning, or a scan Chrome is still running or asking for.
+ * Those stay in Chrome, because Chrome's safety check does not apply to a file the app
+ * downloads. "safe", "accepted" (the user kept it), and verdicts that clear a file are not
+ * flags; neither is a missing value. */
+export function isDangerous(danger: unknown): boolean {
+  if (typeof danger !== "string" || danger === "") return false;
+  return !["safe", "accepted", "allowlistedByPolicy", "deepScannedSafe"].includes(danger);
+}
+
+/** What the browser would send with this download: sent to the app with the link. */
+export interface BrowserHeaders {
+  cookie?: string;
+  referer?: string;
+  userAgent?: string;
+}
+
+/** Longest cookie text the app accepts (src-tauri/src/handoff.rs, MAX_COOKIE). */
+export const MAX_COOKIE = 16 * 1024;
+
+const printable = (s: string) => /^[\x20-\x7e]*$/.test(s);
+
+/** Builds the headers from the site's cookies, the referring page and the browser's
+ * identification; anything that could not be sent as a header value is left out. */
+export function browserHeaders(cookies: { name: string; value: string }[], referrer: unknown, userAgent: unknown): BrowserHeaders {
+  const h: BrowserHeaders = {};
+  const cookie = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
+  if (cookie && cookie.length <= MAX_COOKIE && printable(cookie)) h.cookie = cookie;
+  if (isHttpUrl(referrer) && printable(referrer)) h.referer = referrer;
+  if (typeof userAgent === "string" && userAgent.length <= 512 && printable(userAgent)) h.userAgent = userAgent;
+  return h;
 }

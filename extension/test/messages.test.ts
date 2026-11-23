@@ -1,13 +1,24 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isNewer, isSafe } from "../src/messages.ts";
+import { browserHeaders, isDangerous, isNewer, MAX_COOKIE } from "../src/messages.ts";
 
-test("only downloads Chrome found safe, or the user accepted, are handed over", () => {
-  assert.equal(isSafe("safe"), true);
-  assert.equal(isSafe("accepted"), true);
-  for (const d of ["file", "url", "content", "uncommon", "host", "unwanted", "asyncScanning", "promptForScanning", "", undefined, null]) {
-    assert.equal(isSafe(d), false, String(d));
+test("downloads Chrome flags stay in Chrome; safe, kept and not-yet-rated ones are handed over", () => {
+  for (const d of ["safe", "accepted", "allowlistedByPolicy", "deepScannedSafe", "", undefined, null]) {
+    assert.equal(isDangerous(d), false, String(d));
   }
+  for (const d of ["file", "url", "content", "uncommon", "host", "unwanted", "asyncScanning", "promptForScanning", "sensitiveContentBlock"]) {
+    assert.equal(isDangerous(d), true, d);
+  }
+});
+
+test("the browser's cookies, referring page and identification go with a handed-over download", () => {
+  const h = browserHeaders([{ name: "s", value: "1" }, { name: "t", value: "two" }], "https://example.com/page", "Mozilla/5.0 Test");
+  assert.deepEqual(h, { cookie: "s=1; t=two", referer: "https://example.com/page", userAgent: "Mozilla/5.0 Test" });
+  assert.deepEqual(browserHeaders([], undefined, undefined), {}, "nothing known, nothing sent");
+  assert.equal(browserHeaders([], "javascript:alert(1)", "x").referer, undefined, "only an http(s) page");
+  assert.equal(browserHeaders([{ name: "a", value: "x".repeat(MAX_COOKIE) }], "", "x").cookie, undefined, "too long for the app");
+  assert.equal(browserHeaders([{ name: "a", value: "é" }], "", "x").cookie, undefined, "not sendable as a header");
+  assert.equal(browserHeaders([], "", "x".repeat(600)).userAgent, undefined);
 });
 
 test("the popup offers an update only for a newer, plain version, and never in a copy built from source", () => {

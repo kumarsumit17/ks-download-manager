@@ -1,10 +1,10 @@
-// The toolbar popup: whether the app answers, the image button for the current site
-// (opt-in, through an optional host permission for that one site), and the optional
-// hand-off of browser downloads (through the optional "downloads" permission).
+// The toolbar popup: whether the app answers, a newer version if the app found one, the
+// image button for the current site (opt-in per site), the hand-off of browser downloads
+// (on unless switched off), and what happened to the last browser download.
 import { isNewer, RELEASES, type Reply } from "./messages";
 import { X_HOSTS } from "./site-rules";
 
-const t = (key: string, sub?: string) => chrome.i18n.getMessage(key, sub);
+const t = (key: string, sub?: string | string[]) => chrome.i18n.getMessage(key, sub);
 
 for (const el of document.querySelectorAll<HTMLElement>("[data-i18n]")) el.textContent = t(el.dataset.i18n ?? "");
 
@@ -42,47 +42,39 @@ async function siteSection() {
     box.textContent = t("siteBuiltIn");
     return;
   }
-  const pattern = `${origin.origin}/*`;
   const label = document.createElement("label");
   label.className = "row";
   const box2 = document.createElement("input");
   box2.type = "checkbox";
-  box2.checked = await chrome.permissions.contains({ origins: [pattern] });
+  const registered = await chrome.scripting.getRegisteredContentScripts({ ids: [`hover:${origin.origin}`] }).catch(() => []);
+  box2.checked = registered.length > 0;
   const span = document.createElement("span");
   span.textContent = t("siteToggle", origin.hostname);
   label.append(box2, span);
   box.append(label);
   box2.addEventListener("change", async () => {
-    if (box2.checked) {
-      // Must run straight from the click: Chrome asks the user for this one site.
-      const granted = await chrome.permissions.request({ origins: [pattern] });
-      if (!granted) {
-        box2.checked = false;
-        return;
-      }
-      await chrome.runtime.sendMessage({ type: "setSite", origin: origin.origin, on: true, tabId: tab.id });
-    } else {
-      await chrome.runtime.sendMessage({ type: "setSite", origin: origin.origin, on: false });
-      await chrome.permissions.remove({ origins: [pattern] });
-    }
+    const r = await chrome.runtime.sendMessage<Reply>({ type: "setSite", origin: origin.origin, on: box2.checked, tabId: tab.id });
+    if (!r.ok) box2.checked = !box2.checked;
   });
 }
 void siteSection();
 
 async function downloadsSection() {
   const box = document.getElementById("downloads") as HTMLInputElement;
-  const { handOffDownloads } = await chrome.storage.local.get("handOffDownloads");
-  box.checked = handOffDownloads === true && (await chrome.permissions.contains({ permissions: ["downloads"] }));
-  box.addEventListener("change", async () => {
-    if (box.checked) {
-      const granted = await chrome.permissions.request({ permissions: ["downloads"] });
-      if (!granted) {
-        box.checked = false;
-        return;
-      }
-    }
-    await chrome.runtime.sendMessage({ type: "setDownloads", on: box.checked });
-    if (!box.checked) await chrome.permissions.remove({ permissions: ["downloads"] });
-  });
+  const { handOffDownloads, lastHandOff } = await chrome.storage.local.get(["handOffDownloads", "lastHandOff"]);
+  box.checked = handOffDownloads !== false;
+  // Saved by the background worker, so it is kept even if the popup closes at once.
+  box.addEventListener("change", () => void chrome.runtime.sendMessage({ type: "setDownloads", on: box.checked }));
+  const last = document.getElementById("last") as HTMLParagraphElement;
+  last.textContent = lastText(lastHandOff);
 }
 void downloadsSection();
+
+/** "Last download (site): sent to the app", or why it stayed in Chrome. */
+function lastText(v: unknown): string {
+  const l = v as { code?: unknown; host?: unknown } | undefined;
+  if (!l || typeof l.code !== "string") return "";
+  const host = typeof l.host === "string" ? l.host : "";
+  if (l.code === "sent") return t("lastSent", host);
+  return t("lastKept", [host, t(`err_${l.code}`) || t("err_unknown")]);
+}

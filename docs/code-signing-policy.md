@@ -22,7 +22,7 @@ Every release is approved by hand for signing after its draft has passed the che
 
 ## Privacy
 
-KS Download Manager does not collect or send any data about its users. It connects to the network only for the downloads the user starts (and, when the user chooses **Update video component**, to fetch yt-dlp's latest release from GitHub). It has no analytics, crash reporting or ads. The Chrome extension sends the link the user chose to the desktop app on the same computer, never cookies or page content.
+KS Download Manager does not collect or send any data about its users. It connects to the network only for the downloads the user starts, to fetch yt-dlp's latest release from GitHub when the user chooses **Update video component**, and once a day to ask GitHub whether a newer version of the app exists (a switch in Settings turns this off). It has no analytics, crash reporting or ads. The Chrome extension sends links to the desktop app on the same computer; for a download Chrome starts, it also sends that site's cookies for the file, the referring page and Chrome's identification, which the app uses for that download only and never saves. Page content is never sent.
 
 ## Reporting a problem
 

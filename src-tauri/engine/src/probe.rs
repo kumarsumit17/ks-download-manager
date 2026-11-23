@@ -7,7 +7,7 @@ use ks_utility::content_disposition::{content_disposition_filename, percent_deco
 use ks_utility::file_name::sanitize_file_name;
 
 use crate::error::EngineError;
-use crate::http::{ContentRange, client, get, parse_content_range, parse_url};
+use crate::http::{ContentRange, RequestHeaders, client, get, get_with, parse_content_range, parse_url};
 
 /// What the server says about a file before downloading it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -64,9 +64,14 @@ impl Validator {
 /// Learns size, range support, validator and file name with one ranged GET (`bytes=0-0`).
 /// HEAD is not used: many servers reject it or answer it differently from GET.
 pub async fn probe(url: &str) -> Result<ProbeInfo, EngineError> {
+    probe_with(url, &RequestHeaders::default()).await
+}
+
+/// [`probe`] with the browser's headers for a download handed over from it.
+pub async fn probe_with(url: &str, headers: &RequestHeaders) -> Result<ProbeInfo, EngineError> {
     let url = parse_url(url)?;
     let client = client()?;
-    let resp = get(&client, &url).header(RANGE, "bytes=0-0").send().await?;
+    let resp = get_with(&client, &url, headers).header(RANGE, "bytes=0-0").send().await?;
     let status = resp.status();
     let headers = resp.headers().clone();
     let final_url = resp.url().clone();

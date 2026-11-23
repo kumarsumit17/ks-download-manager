@@ -33,7 +33,7 @@ pub const HOST_NAME: &str = "com.ks.downloadmanager";
 /// The app's bundle identifier, for starting it through LaunchServices.
 const BUNDLE_ID: &str = "com.ks.downloadmanager";
 /// Longest message accepted in either direction.
-pub const MAX_MESSAGE: usize = 8 * 1024;
+pub const MAX_MESSAGE: usize = 32 * 1024;
 /// How long the host waits for the app to start and open its socket.
 const START_WAIT: Duration = Duration::from_secs(10);
 /// `sun_path` holds 104 bytes on macOS, including the final NUL.
@@ -59,9 +59,49 @@ pub enum Request {
     /// Is the app reachable?
     Ping { v: u32 },
     /// Add a download and start it.
-    Add { v: u32, kind: AddKind, url: String },
+    Add {
+        v: u32,
+        kind: AddKind,
+        url: String,
+        /// A browser download only (`kind: file`): what the browser would send with it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        headers: Option<BrowserHeaders>,
+    },
     /// A second copy of the app was started: bring the window forward.
     Show { v: u32 },
+}
+
+/// For a download the browser started (specs/extension.md, "Browser downloads"): the
+/// site's cookies for the file's link, the page that linked to it, and the browser's
+/// identification. Used for that one download, kept in memory, never written to disk.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BrowserHeaders {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cookie: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub referer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_agent: Option<String>,
+}
+
+/// Longest values accepted: a site's cookies, a referring page, a browser identification.
+const MAX_COOKIE: usize = 16 * 1024;
+const MAX_USER_AGENT: usize = 512;
+
+fn http_url_ok(url: &str) -> bool {
+    if url.len() > 2048 || url.chars().any(char::is_control) {
+        return false;
+    }
+    let lower = url.to_ascii_lowercase();
+    let Some(rest) = lower.strip_prefix("https://").or_else(|| lower.strip_prefix("http://")) else { return false };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    !authority.is_empty() && !authority.contains('@')
+}
+
+/// Printable ASCII only: anything else could not be sent as a header value anyway.
+fn header_text_ok(s: &str, max: usize) -> bool {
+    s.len() <= max && s.bytes().all(|b| (0x20..0x7f).contains(&b))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -109,16 +149,18 @@ pub fn validate(r: &Request) -> Result<(), Reply> {
     if v != 1 {
         return Err(Reply::err("bad_request"));
     }
-    if let Request::Add { url, .. } = r {
-        if url.len() > 2048 {
+    if let Request::Add { url, kind, headers, .. } = r {
+        if !http_url_ok(url) {
             return Err(Reply::err("bad_url"));
         }
-        let lower = url.to_ascii_lowercase();
-        let rest = lower.strip_prefix("https://").or_else(|| lower.strip_prefix("http://"));
-        let Some(rest) = rest else { return Err(Reply::err("bad_url")) };
-        let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
-        if authority.is_empty() || authority.contains('@') || url.chars().any(char::is_control) {
-            return Err(Reply::err("bad_url"));
+        if let Some(h) = headers {
+            let ok = *kind == AddKind::File
+                && h.cookie.as_deref().is_none_or(|c| header_text_ok(c, MAX_COOKIE))
+                && h.referer.as_deref().is_none_or(http_url_ok)
+                && h.user_agent.as_deref().is_none_or(|u| header_text_ok(u, MAX_USER_AGENT));
+            if !ok {
+                return Err(Reply::err("bad_request"));
+            }
         }
     }
     Ok(())
@@ -821,13 +863,31 @@ mod tests {
         ] {
             assert!(serde_json::from_str::<Request>(bad).is_err(), "{bad}");
         }
-        let add = |url: &str| Request::Add { v: 1, kind: AddKind::Image, url: url.into() };
+        let add = |url: &str| Request::Add { v: 1, kind: AddKind::Image, url: url.into(), headers: None };
         for url in ["file:///etc/passwd", "javascript:alert(1)", "https://user:pw@example.com/a.jpg", "https://", "https://a/\nb"] {
             assert!(validate(&add(url)).is_err(), "{url}");
         }
         assert!(validate(&add(&format!("https://a/{}", "x".repeat(3000)))).is_err());
         assert!(validate(&Request::Ping { v: 2 }).is_err());
         assert!(validate(&add("http://pbs.twimg.com/media/A?format=jpg&name=orig")).is_ok());
+    }
+
+    #[test]
+    fn browser_headers_come_only_with_a_browser_download_and_are_checked() {
+        let ok: Request = serde_json::from_str(
+            r#"{"type":"add","v":1,"kind":"file","url":"https://files.example.com/a.zip","headers":{"cookie":"s=1; t=2","referer":"https://example.com/page","userAgent":"Mozilla/5.0"}}"#,
+        )
+        .unwrap();
+        assert!(validate(&ok).is_ok());
+        let with = |kind: AddKind, h: BrowserHeaders| Request::Add { v: 1, kind, url: "https://a/b.zip".into(), headers: Some(h) };
+        let h = BrowserHeaders { cookie: Some("s=1".into()), ..BrowserHeaders::default() };
+        assert!(validate(&with(AddKind::Image, h.clone())).is_err(), "only for browser downloads");
+        assert!(validate(&with(AddKind::File, BrowserHeaders { cookie: Some("a=1\r\nX: y".into()), ..BrowserHeaders::default() })).is_err(), "no line breaks");
+        assert!(validate(&with(AddKind::File, BrowserHeaders { referer: Some("javascript:x".into()), ..BrowserHeaders::default() })).is_err());
+        assert!(validate(&with(AddKind::File, BrowserHeaders { user_agent: Some("x".repeat(600)), ..BrowserHeaders::default() })).is_err());
+        assert!(validate(&with(AddKind::File, BrowserHeaders { cookie: Some("x".repeat(MAX_COOKIE + 1)), ..BrowserHeaders::default() })).is_err());
+        let unknown = r#"{"type":"add","v":1,"kind":"file","url":"https://a/b","headers":{"authorization":"x"}}"#;
+        assert!(serde_json::from_str::<Request>(unknown).is_err(), "only the three known headers");
     }
 
     #[test]

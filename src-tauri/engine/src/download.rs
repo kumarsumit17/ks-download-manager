@@ -12,9 +12,9 @@ use tokio::task::JoinSet;
 
 use crate::control::{CancelToken, ConnectionRange, Progress, RangeSource};
 use crate::error::EngineError;
-use crate::http::{ContentRange, client, get, parse_content_range, parse_url};
+use crate::http::{ContentRange, RequestHeaders, client, get_with, parse_content_range, parse_url};
 use crate::limits::{Adaptive, ConnectionBudget, MIN_PER_CONNECTION, Permit, SpeedLimit};
-use crate::probe::{self, ProbeInfo, Validator, probe};
+use crate::probe::{self, ProbeInfo, Validator};
 use crate::rangemap::{self, RangeMap};
 use crate::ranges::{Range, Table, gaps};
 use crate::retry::{self, RetryPolicy, retryable};
@@ -52,6 +52,9 @@ pub struct DownloadOptions {
     /// and its map stay, so it can be resumed. It cancels through `cancel`, so that token
     /// is cancelled afterwards.
     pub stall_timeout: Duration,
+    /// A download handed over from a browser: its cookies, referring page and
+    /// identification, sent with every request (cookies only to their own host).
+    pub headers: RequestHeaders,
 }
 
 impl Default for DownloadOptions {
@@ -66,6 +69,7 @@ impl Default for DownloadOptions {
             budget: None,
             speed_limit: None,
             stall_timeout: Duration::from_secs(120),
+            headers: RequestHeaders::default(),
         }
     }
 }
@@ -220,7 +224,7 @@ async fn attempts(url: &str, destination: &Path, options: &DownloadOptions) -> R
         let info = tokio::select! {
             biased;
             _ = options.cancel.cancelled() => return Err(EngineError::Cancelled),
-            r = probe(url) => r?,
+            r = probe::probe_with(url, &options.headers) => r?,
         };
         let result = match info.size {
             Some(size) if info.ranges && size > 0 => segmented(url, info, size, destination, options, may_resume).await,
@@ -300,6 +304,7 @@ async fn segmented(
         progress: options.progress.clone(),
         source: source.to_owned(),
         url,
+        headers: options.headers.clone(),
         total: size,
         if_range: Mutex::new(validator.as_ref().and_then(Validator::if_range).map(str::to_owned)),
         validator,
@@ -389,6 +394,7 @@ struct Ctx {
     progress: Progress,
     source: String,
     url: Url,
+    headers: RequestHeaders,
     total: u64,
     validator: Option<Validator>,
     /// Sent with every range request while the server honours it. Some servers ignore
@@ -796,7 +802,7 @@ async fn fetch(
     counter: &AtomicU64,
 ) -> Result<(), Failure> {
     let (first, last) = (range.start, range.end - 1);
-    let mut request = get(client, &ctx.url).header(RANGE, format!("bytes={first}-{last}"));
+    let mut request = get_with(client, &ctx.url, &ctx.headers).header(RANGE, format!("bytes={first}-{last}"));
     let sent = ctx.if_range();
     if let Some(v) = &sent {
         // If the file changed, the server sends 200 and we restart rather than mix versions.
@@ -879,7 +885,7 @@ async fn single(info: ProbeInfo, destination: &Path, options: &DownloadOptions) 
         let mut failures = 0;
         loop {
             counter.store(0, Ordering::Relaxed);
-            let wait = match single_attempt(&client, &url, info.size, destination, counter, options.speed_limit.as_ref()).await {
+            let wait = match single_attempt(&client, &url, &options.headers, info.size, destination, counter, options.speed_limit.as_ref()).await {
                 Ok(n) => return Ok(n),
                 Err(Failure::Fatal(e)) => return Err(e),
                 Err(Failure::Retry { error, after }) => {
@@ -922,6 +928,7 @@ async fn single(info: ProbeInfo, destination: &Path, options: &DownloadOptions) 
 async fn single_attempt(
     client: &Client,
     url: &Url,
+    headers: &RequestHeaders,
     size: Option<u64>,
     destination: &Path,
     counter: &AtomicU64,
@@ -934,7 +941,7 @@ async fn single_attempt(
     if size == Some(0) {
         return Ok(0); // nothing to fetch
     }
-    let response = get(client, url).send().await.map_err(EngineError::from)?;
+    let response = get_with(client, url, headers).send().await.map_err(EngineError::from)?;
     let status = response.status();
     // A plain GET must get the whole file: 206 here would be a partial body at offset 0.
     if status == StatusCode::PARTIAL_CONTENT {

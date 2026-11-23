@@ -81,6 +81,14 @@ declare namespace chrome {
     const onClicked: { addListener(cb: (info: OnClickData) => void): void };
   }
 
+  namespace cookies {
+    interface Cookie {
+      name: string;
+      value: string;
+    }
+    function getAll(details: { url: string }): Promise<Cookie[]>;
+  }
+
   namespace downloads {
     interface DownloadItem {
       id: number;
@@ -94,6 +102,9 @@ declare namespace chrome {
        * scan still running ("file", "url", "content", "uncommon", "host", "unwanted",
        * "asyncScanning", ...). */
       danger: string;
+      /** The page the download was started from, when Chrome knows it. */
+      referrer?: string;
+      filename?: string;
     }
     function search(q: { id: number }): Promise<DownloadItem[]>;
     function pause(id: number): Promise<void>;

@@ -213,6 +213,10 @@ pub struct Manager {
     store_file: PathBuf,
     events: Arc<dyn Events>,
     probes: Mutex<HashMap<String, (Instant, Lookup)>>,
+    /// Downloads handed over from the browser: its cookies, referring page and
+    /// identification, by download ID. In memory only, never saved: after a restart such a
+    /// download resumes without them (specs/extension.md, "Browser downloads").
+    browser_headers: Mutex<HashMap<u64, engine::RequestHeaders>>,
     video: Mutex<Option<Arc<Tools>>>,
     settings_file: PathBuf,
     settings: Mutex<Settings>,
@@ -353,6 +357,7 @@ impl Manager {
             store_file,
             events,
             probes: Mutex::new(HashMap::new()),
+            browser_headers: Mutex::new(HashMap::new()),
             video: Mutex::new(None),
             settings_file,
             budget: ConnectionBudget::new(s.total_connections),
@@ -571,7 +576,12 @@ impl Manager {
     /// page and is refused, never saved. Some video sites refuse plain requests (401, 403,
     /// 405, 429); those are tried with yt-dlp too, keeping the engine's error otherwise.
     async fn lookup(&self, url: &str) -> Result<Lookup, (Msg, Option<&'static str>)> {
-        match engine::probe(url).await {
+        self.lookup_with(url, &engine::RequestHeaders::default()).await
+    }
+
+    /// [`Manager::lookup`] with the browser's headers, for a download handed over from it.
+    async fn lookup_with(&self, url: &str, headers: &engine::RequestHeaders) -> Result<Lookup, (Msg, Option<&'static str>)> {
+        match engine::probe_with(url, headers).await {
             Ok(info) if !info.is_web_page() => Ok(Lookup::File(info)),
             Ok(_) => self.lookup_video(url).await,
             Err(e @ EngineError::HttpStatus(401 | 403 | 405 | 429)) => match self.lookup_video(url).await {
@@ -871,10 +881,33 @@ impl Manager {
     /// the extension said it is: an image must be an image file, a browser download must be
     /// a file (not a page), a video must be a video page. Started at once (or waits its
     /// turn), in its category's folder.
-    pub async fn add_from_extension(self: &Arc<Self>, kind: crate::handoff::AddKind, url: &str) -> crate::handoff::Reply {
+    pub async fn add_from_extension(
+        self: &Arc<Self>,
+        kind: crate::handoff::AddKind,
+        url: &str,
+        browser: Option<crate::handoff::BrowserHeaders>,
+    ) -> crate::handoff::Reply {
         use crate::handoff::{AddKind, Reply};
         let url = url.trim();
-        let found = match self.lookup_cached(url).await {
+        let headers = browser.map(|b| engine::RequestHeaders {
+            cookie: b.cookie.filter(|c| !c.is_empty()),
+            cookie_host: url_host(url),
+            referer: b.referer,
+            user_agent: b.user_agent,
+        });
+        // With the browser's headers the answer can differ, so it is looked up again (and
+        // cached, so `add` below uses this answer).
+        let found = match &headers {
+            Some(h) => match self.lookup_with(url, h).await {
+                Ok(f) => {
+                    self.probes().insert(url.to_owned(), (Instant::now(), f.clone()));
+                    Ok(f)
+                }
+                Err(e) => Err(e),
+            },
+            None => self.lookup_cached(url).await,
+        };
+        let found = match found {
             Ok(f) => f,
             Err((_, code)) => return Reply::err(code.unwrap_or("lookup_failed")),
         };
@@ -900,8 +933,18 @@ impl Manager {
         let Some(folder) = self.folder_for(category) else {
             return Reply::err("add_failed");
         };
-        match self.add(url, "", &folder, true).await {
-            Ok(r) => Reply::ok(Some(r.id)),
+        let headers = headers.filter(|h| !h.is_empty() && matches!(found, Lookup::File(_)));
+        match self.add(url, "", &folder, headers.is_none()).await {
+            Ok(r) => {
+                // Added without starting, so the headers are there before the first request.
+                if let Some(h) = headers {
+                    self.browser_headers.lock().unwrap_or_else(|e| e.into_inner()).insert(r.id, h);
+                    if self.resume(r.id).is_err() {
+                        return Reply::err("add_failed");
+                    }
+                }
+                Reply::ok(Some(r.id))
+            }
             Err(_) => Reply::err("add_failed"),
         }
     }
@@ -1052,6 +1095,7 @@ impl Manager {
             adaptive: Some(Adaptive { hosts: self.hosts.clone(), ..Adaptive::default() }),
             budget: Some(self.budget.clone()),
             speed_limit: Some(self.speed.clone()),
+            headers: self.browser_headers.lock().unwrap_or_else(|e| e.into_inner()).get(&record.id).cloned().unwrap_or_default(),
             ..DownloadOptions::default()
         };
         let result = engine::download(&record.url, &part, options).await;
@@ -1308,6 +1352,7 @@ impl Manager {
     /// Removes a download from the list. A running one is stopped. Its partial file and
     /// range map are deleted; a finished file is deleted only when `delete_file` is set.
     pub async fn delete(&self, id: u64, delete_file: bool) -> Result<(), Msg> {
+        self.browser_headers.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
         let record = {
             let mut inner = self.lock();
             let i = inner.records.iter().position(|r| r.id == id).ok_or_else(|| msg!("error.noSuchDownload"))?;
@@ -1753,8 +1798,26 @@ fn is_reservation(path: &Path) -> bool {
     std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.len() == 0)
 }
 
+/// The host of an http(s) link, lower-case and without port, for sending a browser's
+/// cookies only to the host they came from.
+fn url_host(url: &str) -> Option<String> {
+    let rest = url.split_once("://")?.1;
+    let authority = rest.split(['/', '?', '#']).next()?;
+    let host = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+    let host = if host.starts_with('[') { host.split_inclusive(']').next()? } else { host.split(':').next()? };
+    (!host.is_empty()).then(|| host.to_ascii_lowercase())
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn cookie_host_is_the_links_own_host() {
+        assert_eq!(super::url_host("https://Files.Example.com:8443/a?b").as_deref(), Some("files.example.com"));
+        assert_eq!(super::url_host("http://u@h.example/x").as_deref(), Some("h.example"));
+        assert_eq!(super::url_host("https://[::1]:8080/x").as_deref(), Some("[::1]"));
+        assert_eq!(super::url_host("nonsense"), None);
+    }
+
     use super::*;
 
     /// Video titles with what Windows refuses or changes in a file name: each becomes a

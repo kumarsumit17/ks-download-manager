@@ -59,7 +59,7 @@ npm run bundle:mac      # release .app, then sign the bundled programs (ad-hoc u
 
 ## Chrome extension
 
-The extension adds a Download button on YouTube watch pages and Shorts, and on images on X (and on other sites you enable one by one). It only sends links to the desktop app; the app does the downloading. It never sends cookies or page content, so only media anyone can open without signing in works. Details: [specs/extension.md](specs/extension.md).
+The extension adds a Download button on YouTube watch pages and Shorts, and on images on X (and on other sites you enable one by one). Downloads you start in Chrome go to the app too (on by default, like IDM), where you can pause, resume and track them. With such a download go that site's cookies for the file, the page it came from and Chrome's identification, so files that need your sign-in work; the app uses them only for that download and never saves them. The buttons send only the link, and page content is never sent. Details: [specs/extension.md](specs/extension.md).
 
 It is not published on the Chrome Web Store. To install it:
 

@@ -56,6 +56,7 @@ Used by the app for every download (`DownloadOptions::adaptive`); without it a d
 - Never exceed 32 connections per file.
 - Honour `Retry-After`.
 - Back off instead of hammering a server that is refusing connections.
+- A download handed over from Chrome carries the browser's headers (`DownloadOptions.headers`: `Cookie`, `Referer`, `User-Agent`) on the probe and on every request. The cookie goes only to the host it came from (`cookie_host`); a value that is not a valid header value is dropped; reqwest also drops the cookie on a redirect to another host. Other downloads send only our own `User-Agent` ([Chrome extension and hand-off](extension.md), "Browser downloads").
 
 ## Proving the claim
 The claim is only published with numbers behind it.

@@ -312,9 +312,9 @@ impl handoff::Handler for ExtensionRequests {
                     }
                     handoff::Reply::ok(None)
                 }
-                handoff::Request::Add { kind, url, .. } => {
+                handoff::Request::Add { kind, url, headers, .. } => {
                     let m = self.0.state::<Arc<Manager>>().inner().clone();
-                    m.add_from_extension(kind, &url).await
+                    m.add_from_extension(kind, &url, headers).await
                 }
             }
         })

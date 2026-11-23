@@ -5,7 +5,7 @@ Free download manager for images, audio and video, with up to 20× faster downlo
 ## Stack
 - Targets: Windows and macOS desktop. A Chrome extension is a possible add-on. No Android build for now (kept for the future).
 - Rust for the download engine and all file and network work. Tauri for the desktop shell. TypeScript + React for the interface, with Tailwind CSS, shadcn/ui components and Lucide icons.
-- Chrome extension, if built: TypeScript, Manifest V3, in `extension/`. It only hands URLs to the desktop app; downloading stays in Rust.
+- Chrome extension: TypeScript, Manifest V3, in `extension/`. It hands links to the desktop app, and for browser downloads the cookies, referring page and user agent they need (used for that download only, never saved; `specs/extension.md`); downloading stays in Rust.
 - The suite's Kotlin, Gradle and package-root rules do not apply here. Bundle identifier: `com.ks.downloadmanager`.
 - Planned layout: `src-tauri/` (Rust), `src/` (interface), `extension/` (Chrome).
 - Generated 2026-11-21 (Stage 1). Toolchain: Rust 1.100 (rustup, stable), Node 26 / npm 11. Tauri 2.12, React 19.3, TypeScript 6.0, Vite 8.3, Tailwind CSS 4.3, shadcn/ui (CLI 4.23, style radix-nova, Radix base), lucide-react 1.77. Full list with licences: `docs/THIRD_PARTY.md`.
