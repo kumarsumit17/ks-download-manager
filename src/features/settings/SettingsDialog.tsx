@@ -19,7 +19,8 @@ import { setLanguage, t, type TextKey } from "@/lib/i18n";
 import { api, message, type LeftoverItem, type Settings } from "@/features/downloads/api";
 import { formatBytes } from "@/features/downloads/format";
 import type { Category } from "@/features/downloads/types";
-import { checkNow, installNow, useUpdates } from "@/features/update/appUpdate";
+import { isDevVersion } from "ks-utility";
+import { checkNow, installNow, noteText, useUpdates } from "@/features/update/appUpdate";
 
 const categories: { key: Category; label: TextKey }[] = [
   { key: "video", label: "category.video" },
@@ -303,9 +304,9 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
 
               <Separator />
 
-              <Section title={t("appUpdate.section")}>
+              <Section title={t("common.appUpdate.section")}>
                 <p className="text-xs text-muted-foreground">
-                  {appUpdate.current === null ? null : appUpdate.current === "0.0.0" ? t("appUpdate.dev") : t("appUpdate.current", { version: appUpdate.current })}
+                  {appUpdate.current === null ? null : isDevVersion(appUpdate.current) ? t("common.appUpdate.dev") : t("common.appUpdate.current", { version: appUpdate.current })}
                 </p>
                 <label className="flex items-start gap-2 text-sm">
                   <input
@@ -315,8 +316,8 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
                     className="mt-0.5 size-4 accent-primary"
                   />
                   <span>
-                    {t("appUpdate.auto")}
-                    <span className="block text-xs text-muted-foreground">{t("appUpdate.autoHint")}</span>
+                    {t("common.appUpdate.auto")}
+                    <span className="block text-xs text-muted-foreground">{t("common.appUpdate.autoHint")}</span>
                   </span>
                 </label>
                 <div className="flex flex-wrap items-center gap-3">
@@ -328,16 +329,16 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
                     onClick={() => void checkNow()}
                   >
                     {appUpdate.phase === "checking" && <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden />}
-                    {t("appUpdate.checkButton")}
+                    {t("common.appUpdate.checkButton")}
                   </Button>
                   {appUpdate.available && appUpdate.phase !== "opened" && (
                     <Button type="button" size="sm" disabled={appUpdate.phase === "downloading" || appUpdate.phase === "checking"} onClick={() => void installNow()}>
                       {appUpdate.phase === "downloading" && <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden />}
-                      {t("appUpdate.installButton", { size: formatBytes(appUpdate.available.size) })}
+                      {t("common.appUpdate.installButton", { size: formatBytes(appUpdate.available.size ?? null) })}
                     </Button>
                   )}
                   <span aria-live="polite" className="text-xs text-muted-foreground">
-                    {appUpdate.note}
+                    {noteText(appUpdate.note)}
                   </span>
                 </div>
               </Section>

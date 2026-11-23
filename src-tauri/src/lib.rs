@@ -374,20 +374,25 @@ pub fn run() {
             app.manage(manager.clone());
             let updater = Arc::new(appupdate::Updater::new(app.package_info().version.to_string(), &data));
             app.manage(updater.clone());
-            // The daily update check (on unless switched off in Settings), a little after start-up.
+            // The daily update check (on unless switched off in Settings), a little after start-up
+            // and then hourly while the app runs.
             tauri::async_runtime::spawn({
                 let manager = manager.clone();
                 let handle = app.handle().clone();
                 async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-                    if manager.settings().update_check && updater.due() {
-                        match updater.check().await {
-                            Ok(appupdate::Check::Available { update }) => {
-                                let _ = handle.emit("update:available", update);
+                    // Asks again every hour while the app runs; `due` keeps it to once a day.
+                    tokio::time::sleep(ks_utility::app_update::STARTUP_DELAY).await;
+                    loop {
+                        if manager.settings().update_check && updater.due() {
+                            match updater.check().await {
+                                Ok(appupdate::Check::Available { update }) => {
+                                    let _ = handle.emit("update:available", update);
+                                }
+                                Ok(_) => {}
+                                Err(e) => eprintln!("the update check failed: {e}"),
                             }
-                            Ok(_) => {}
-                            Err(e) => eprintln!("the update check failed: {e}"),
                         }
+                        tokio::time::sleep(ks_utility::app_update::RECHECK_EVERY).await;
                     }
                 }
             });

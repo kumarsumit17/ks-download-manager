@@ -15,6 +15,7 @@
 //! `tar` on Windows), so no hashing or zip crate is added.
 
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "windows")]
 use std::process::Stdio;
 
 use engine::{CancelToken, DownloadOptions};
@@ -129,13 +130,10 @@ fn expected_hash(sums: &str, asset: &str) -> Option<String> {
     })
 }
 
+/// SHA-256 of a file, as 64 lowercase hex digits (ks-utility's, standard library only).
 pub(crate) async fn sha256(file: &Path) -> Option<String> {
-    #[cfg(not(target_os = "windows"))]
-    let out = tokio::process::Command::new("/usr/bin/shasum").args(["-a", "256"]).arg(file).stdin(Stdio::null()).output().await.ok()?;
-    #[cfg(target_os = "windows")]
-    let out = crate::command::tokio("certutil").arg("-hashfile").arg(file).arg("SHA256").stdin(Stdio::null()).output().await.ok()?;
-    let text = String::from_utf8_lossy(&out.stdout);
-    text.split_whitespace().find(|w| w.len() == 64 && w.chars().all(|c| c.is_ascii_hexdigit())).map(str::to_ascii_lowercase)
+    let file = file.to_path_buf();
+    tokio::task::spawn_blocking(move || ks_utility::sha256::sha256_file(&file)).await.ok()?.ok()
 }
 
 async fn unzip(zip: &Path, into: &Path) -> Result<(), Msg> {

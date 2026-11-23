@@ -1,5 +1,6 @@
 # 2026-11-23
 
+* **Update**: [UI direction](ui.md), App updates: uses ks-utility `v0.3.0` (shared version, schedule, file and checksum rules, `createUpdateStore`, `common.appUpdate.*` texts); the automatic check also asks hourly while the app runs; SHA-256 is computed in-process instead of with `shasum`/`certutil`.
 * **Update**: [Chrome extension and hand-off](extension.md), Browser downloads: on by default (like IDM) with the `downloads`, `cookies` and all-sites permissions; the site's cookies for the file, the referring page and Chrome's identification go with the link, used by the app for that download only, sent only to the link's host, never saved; a download is handed over unless Chrome flags it; the popup shows the last outcome. Fixes: the old rule waited for a `safe` rating Chrome rarely gives at creation, and the switch was never saved. [Download engine](engine.md): optional request headers for such downloads.
 * **Update**: [UI direction](ui.md), App updates: a daily update check (on by default, can be turned off) and a Check for updates button; the app downloads the new installer, checks its SHA-256 and opens it; the first-run notice names the check. [Chrome extension and hand-off](extension.md): the ping reply carries the newer version, and the popup links to the release.
 

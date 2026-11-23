@@ -97,6 +97,12 @@ Every interface string of KS Download Manager in English and Hindi, for the owne
 | Select all | सभी चुनें | — | approved |
 | Hide | छिपाएं | छिपाएँ | approved |
 | Show | दिखाएं | दिखाएँ | approved |
+| App | ऐप | एप | owner review |
+| Install | इंस्टॉल करें | स्थापित | owner review |
+| Installer | इंस्टॉलर | — | owner review |
+| Check (for updates) | जांच करें | जाँच | owner review |
+| Disk image | डिस्क इमेज | — | owner review |
+| Unknown apps (Android) | अनजान ऐप | अज्ञात | owner review |
 
 ## Shared catalogue (ks-utility `lang/common`)
 
@@ -141,6 +147,34 @@ Every interface string of KS Download Manager in English and Hindi, for the owne
 | `common.confirm.cannotUndo` | This cannot be undone. | इसे वापस नहीं किया जा सकता। |
 | `common.confirm.deleteTitle` | Delete {name}? | {name} डिलीट करें? |
 | `common.confirm.removeTitle` | Remove {name}? | {name} हटाएं? |
+| `common.appUpdate.section` | App updates | ऐप अपडेट |
+| `common.appUpdate.current` | This is version {version}. | यह वर्ज़न {version} है। |
+| `common.appUpdate.dev` | This copy was built from source, so it has no version number. | यह कॉपी सोर्स से बनी है, इसलिए इसका कोई वर्ज़न नंबर नहीं है। |
+| `common.appUpdate.auto` | Check for updates automatically | अपडेट की अपने आप जांच करें |
+| `common.appUpdate.autoHint` | Once a day, the app asks GitHub whether a newer version is out. Nothing else is sent. | दिन में एक बार ऐप GitHub से पूछता है कि कोई नया वर्ज़न आया है या नहीं। इसके अलावा कुछ नहीं भेजा जाता। |
+| `common.appUpdate.checkButton` | Check for updates | अपडेट की जांच करें |
+| `common.appUpdate.checking` | Checking… | जांच हो रही है… |
+| `common.appUpdate.upToDate` | You have the newest version ({version}). | आपके पास सबसे नया वर्ज़न है ({version})। |
+| `common.appUpdate.available` | Version {version} is available. | वर्ज़न {version} उपलब्ध है। |
+| `common.appUpdate.noInstaller` | Version {version} has no installer for this system yet. | वर्ज़न {version} में अभी इस सिस्टम के लिए इंस्टॉलर नहीं है। |
+| `common.appUpdate.installButton` | Download and install ({size}) | डाउनलोड और इंस्टॉल करें ({size}) |
+| `common.appUpdate.getButton` | Get the new version | नया वर्ज़न पाएं |
+| `common.appUpdate.later` | Later | बाद में |
+| `common.appUpdate.downloading` | Downloading version {version}… | वर्ज़न {version} डाउनलोड हो रहा है… |
+| `common.appUpdate.openedMac` | The disk image is open. Drag {app} into Applications to replace this copy, then open it again. | डिस्क इमेज खुल गई है। इस कॉपी को बदलने के लिए {app} को Applications में खींचें, फिर उसे दोबारा खोलें। |
+| `common.appUpdate.openedWindows` | The installer is starting. The app now closes so it can be replaced. | इंस्टॉलर शुरू हो रहा है। ऐप अब बंद होगा ताकि उसे बदला जा सके। |
+| `common.appUpdate.openedAndroid` | The system installer is open. Follow its steps to update the app. | सिस्टम का इंस्टॉलर खुल गया है। ऐप अपडेट करने के लिए उसके स्टेप पूरे करें। |
+| `common.appUpdate.allowInstall` | To install the update, allow this app to install unknown apps in the system settings, then try again. | अपडेट इंस्टॉल करने के लिए सिस्टम सेटिंग्स में इस ऐप को अनजान ऐप इंस्टॉल करने की इजाज़त दें, फिर से कोशिश करें। |
+| `common.appUpdate.allowInstallButton` | Open system settings | सिस्टम सेटिंग्स खोलें |
+| `common.appUpdate.extensionHint` | The extension does not update itself. Get the new version and load it in Chrome again. | एक्सटेंशन खुद अपडेट नहीं होता। नया वर्ज़न लें और उसे Chrome में फिर से लोड करें। |
+| `common.appUpdate.checkFailed` | Could not check for updates: {detail}. | अपडेट की जांच नहीं हो पाई: {detail}। |
+| `common.appUpdate.unreadable` | Could not read the newest version. | सबसे नया वर्ज़न पढ़ा नहीं जा सका। |
+| `common.appUpdate.none` | There is no update to install. Check for updates first. | इंस्टॉल करने के लिए कोई अपडेट नहीं है। पहले अपडेट की जांच करें। |
+| `common.appUpdate.busy` | The update is already downloading. | अपडेट पहले से डाउनलोड हो रहा है। |
+| `common.appUpdate.installFailed` | Could not install the update: {detail}. | अपडेट इंस्टॉल नहीं हो पाया: {detail}। |
+| `common.appUpdate.downloadFailed` | Could not download the update: {detail}. | अपडेट डाउनलोड नहीं हो पाया: {detail}। |
+| `common.appUpdate.damaged` | The download was damaged (checksum mismatch). Nothing was opened. | डाउनलोड खराब था (चेकसम मेल नहीं खाया)। कुछ भी नहीं खोला गया। |
+| `common.appUpdate.openFailed` | Could not open the installer: {detail}. | इंस्टॉलर खोला नहीं जा सका: {detail}। |
 | `common.items` | one: {count} item · other: {count} items | one: {count} आइटम · other: {count} आइटम |
 
 ## App (`src/locales`)
@@ -375,29 +409,7 @@ Every interface string of KS Download Manager in English and Hindi, for the owne
 | `update.newNoStart` | The new version does not start. Nothing was changed. | नया वर्ज़न शुरू नहीं हो पाया। कुछ भी नहीं बदला गया। |
 | `update.install` | Could not install the update: {detail}. | अपडेट इंस्टॉल नहीं हो पाया: {detail}। |
 | `update.unpack` | Could not unpack the update. | अपडेट खोला नहीं जा सका। |
-| `appUpdate.section` | App updates | ऐप अपडेट |
-| `appUpdate.current` | This is version {version}. | यह वर्ज़न {version} है। |
-| `appUpdate.dev` | This copy was built from source, so it has no version number. | यह कॉपी सोर्स से बनी है, इसलिए इसका कोई वर्ज़न नंबर नहीं है। |
-| `appUpdate.auto` | Check for updates automatically | अपडेट की अपने आप जांच करें |
-| `appUpdate.autoHint` | Once a day, the app asks GitHub whether a newer version is out. Nothing else is sent. | दिन में एक बार ऐप GitHub से पूछता है कि कोई नया वर्ज़न आया है या नहीं। इसके अलावा कुछ नहीं भेजा जाता। |
-| `appUpdate.checkButton` | Check for updates | अपडेट की जांच करें |
-| `appUpdate.checking` | Checking… | जांच हो रही है… |
-| `appUpdate.upToDate` | You have the newest version ({version}). | आपके पास सबसे नया वर्ज़न है ({version})। |
-| `appUpdate.available` | Version {version} is available. | वर्ज़न {version} आ गया है। |
-| `appUpdate.installButton` | Download and install ({size}) | डाउनलोड और इंस्टॉल करें ({size}) |
-| `appUpdate.downloading` | Downloading version {version}… | वर्ज़न {version} डाउनलोड हो रहा है… |
-| `appUpdate.openedMac` | The disk image is open. Drag KS Download Manager into Applications to replace this copy, then open it again. | डिस्क इमेज खुल गई है। इस कॉपी को बदलने के लिए KS Download Manager को Applications में खींचें, फिर उसे दोबारा खोलें। |
-| `appUpdate.openedWindows` | The installer is starting. The app now closes so it can be replaced. | इंस्टॉलर शुरू हो रहा है। ऐप अब बंद होगा ताकि उसे बदला जा सके। |
-| `appUpdate.later` | Later | बाद में |
-| `appUpdate.check` | Could not check for updates: {detail}. | अपडेट की जांच नहीं हो पाई: {detail}। |
-| `appUpdate.version` | Could not read the newest version. | सबसे नया वर्ज़न पढ़ा नहीं जा सका। |
-| `appUpdate.noFile` | Version {version} has no installer for this system yet. | वर्ज़न {version} में अभी इस सिस्टम के लिए इंस्टॉलर नहीं है। |
-| `appUpdate.none` | There is no update to install. Check for updates first. | इंस्टॉल करने के लिए कोई अपडेट नहीं है। पहले अपडेट की जांच करें। |
-| `appUpdate.busy` | The update is already downloading. | अपडेट पहले से डाउनलोड हो रहा है। |
-| `appUpdate.download` | Could not download the update: {detail}. | अपडेट डाउनलोड नहीं हो पाया: {detail}। |
 | `appUpdate.hash` | Could not check the download. | डाउनलोड की जांच नहीं हो पाई। |
-| `appUpdate.damaged` | The download was damaged (checksum mismatch). Nothing was opened. | डाउनलोड खराब था (चेकसम मेल नहीं खाया)। कुछ भी नहीं खोला गया। |
-| `appUpdate.open` | Could not open the installer: {detail}. | इंस्टॉलर खोला नहीं जा सका: {detail}। |
 | `notice.title` | Before you start | शुरू करने से पहले |
 | `notice.rights` | Download only what you have the right to download. You are responsible for what you download and how you use it. | सिर्फ़ वही डाउनलोड करें जिसे डाउनलोड करने का आपको हक़ है। आप क्या डाउनलोड करते हैं और उसका इस्तेमाल कैसे करते हैं, इसकी ज़िम्मेदारी आपकी है। |
 | `notice.drm` | KS Download Manager does not remove or get around copy protection (DRM). Paid streaming services and videos that need a sign-in are not supported. | KS Download Manager कॉपी प्रोटेक्शन (DRM) को न हटाता है, न उससे बचने का रास्ता निकालता है। पेड स्ट्रीमिंग सेवाएं और लॉगिन वाले वीडियो सपोर्ट नहीं होते। |

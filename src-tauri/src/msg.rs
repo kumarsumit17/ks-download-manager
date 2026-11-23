@@ -132,8 +132,14 @@ mod tests {
     #[test]
     fn every_code_has_text() {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        // The app's texts and ks-utility's shared catalogue (`common.*`; installed by `npm ci`).
         let read = |l: &str| -> serde_json::Map<String, serde_json::Value> {
-            serde_json::from_slice(&std::fs::read(dir.join(format!("../src/locales/{l}.json"))).unwrap()).unwrap()
+            let mut all = serde_json::Map::new();
+            for file in [format!("../src/locales/{l}.json"), format!("../node_modules/ks-utility/lang/common/{l}.json")] {
+                let bytes = std::fs::read(dir.join(&file)).unwrap_or_else(|e| panic!("{file}: {e} (run npm install first)"));
+                all.extend(serde_json::from_slice::<serde_json::Map<String, serde_json::Value>>(&bytes).unwrap());
+            }
+            all
         };
         let (en, hi) = (read("en"), read("hi"));
         let mut codes = vec![(SAVED_TEXT.to_owned(), vec!["text".to_owned()])];
