@@ -1,7 +1,7 @@
 // The toolbar popup: whether the app answers, the image button for the current site
 // (opt-in, through an optional host permission for that one site), and the optional
 // hand-off of browser downloads (through the optional "downloads" permission).
-import type { Reply } from "./messages";
+import { isNewer, RELEASES, type Reply } from "./messages";
 import { X_HOSTS } from "./site-rules";
 
 const t = (key: string, sub?: string) => chrome.i18n.getMessage(key, sub);
@@ -13,6 +13,15 @@ chrome.runtime.sendMessage<Reply>({ type: "ping" }).then((r) => {
   const ok = r.ok || r.code === "app_not_running";
   status.dataset.ok = String(ok);
   status.textContent = r.ok ? t("statusConnected") : r.code === "app_not_running" ? t("statusNotRunning") : t("statusNotInstalled");
+  // The app's own update check found a newer version (the extension never checks the network).
+  if (isNewer(r.update, chrome.runtime.getManifest().version)) {
+    (document.getElementById("update-text") as HTMLParagraphElement).textContent = t("updateAvailable", r.update);
+    (document.getElementById("update") as HTMLElement).hidden = false;
+  }
+});
+
+document.getElementById("update-button")?.addEventListener("click", () => {
+  void chrome.tabs.create({ url: RELEASES });
 });
 
 async function siteSection() {

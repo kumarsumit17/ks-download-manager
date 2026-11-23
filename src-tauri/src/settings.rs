@@ -39,6 +39,9 @@ pub struct Settings {
     /// Add download fills in a web link from the clipboard. Off: the clipboard is never
     /// read.
     pub clipboard_prefill: bool,
+    /// Asks GitHub once a day whether a newer version of the app exists (src/appupdate.rs).
+    /// Off: the app checks only when the user clicks "Check for updates".
+    pub update_check: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -77,6 +80,7 @@ impl Default for Settings {
             language: "system".into(),
             notice_seen: false,
             clipboard_prefill: true,
+            update_check: true,
         }
     }
 }
@@ -169,6 +173,7 @@ mod tests {
             language: "fr".into(),
             notice_seen: true,
             clipboard_prefill: false,
+            update_check: false,
         }
         .checked();
         assert_eq!((s.max_active, s.total_connections, s.per_download, s.speed_limit), (1, MAX_TOTAL_CONNECTIONS, 32, None));
@@ -179,5 +184,6 @@ mod tests {
         assert_eq!((partial.settings.per_download, partial.settings.language.as_str()), (engine::DEFAULT_CONNECTIONS, "system"));
         assert!(partial.settings.clipboard_prefill, "pre-fill is on for settings saved before the switch existed");
         assert!(!partial.settings.notice_seen);
+        assert!(partial.settings.update_check, "the daily update check is on for settings saved before the switch existed");
     }
 }

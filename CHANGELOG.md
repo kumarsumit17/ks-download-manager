@@ -4,6 +4,11 @@ All notable changes to KS Download Manager. The layout follows [Keep a Changelog
 
 ## [Unreleased]
 
+### Added
+
+- App updates: the app checks GitHub once a day for a newer version (a switch in Settings turns this off) and has a **Check for updates** button. When one is found, it downloads the installer for your system, checks its SHA-256 and opens it: on macOS you drag the new app into Applications, on Windows the installer starts and the app closes.
+- The Chrome extension's popup says when a newer version is out, with a link to the release.
+
 ## [0.1.3] - 2026-11-23
 
 The same app as 0.1.2; this release completes its files.

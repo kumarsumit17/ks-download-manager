@@ -19,6 +19,7 @@ import { setLanguage, t, type TextKey } from "@/lib/i18n";
 import { api, message, type LeftoverItem, type Settings } from "@/features/downloads/api";
 import { formatBytes } from "@/features/downloads/format";
 import type { Category } from "@/features/downloads/types";
+import { checkNow, installNow, useUpdates } from "@/features/update/appUpdate";
 
 const categories: { key: Category; label: TextKey }[] = [
   { key: "video", label: "category.video" },
@@ -76,6 +77,7 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [update, setUpdate] = useState<{ busy: boolean; note: string | null }>({ busy: false, note: null });
+  const appUpdate = useUpdates();
   const [leftovers, setLeftovers] = useState<LeftoverItem[] | null>(null);
   const [leftoverNote, setLeftoverNote] = useState<string | null>(null);
   // Paths ticked for removal; every item found starts ticked.
@@ -295,6 +297,47 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
                   </Button>
                   <span aria-live="polite" className="text-xs text-muted-foreground">
                     {update.note}
+                  </span>
+                </div>
+              </Section>
+
+              <Separator />
+
+              <Section title={t("appUpdate.section")}>
+                <p className="text-xs text-muted-foreground">
+                  {appUpdate.current === null ? null : appUpdate.current === "0.0.0" ? t("appUpdate.dev") : t("appUpdate.current", { version: appUpdate.current })}
+                </p>
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={s.updateCheck}
+                    onChange={(e) => setS({ ...s, updateCheck: e.target.checked })}
+                    className="mt-0.5 size-4 accent-primary"
+                  />
+                  <span>
+                    {t("appUpdate.auto")}
+                    <span className="block text-xs text-muted-foreground">{t("appUpdate.autoHint")}</span>
+                  </span>
+                </label>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={appUpdate.phase === "checking" || appUpdate.phase === "downloading"}
+                    onClick={() => void checkNow()}
+                  >
+                    {appUpdate.phase === "checking" && <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden />}
+                    {t("appUpdate.checkButton")}
+                  </Button>
+                  {appUpdate.available && appUpdate.phase !== "opened" && (
+                    <Button type="button" size="sm" disabled={appUpdate.phase === "downloading" || appUpdate.phase === "checking"} onClick={() => void installNow()}>
+                      {appUpdate.phase === "downloading" && <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden />}
+                      {t("appUpdate.installButton", { size: formatBytes(appUpdate.available.size) })}
+                    </Button>
+                  )}
+                  <span aria-live="polite" className="text-xs text-muted-foreground">
+                    {appUpdate.note}
                   </span>
                 </div>
               </Section>

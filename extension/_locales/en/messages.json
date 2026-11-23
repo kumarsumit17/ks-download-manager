@@ -8,6 +8,8 @@
   "statusConnected": { "message": "Connected to the app." },
   "statusNotRunning": { "message": "The app is not open. It opens when you download something." },
   "statusNotInstalled": { "message": "The desktop app was not found. Install it and open it once." },
+  "updateAvailable": { "message": "Version $V$ is available. Update the app and this extension.", "placeholders": { "v": { "content": "$1" } } },
+  "updateButton": { "message": "Get the new version" },
   "siteBuiltIn": { "message": "The Download button is built in on this site." },
   "siteNotAvailable": { "message": "The image button cannot be used on this page." },
   "siteToggle": { "message": "Image button on $SITE$", "placeholders": { "site": { "content": "$1" } } },

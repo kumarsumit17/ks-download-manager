@@ -129,7 +129,7 @@ fn expected_hash(sums: &str, asset: &str) -> Option<String> {
     })
 }
 
-async fn sha256(file: &Path) -> Option<String> {
+pub(crate) async fn sha256(file: &Path) -> Option<String> {
     #[cfg(not(target_os = "windows"))]
     let out = tokio::process::Command::new("/usr/bin/shasum").args(["-a", "256"]).arg(file).stdin(Stdio::null()).output().await.ok()?;
     #[cfg(target_os = "windows")]

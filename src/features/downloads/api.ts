@@ -21,7 +21,18 @@ export interface Settings {
   noticeSeen: boolean;
   /** Add download fills in a link from the clipboard (on by default). */
   clipboardPrefill: boolean;
+  /** Asks GitHub once a day whether a newer version of the app exists (on by default). */
+  updateCheck: boolean;
 }
+
+/** A newer release with an installer for this system (Rust's `appupdate::Available`). */
+export interface AppUpdate {
+  version: string;
+  file: string;
+  size: number;
+}
+
+export type UpdateCheck = { result: "upToDate"; version: string } | { result: "available"; update: AppUpdate };
 
 /** A leftover download file or temp folder found by the last scan. */
 export interface LeftoverItem {
@@ -71,7 +82,16 @@ export const api = {
   /** Removes the ticked items of the last scan; each is re-checked first. */
   removeLeftovers: (paths: string[]) => invoke<[number, number]>("remove_leftover_files", { paths }),
   quit: () => invoke<void>("quit"),
+  appVersion: () => invoke<string>("app_version"),
+  updateStatus: () => invoke<AppUpdate | null>("update_status"),
+  checkForUpdate: () => invoke<UpdateCheck>("check_for_update"),
+  /** Downloads the installer found, checks it and opens it; `quit` on Windows. */
+  installUpdate: () => invoke<{ quit: boolean }>("install_update"),
 };
+
+export function onUpdateAvailable(f: (u: AppUpdate) => void): Promise<UnlistenFn> {
+  return listen<AppUpdate>("update:available", (e) => f(e.payload));
+}
 
 export function onChanged(f: (r: DownloadRecord) => void): Promise<UnlistenFn> {
   return listen<DownloadRecord>("downloads:changed", (e) => f(e.payload));

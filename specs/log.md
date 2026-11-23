@@ -1,3 +1,7 @@
+# 2026-11-23
+
+* **Update**: [UI direction](ui.md), App updates: a daily update check (on by default, can be turned off) and a Check for updates button; the app downloads the new installer, checks its SHA-256 and opens it; the first-run notice names the check. [Chrome extension and hand-off](extension.md): the ping reply carries the newer version, and the popup links to the release.
+
 # 2026-11-22
 
 * **Update**: [Video and playlists](video-playlists.md), LGPL obligations: releases attach only the four install files; the notes name the ffmpeg source by its official URL and pinned SHA-256 instead of attaching the tarball.

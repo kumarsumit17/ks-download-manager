@@ -2,6 +2,7 @@
 //! the events it listens to. Downloading is done by the `engine` crate (src-tauri/engine);
 //! the list and the running downloads are kept by [`manager::Manager`].
 
+mod appupdate;
 mod clipboard;
 mod command;
 mod component;
@@ -234,6 +235,36 @@ async fn update_video_component(m: Downloads<'_>) -> Result<component::Update, m
     component::update(&tools).await
 }
 
+type Updates<'a> = State<'a, Arc<appupdate::Updater>>;
+
+/// The running version, as the release build stamped it ("0.0.0" when built from source).
+#[tauri::command]
+fn app_version(u: Updates<'_>) -> String {
+    u.current().to_owned()
+}
+
+/// The update found by the last check (start-up or a click), if any.
+#[tauri::command]
+fn update_status(u: Updates<'_>) -> Option<appupdate::Available> {
+    u.found()
+}
+
+/// "Check for updates": asks GitHub now.
+#[tauri::command]
+async fn check_for_update(app: AppHandle, u: Updates<'_>) -> Result<appupdate::Check, msg::Msg> {
+    let r = u.check().await?;
+    if let appupdate::Check::Available { update } = &r {
+        let _ = app.emit("update:available", update);
+    }
+    Ok(r)
+}
+
+/// Downloads the installer found, checks it and opens it.
+#[tauri::command]
+async fn install_update(u: Updates<'_>) -> Result<appupdate::Opened, msg::Msg> {
+    u.install().await
+}
+
 /// Where the bundled programs are: deno, ffmpeg and ffprobe next to the app executable
 /// (Tauri `externalBin`), yt-dlp's folder in the resources.
 fn video_tools(app: &tauri::App, data: &std::path::Path) -> Option<video::Tools> {
@@ -268,7 +299,11 @@ impl handoff::Handler for ExtensionRequests {
     fn handle(&self, req: handoff::Request) -> std::pin::Pin<Box<dyn std::future::Future<Output = handoff::Reply> + Send + '_>> {
         Box::pin(async move {
             match req {
-                handoff::Request::Ping { .. } => handoff::Reply::ok(None),
+                handoff::Request::Ping { .. } => {
+                    let mut r = handoff::Reply::ok(None);
+                    r.update = self.0.state::<Arc<appupdate::Updater>>().found_version();
+                    r
+                }
                 handoff::Request::Show { .. } => {
                     if let Some(w) = self.0.get_webview_window("main") {
                         let _ = w.unminimize();
@@ -337,6 +372,25 @@ pub fn run() {
                 manager.set_default_folder(d);
             }
             app.manage(manager.clone());
+            let updater = Arc::new(appupdate::Updater::new(app.package_info().version.to_string(), &data));
+            app.manage(updater.clone());
+            // The daily update check (on unless switched off in Settings), a little after start-up.
+            tauri::async_runtime::spawn({
+                let manager = manager.clone();
+                let handle = app.handle().clone();
+                async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                    if manager.settings().update_check && updater.due() {
+                        match updater.check().await {
+                            Ok(appupdate::Check::Available { update }) => {
+                                let _ = handle.emit("update:available", update);
+                            }
+                            Ok(_) => {}
+                            Err(e) => eprintln!("the update check failed: {e}"),
+                        }
+                    }
+                }
+            });
             // Reads the range maps of unfinished downloads after the window is up (Part 7):
             // the list is sent once this is done, and nothing starts before it.
             tauri::async_runtime::spawn({
@@ -414,6 +468,10 @@ pub fn run() {
             open_folder,
             active_downloads,
             update_video_component,
+            app_version,
+            update_status,
+            check_for_update,
+            install_update,
             get_settings,
             set_settings,
             category_folder,

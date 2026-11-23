@@ -375,10 +375,33 @@ Every interface string of KS Download Manager in English and Hindi, for the owne
 | `update.newNoStart` | The new version does not start. Nothing was changed. | नया वर्ज़न शुरू नहीं हो पाया। कुछ भी नहीं बदला गया। |
 | `update.install` | Could not install the update: {detail}. | अपडेट इंस्टॉल नहीं हो पाया: {detail}। |
 | `update.unpack` | Could not unpack the update. | अपडेट खोला नहीं जा सका। |
+| `appUpdate.section` | App updates | ऐप अपडेट |
+| `appUpdate.current` | This is version {version}. | यह वर्ज़न {version} है। |
+| `appUpdate.dev` | This copy was built from source, so it has no version number. | यह कॉपी सोर्स से बनी है, इसलिए इसका कोई वर्ज़न नंबर नहीं है। |
+| `appUpdate.auto` | Check for updates automatically | अपडेट की अपने आप जांच करें |
+| `appUpdate.autoHint` | Once a day, the app asks GitHub whether a newer version is out. Nothing else is sent. | दिन में एक बार ऐप GitHub से पूछता है कि कोई नया वर्ज़न आया है या नहीं। इसके अलावा कुछ नहीं भेजा जाता। |
+| `appUpdate.checkButton` | Check for updates | अपडेट की जांच करें |
+| `appUpdate.checking` | Checking… | जांच हो रही है… |
+| `appUpdate.upToDate` | You have the newest version ({version}). | आपके पास सबसे नया वर्ज़न है ({version})। |
+| `appUpdate.available` | Version {version} is available. | वर्ज़न {version} आ गया है। |
+| `appUpdate.installButton` | Download and install ({size}) | डाउनलोड और इंस्टॉल करें ({size}) |
+| `appUpdate.downloading` | Downloading version {version}… | वर्ज़न {version} डाउनलोड हो रहा है… |
+| `appUpdate.openedMac` | The disk image is open. Drag KS Download Manager into Applications to replace this copy, then open it again. | डिस्क इमेज खुल गई है। इस कॉपी को बदलने के लिए KS Download Manager को Applications में खींचें, फिर उसे दोबारा खोलें। |
+| `appUpdate.openedWindows` | The installer is starting. The app now closes so it can be replaced. | इंस्टॉलर शुरू हो रहा है। ऐप अब बंद होगा ताकि उसे बदला जा सके। |
+| `appUpdate.later` | Later | बाद में |
+| `appUpdate.check` | Could not check for updates: {detail}. | अपडेट की जांच नहीं हो पाई: {detail}। |
+| `appUpdate.version` | Could not read the newest version. | सबसे नया वर्ज़न पढ़ा नहीं जा सका। |
+| `appUpdate.noFile` | Version {version} has no installer for this system yet. | वर्ज़न {version} में अभी इस सिस्टम के लिए इंस्टॉलर नहीं है। |
+| `appUpdate.none` | There is no update to install. Check for updates first. | इंस्टॉल करने के लिए कोई अपडेट नहीं है। पहले अपडेट की जांच करें। |
+| `appUpdate.busy` | The update is already downloading. | अपडेट पहले से डाउनलोड हो रहा है। |
+| `appUpdate.download` | Could not download the update: {detail}. | अपडेट डाउनलोड नहीं हो पाया: {detail}। |
+| `appUpdate.hash` | Could not check the download. | डाउनलोड की जांच नहीं हो पाई। |
+| `appUpdate.damaged` | The download was damaged (checksum mismatch). Nothing was opened. | डाउनलोड खराब था (चेकसम मेल नहीं खाया)। कुछ भी नहीं खोला गया। |
+| `appUpdate.open` | Could not open the installer: {detail}. | इंस्टॉलर खोला नहीं जा सका: {detail}। |
 | `notice.title` | Before you start | शुरू करने से पहले |
 | `notice.rights` | Download only what you have the right to download. You are responsible for what you download and how you use it. | सिर्फ़ वही डाउनलोड करें जिसे डाउनलोड करने का आपको हक़ है। आप क्या डाउनलोड करते हैं और उसका इस्तेमाल कैसे करते हैं, इसकी ज़िम्मेदारी आपकी है। |
 | `notice.drm` | KS Download Manager does not remove or get around copy protection (DRM). Paid streaming services and videos that need a sign-in are not supported. | KS Download Manager कॉपी प्रोटेक्शन (DRM) को न हटाता है, न उससे बचने का रास्ता निकालता है। पेड स्ट्रीमिंग सेवाएं और लॉगिन वाले वीडियो सपोर्ट नहीं होते। |
-| `notice.free` | The app is free, with no ads and no tracking. It uses the network only for the downloads you start. | यह ऐप मुफ़्त है, इसमें न विज्ञापन हैं, न ट्रैकिंग। यह नेटवर्क का इस्तेमाल सिर्फ़ उन्हीं डाउनलोड के लिए करता है जो आप शुरू करते हैं। |
+| `notice.free` | The app is free, with no ads and no tracking. It uses the network only for the downloads you start, and once a day to check for a new version of the app (you can turn this off in Settings). | यह ऐप मुफ़्त है, इसमें न विज्ञापन हैं, न ट्रैकिंग। यह नेटवर्क का इस्तेमाल सिर्फ़ उन्हीं डाउनलोड के लिए करता है जो आप शुरू करते हैं, और दिन में एक बार ऐप का नया वर्ज़न देखने के लिए (इसे सेटिंग्स में बंद कर सकते हैं)। |
 | `notice.accept` | I understand | समझ लिया |
 
 ## Chrome extension (`extension/_locales`)
@@ -394,6 +417,8 @@ Every interface string of KS Download Manager in English and Hindi, for the owne
 | `statusConnected` | Connected to the app. | ऐप से कनेक्ट है। |
 | `statusNotRunning` | The app is not open. It opens when you download something. | ऐप खुला नहीं है। कुछ डाउनलोड करने पर यह खुल जाएगा। |
 | `statusNotInstalled` | The desktop app was not found. Install it and open it once. | डेस्कटॉप ऐप नहीं मिला। इसे इंस्टॉल करें और एक बार खोलें। |
+| `updateAvailable` | Version $V$ is available. Update the app and this extension. | वर्ज़न $V$ आ गया है। ऐप और यह एक्सटेंशन अपडेट करें। |
+| `updateButton` | Get the new version | नया वर्ज़न पाएं |
 | `siteBuiltIn` | The Download button is built in on this site. | इस साइट पर डाउनलोड बटन पहले से मौजूद है। |
 | `siteNotAvailable` | The image button cannot be used on this page. | इस पेज पर इमेज बटन का इस्तेमाल नहीं किया जा सकता। |
 | `siteToggle` | Image button on $SITE$ | $SITE$ पर इमेज बटन |

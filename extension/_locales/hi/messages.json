@@ -8,6 +8,8 @@
   "statusConnected": {"message": "ऐप से कनेक्ट है।"},
   "statusNotRunning": {"message": "ऐप खुला नहीं है। कुछ डाउनलोड करने पर यह खुल जाएगा।"},
   "statusNotInstalled": {"message": "डेस्कटॉप ऐप नहीं मिला। इसे इंस्टॉल करें और एक बार खोलें।"},
+  "updateAvailable": { "message": "वर्ज़न $V$ आ गया है। ऐप और यह एक्सटेंशन अपडेट करें।", "placeholders": { "v": { "content": "$1" } } },
+  "updateButton": { "message": "नया वर्ज़न पाएं" },
   "siteBuiltIn": {"message": "इस साइट पर डाउनलोड बटन पहले से मौजूद है।"},
   "siteNotAvailable": {"message": "इस पेज पर इमेज बटन का इस्तेमाल नहीं किया जा सकता।"},
   "siteToggle": {"message": "$SITE$ पर इमेज बटन", "placeholders": {"site": {"content": "$1"}}},

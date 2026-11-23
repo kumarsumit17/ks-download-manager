@@ -11,6 +11,8 @@ import { DeleteDialog } from "@/features/downloads/DeleteDialog";
 import { QueuesDialog } from "@/features/queues/QueuesDialog";
 import { SettingsDialog } from "@/features/settings/SettingsDialog";
 import { FirstRunNotice } from "@/features/notice/FirstRunNotice";
+import { UpdateBanner } from "@/features/update/UpdateBanner";
+import { startUpdates } from "@/features/update/appUpdate";
 import { t } from "@/lib/i18n";
 import { api, message, onQuitRequested } from "@/features/downloads/api";
 import { useDownloads, useQueues } from "@/features/downloads/store";
@@ -101,6 +103,9 @@ export default function App() {
     if (filter.kind === "queue" && filter.queue !== null && !queues.some((q) => q.id === filter.queue)) setFilter({ kind: "all" });
   }, [filter, queues]);
 
+  // App updates: the version, an update already found, and the start-up check's result.
+  useEffect(startUpdates, []);
+
   useEffect(() => {
     const off = onQuitRequested(setQuitting);
     return () => void off.then((f) => f());
@@ -168,6 +173,7 @@ export default function App() {
             onStopQueue={stopQueue}
           />
           <main className="flex min-w-0 flex-1 flex-col">
+            <UpdateBanner />
             {notice && (
               <div role="alert" className="flex items-start gap-2 border-b bg-destructive/10 px-3 py-2 text-sm text-destructive">
                 <span className="flex-1">{notice}</span>

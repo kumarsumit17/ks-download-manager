@@ -17,6 +17,23 @@ export interface Reply {
   id?: number;
   /** A message code, shown through `_locales` in the browser's language (`err_<code>`). */
   code?: string;
+  /** On a ping: a newer app version the app's own update check found. */
+  update?: string;
+}
+
+/** Where a new version is downloaded; the extension is loaded unpacked, so it cannot update itself. */
+export const RELEASES = "https://github.com/kumarsumit17/ks-download-manager/releases/latest";
+
+/** `MAJOR.MINOR.PATCH` compared by number. A copy built from source ("0.0.0") never asks. */
+export function isNewer(candidate: unknown, current: string): candidate is string {
+  if (typeof candidate !== "string" || !/^\d+(\.\d+){0,3}$/.test(candidate) || current === "0.0.0") return false;
+  const a = candidate.split(".").map(Number);
+  const b = current.split(".").map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const d = (a[i] ?? 0) - (b[i] ?? 0);
+    if (d !== 0) return d > 0;
+  }
+  return false;
 }
 
 export const HOST = "com.ks.downloadmanager";

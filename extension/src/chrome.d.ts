@@ -13,6 +13,7 @@ declare namespace chrome {
     function sendMessage<T = unknown>(message: unknown): Promise<T>;
     function sendNativeMessage(application: string, message: object): Promise<unknown>;
     function getURL(path: string): string;
+    function getManifest(): { version: string };
     const onMessage: {
       addListener(
         cb: (message: unknown, sender: MessageSender, sendResponse: (response: unknown) => void) => boolean | void,
@@ -67,6 +68,7 @@ declare namespace chrome {
       url?: string;
     }
     function query(q: { active?: boolean; currentWindow?: boolean }): Promise<Tab[]>;
+    function create(p: { url: string }): Promise<Tab>;
   }
 
   namespace contextMenus {

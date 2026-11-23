@@ -76,7 +76,7 @@ npm run tauri build              # release bundle (.app/.dmg on macOS)
 
 ## Constraints
 - Free: no ads, no analytics, no crash-reporting SDKs.
-- Network access is used only for the downloads the user starts.
+- Network access is used only for the downloads the user starts, with one exception: the daily app update check (on by default, a switch in Settings turns it off; `specs/ui.md`, "App updates").
 - No links to other KS apps. If one is added, record the contract in the suite README (Cross-Repository Relationships).
 
 ## graphify

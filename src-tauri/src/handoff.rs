@@ -85,14 +85,18 @@ pub struct Reply {
     /// sentence is sent: the extension shows the code's text in the browser's language.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code: Option<String>,
+    /// On a ping: the newer app version the app's last update check found, so the
+    /// extension can say a new version is out (it never checks the network itself).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update: Option<String>,
 }
 
 impl Reply {
     pub fn ok(id: Option<u64>) -> Self {
-        Self { ok: true, id, code: None }
+        Self { ok: true, id, code: None, update: None }
     }
     pub fn err(code: &str) -> Self {
-        Self { ok: false, id: None, code: Some(code.into()) }
+        Self { ok: false, id: None, code: Some(code.into()), update: None }
     }
 }
 
