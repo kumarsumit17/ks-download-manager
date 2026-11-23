@@ -4,6 +4,10 @@ All notable changes to KS Download Manager. The layout follows [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-11-23
+
+App updates and IDM-style hand-off of Chrome downloads. Earlier copies cannot update themselves: install 0.1.4 by hand once, from the disk image or the Windows installer (still a beta, untested by hand), and load the new extension zip in Chrome (it now asks to read and change data on all websites, so it can send a download's cookies). The 0.1.4 app and extension work only together: an older app refuses downloads from the new extension, which then stay in Chrome.
+
 ### Added
 
 - App updates: the app checks GitHub once a day for a newer version (a switch in Settings turns this off) and has a **Check for updates** button. When one is found, it downloads the installer for your system, checks its SHA-256 and opens it: on macOS you drag the new app into Applications, on Windows the installer starts and the app closes.
