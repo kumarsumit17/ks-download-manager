@@ -4,6 +4,16 @@ All notable changes to KS Download Manager. The layout follows [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-11-23
+
+The update check now uses the KS-Suite shared update code; nothing to do by hand. 0.1.4 finds this version by itself.
+
+### Changed
+
+- While the app stays open, it asks again every hour whether the daily update check is due, so a copy left running for days still checks once a day.
+- The downloaded installer's SHA-256 is computed by the app itself instead of by the system's `shasum` or `certutil`.
+- The App updates texts come from the shared KS-Suite catalogue, in English and Hindi.
+
 ## [0.1.4] - 2026-11-23
 
 App updates and IDM-style hand-off of Chrome downloads. Earlier copies cannot update themselves: install 0.1.4 by hand once, from the disk image or the Windows installer (still a beta, untested by hand), and load the new extension zip in Chrome (it now asks to read and change data on all websites, so it can send a download's cookies). The 0.1.4 app and extension work only together: an older app refuses downloads from the new extension, which then stay in Chrome.
