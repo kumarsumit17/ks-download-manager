@@ -1,4 +1,6 @@
-# Checks on every push and pull request. Release builds are in release.yml.
+# Checks on every push and pull request, and on a manual run (Actions > CI > Run workflow).
+# Release builds are in release.yml. The Windows installer and the unpacked extension built
+# here are kept as workflow artifacts for 14 days, for hand testing (docs/testing.md).
 # Runner images are named versions, never -latest (docs/decisions-release.md).
 # Actions are GitHub's own, pinned to a full commit SHA (version in the comment).
 name: CI
@@ -6,6 +8,7 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -53,6 +56,13 @@ jobs:
       - run: npm run test:ui
       - run: npm run test:extension
       - run: npm run build:extension
+      # The unpacked extension, to load in Chrome for testing (not a release file).
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: extension-unpacked
+          path: extension/dist/
+          if-no-files-found: error
+          retention-days: 14
       - name: Script tests
         run: node --test scripts/test/
       - name: Rust tests
@@ -193,6 +203,13 @@ jobs:
           set -- src-tauri/target/release/bundle/nsis/*-setup.exe
           [ $# -eq 1 ] && [ -f "$1" ] || { echo "::error::expected one installer, found: $*"; exit 1; }
           sh scripts/test-windows-installer.sh "$1"
+      # Unsigned test build for hand testing on Windows (not a release file).
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-installer-unsigned
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 14
 
   bench:
     runs-on: macos-15

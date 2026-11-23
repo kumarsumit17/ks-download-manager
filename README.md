@@ -72,6 +72,8 @@ If the app is removed, the extension says the app is not installed; remove the e
 
 Chrome may show a notice about extensions in developer mode; that is expected for an unpacked extension.
 
+Testing builds on macOS, Windows (CI) and in Chrome: [docs/testing.md](docs/testing.md).
+
 ## Clean-room implementation
 
 This is an independent implementation: no code or assets from other download managers. See [specs/clean-room.md](specs/clean-room.md).
