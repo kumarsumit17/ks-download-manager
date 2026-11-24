@@ -1,0 +1,12 @@
+{
+  "name": "KS Download Manager",
+  "group": "desktop",
+  "icon": "hardDriveDownload",
+  "platforms": ["macos", "windows", "chrome"],
+  "platformStatus": { "windows": "beta" },
+  "stack": "Rust · Tauri",
+  "tagline": {
+    "en": "Free download manager for images, audio and video, with up to 20× faster downloads.",
+    "hi": "इमेज, ऑडियो और वीडियो के लिए मुफ़्त डाउनलोड मैनेजर, 20 गुना तक तेज़ डाउनलोड के साथ।"
+  }
+}
