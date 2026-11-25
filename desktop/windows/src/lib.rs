@@ -55,6 +55,14 @@ fn select_arg(path: &Path) -> std::ffi::OsString {
     arg
 }
 
+/// Explorer hands a web address to the default browser. Callers pass only fixed `https`
+/// addresses of our own.
+pub fn url_opener(url: &str) -> Command {
+    let mut cmd = Command::new("explorer.exe");
+    cmd.arg(url);
+    cmd
+}
+
 // ---- Clipboard ---------------------------------------------------------------------------
 
 /// The clipboard's text through PowerShell's `Get-Clipboard`, written as UTF-8 (Windows

@@ -84,6 +84,8 @@ export const api = {
   /** Removes the ticked items of the last scan; each is re-checked first. */
   removeLeftovers: (paths: string[]) => invoke<[number, number]>("remove_leftover_files", { paths }),
   quit: () => invoke<void>("quit"),
+  /** Opens the app's help (its README on GitHub) in the browser. */
+  openHelp: () => invoke<void>("open_help"),
   appVersion: () => invoke<string>("app_version"),
   updateStatus: () => invoke<AppUpdate | null>("update_status"),
   checkForUpdate: () => invoke<UpdateCheck>("check_for_update"),

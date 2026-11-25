@@ -5,6 +5,9 @@
 //! as arguments, never through a shell.
 #![cfg(target_os = "macos")]
 
+mod menu;
+pub use menu::{ITEMS as MENU_ITEMS, app_menu};
+
 use std::ffi::OsStr;
 use std::io;
 use std::path::Path;
@@ -33,6 +36,14 @@ pub fn opener(path: &Path, select: bool) -> Command {
     }
     // "--" ends the options, so a name starting with "-" is still a path.
     cmd.arg("--").arg(path);
+    cmd
+}
+
+/// `open <url>` opens a web address in the default browser. Callers pass only fixed `https`
+/// addresses of our own; no "--" here, or `open` would read it as a file name.
+pub fn url_opener(url: &str) -> Command {
+    let mut cmd = Command::new("/usr/bin/open");
+    cmd.arg(url);
     cmd
 }
 

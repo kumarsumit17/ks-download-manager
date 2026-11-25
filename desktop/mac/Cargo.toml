@@ -11,7 +11,8 @@ workspace = "../../shared/src-tauri"
 
 # The whole crate is macOS-only (`#![cfg(target_os = "macos")]` in lib.rs); elsewhere it is empty.
 [target.'cfg(target_os = "macos")'.dependencies]
-# Already in the workspace's Cargo.lock: no new package.
+# Both already in the workspace's Cargo.lock: no new package. tauri: the menu bar.
+tauri = { version = "2", features = [] }
 tokio = { version = "1.54.1", features = ["process"] }
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]

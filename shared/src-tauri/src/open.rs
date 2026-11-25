@@ -28,6 +28,14 @@ pub fn reveal(file: &Path) -> io::Result<()> {
     }
 }
 
+/// Opens a web address in the default browser (only fixed `https` addresses of our own).
+pub fn open_url(url: &str) -> io::Result<()> {
+    if !url.starts_with("https://") {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "not an https address"));
+    }
+    run(crate::os::url_opener(url))
+}
+
 fn run(mut cmd: Command) -> io::Result<()> {
     // Not waited for: the opener returns at once, and the child is reaped by the system.
     cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().map(drop)
@@ -55,6 +63,14 @@ mod tests {
             let last = last.trim_end_matches('"');
             assert!(last.ends_with(&*tricky.to_string_lossy()), "{last}");
         }
+    }
+
+    #[test]
+    fn only_https_addresses_are_opened() {
+        assert!(open_url("file:///etc/passwd").is_err());
+        assert!(open_url("javascript:alert(1)").is_err());
+        let cmd = crate::os::url_opener("https://github.com/kumarsumit17/ks-download-manager#readme");
+        assert_eq!(cmd.get_args().last().unwrap(), "https://github.com/kumarsumit17/ks-download-manager#readme");
     }
 
     #[test]

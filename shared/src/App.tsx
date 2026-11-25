@@ -12,7 +12,9 @@ import { QueuesDialog } from "@/features/queues/QueuesDialog";
 import { SettingsDialog } from "@/features/settings/SettingsDialog";
 import { FirstRunNotice } from "@/features/notice/FirstRunNotice";
 import { UpdateBanner } from "@/features/update/UpdateBanner";
-import { startUpdates } from "@/features/update/appUpdate";
+import { checkNow, startUpdates } from "@/features/update/appUpdate";
+import { onMenu, startAppMenu } from "@/features/menu/appMenu";
+import type { Category } from "@/features/downloads/types";
 import { t } from "@/lib/i18n";
 import { api, message, onQuitRequested } from "@/features/downloads/api";
 import { useDownloads, useQueues } from "@/features/downloads/store";
@@ -105,6 +107,47 @@ export default function App() {
 
   // App updates: the version, an update already found, and the start-up check's result.
   useEffect(startUpdates, []);
+
+  // The menu bar (macOS): its labels, and what each item does (the same as the toolbar or
+  // the shortcut). The handler is kept in a ref so it always sees the current selection.
+  const menuAction = useRef<(id: string) => void>(() => {});
+  menuAction.current = (id: string) => {
+    const views: Record<string, Filter> = {
+      "view.all": { kind: "all" },
+      "view.unfinished": { kind: "unfinished" },
+      "view.finished": { kind: "finished" },
+    };
+    if (views[id]) return setFilter(views[id]);
+    if (id.startsWith("view.")) return setFilter({ kind: "category", category: id.slice(5) as Category });
+    switch (id) {
+      case "settings":
+        return setSettingsOpen(true);
+      case "checkUpdates":
+        setSettingsOpen(true);
+        return void checkNow();
+      case "add":
+        return setAdding(true);
+      case "queues":
+        return setQueuesOpen(true);
+      case "clearAll":
+        return downloads.length > 0 && setConfirmClear(true);
+      case "find":
+        return searchRef.current?.focus();
+      case "help":
+        return run(api.openHelp());
+    }
+    if (!selected) return;
+    if (id === "open") actions.open(selected);
+    else if (id === "reveal") actions.openFolder(selected);
+    else if (id === "delete") setDeleting(selected);
+    else if (id === "resume" && canResume(selected)) actions.resume(selected);
+    else if (id === "pause" && canPause(selected)) actions.pause(selected);
+  };
+  useEffect(() => {
+    startAppMenu();
+    const off = onMenu((id) => menuAction.current(id));
+    return () => void off.then((f) => f());
+  }, []);
 
   useEffect(() => {
     const off = onQuitRequested(setQuitting);

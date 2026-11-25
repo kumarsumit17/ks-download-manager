@@ -373,6 +373,7 @@ Every interface string of KS Download Manager in English and Hindi, for the owne
 | `error.folderNotFull` | The save folder must be a full path. | सेव फ़ोल्डर का पूरा पाथ होना चाहिए। |
 | `error.folderMissing` | The folder {path} does not exist. | फ़ोल्डर {path} मौजूद नहीं है। |
 | `error.notAFolder` | {path} is not a folder. | {path} फ़ोल्डर नहीं है। |
+| `error.menu` | Could not set up the menu bar: {detail}. | मेन्यू बार नहीं बन पाया: {detail}। |
 | `error.picker` | Could not open the folder picker: {detail}. | फ़ोल्डर चुनने वाली विंडो नहीं खुल पाई: {detail}। |
 | `error.pickerMissing` | The folder picker is not available on this system. | इस सिस्टम पर फ़ोल्डर चुनने वाली विंडो उपलब्ध नहीं है। |
 | `error.noDownloadsFolder` | The system Downloads folder was not found: {detail}. | सिस्टम का Downloads फ़ोल्डर नहीं मिला: {detail}। |
@@ -418,6 +419,26 @@ Every interface string of KS Download Manager in English and Hindi, for the owne
 | `notice.drm` | KS Download Manager does not remove or get around copy protection (DRM). Paid streaming services and videos that need a sign-in are not supported. | KS Download Manager कॉपी प्रोटेक्शन (DRM) को न हटाता है, न उससे बचने का रास्ता निकालता है। पेड स्ट्रीमिंग सेवाएं और लॉगिन वाले वीडियो सपोर्ट नहीं होते। |
 | `notice.free` | The app is free, with no ads and no tracking. It uses the network only for the downloads you start, and once a day to check for a new version of the app (you can turn this off in Settings). | यह ऐप मुफ़्त है, इसमें न विज्ञापन हैं, न ट्रैकिंग। यह नेटवर्क का इस्तेमाल सिर्फ़ उन्हीं डाउनलोड के लिए करता है जो आप शुरू करते हैं, और दिन में एक बार ऐप का नया वर्ज़न देखने के लिए (इसे सेटिंग्स में बंद कर सकते हैं)। |
 | `notice.accept` | I understand | समझ लिया |
+| `menu.about` | About KS Download Manager | KS Download Manager के बारे में |
+| `menu.services` | Services | सर्विसेज़ |
+| `menu.hide` | Hide KS Download Manager | KS Download Manager छिपाएं |
+| `menu.hideOthers` | Hide Others | बाकी छिपाएं |
+| `menu.showAll` | Show All | सब दिखाएं |
+| `menu.quit` | Quit KS Download Manager | KS Download Manager बंद करें |
+| `menu.edit` | Edit | एडिट |
+| `menu.downloads` | Downloads | डाउनलोड |
+| `menu.view` | View | व्यू |
+| `menu.window` | Window | विंडो |
+| `menu.help` | Help | मदद |
+| `menu.reveal` | Show in Finder | Finder में दिखाएं |
+| `menu.closeWindow` | Close Window | विंडो बंद करें |
+| `menu.undo` | Undo | वापस लें |
+| `menu.redo` | Redo | फिर से करें |
+| `menu.cut` | Cut | कट करें |
+| `menu.minimize` | Minimize | छोटा करें |
+| `menu.zoom` | Zoom | ज़ूम |
+| `menu.fullscreen` | Full Screen | फ़ुल स्क्रीन |
+| `menu.helpItem` | KS Download Manager Help | KS Download Manager मदद |
 
 ## Chrome extension (`extension/_locales`)
 

@@ -34,6 +34,12 @@ mod other {
         cmd
     }
 
+    pub fn url_opener(url: &str) -> Command {
+        let mut cmd = Command::new("xdg-open");
+        cmd.arg(url);
+        cmd
+    }
+
     pub async fn read_clipboard() -> Option<String> {
         None
     }

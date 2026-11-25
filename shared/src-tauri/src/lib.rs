@@ -275,6 +275,29 @@ fn video_tools(app: &tauri::App, data: &std::path::Path) -> Option<video::Tools>
     Some(video::Tools::new(programs, &resources, data))
 }
 
+/// The menu bar, with labels in the user's language (by item id; desktop/mac's
+/// `MENU_ITEMS`). macOS only: Windows apps of this kind have no menu bar, so it does nothing
+/// there. Called at start-up and whenever the language changes.
+#[tauri::command]
+fn set_app_menu(app: AppHandle, labels: std::collections::HashMap<String, String>) -> Result<(), msg::Msg> {
+    #[cfg(target_os = "macos")]
+    {
+        let menu = os::app_menu(&app, &labels).map_err(|e| msg!("error.menu", detail = e))?;
+        app.set_menu(menu).map_err(|e| msg!("error.menu", detail = e))?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, labels);
+    Ok(())
+}
+
+/// Help ▸ KS Download Manager Help: the README on GitHub, in the default browser. A fixed
+/// address only; the interface cannot pass one.
+#[tauri::command]
+fn open_help() -> Result<(), msg::Msg> {
+    const HELP: &str = "https://github.com/kumarsumit17/ks-download-manager#readme";
+    open::open_url(HELP).map_err(|e| msg!("error.openFile", detail = e))
+}
+
 /// Progress of the running downloads on the Dock icon (macOS) or taskbar button (Windows),
 /// and on macOS their number as the Dock badge; both cleared when none run.
 fn show_progress(app: &AppHandle, totals: manager::Totals) {
@@ -474,6 +497,10 @@ pub fn run() {
             }
             Ok(())
         })
+        // A menu item with an id: the interface does what the toolbar or shortcut would.
+        .on_menu_event(|app, event| {
+            let _ = app.emit("menu", event.id().as_ref());
+        })
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event
                 && confirm_quit(window.app_handle())
@@ -503,6 +530,8 @@ pub fn run() {
             update_status,
             check_for_update,
             install_update,
+            set_app_menu,
+            open_help,
             get_settings,
             set_settings,
             category_folder,
