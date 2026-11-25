@@ -61,10 +61,10 @@ Used by the app for every download (`DownloadOptions::adaptive`); without it a d
 ## Proving the claim
 The claim is only published with numbers behind it.
 
-- **Repeatable test:** a local test server that limits each connection to a fixed rate (for example 1 MB/s) and serves a 1 GB file. Measure one connection against 4, 8, 16, 20 and 32. Target: at least 19× with 20 connections. Built in Stage 5, Part 6 as `npm run bench` (`src-tauri/engine/tests/bench.rs`): 64 MiB at 1 MiB/s per connection (the 1 GB file would make the single-connection run 17 minutes), adaptive connections off so each count is exact; 19.95× with 20 connections ([benchmarks](../docs/benchmarks.md)).
+- **Repeatable test:** a local test server that limits each connection to a fixed rate (for example 1 MB/s) and serves a 1 GB file. Measure one connection against 4, 8, 16, 20 and 32. Target: at least 19× with 20 connections. Built in Stage 5, Part 6 as `npm run bench` (`shared/src-tauri/engine/tests/bench.rs`): 64 MiB at 1 MiB/s per connection (the 1 GB file would make the single-connection run 17 minutes), adaptive connections off so each count is exact; 19.95× with 20 connections ([benchmarks](../docs/benchmarks.md)).
 - **Real-world test:** a fixed list of public test files, each downloaded once with a single connection and once with the engine, on the same line, back to back. The `real_world_single_against_engine` test in the same file; first result 1.06× (the line was full with one connection).
 - **Recorded:** results, machine, line speed and date go in `docs/benchmarks.md`. The README claim links there.
-- **Regression check:** the local test runs in CI; a drop of more than 10 % fails the build. Speed-ups are compared with `src-tauri/engine/tests/bench-baseline.txt`; no CI workflow exists yet (Release stage).
+- **Regression check:** the local test runs in CI; a drop of more than 10 % fails the build. Speed-ups are compared with `shared/src-tauri/engine/tests/bench-baseline.txt`; no CI workflow exists yet (Release stage).
 
 ## Libraries (to confirm and record in THIRD_PARTY.md when the project is generated)
 `tokio`, `reqwest` (or `hyper` directly if finer connection control is needed), `rustls`, `serde`.

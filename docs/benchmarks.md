@@ -4,7 +4,7 @@ How the download engine scales with the number of connections ([engine spec](../
 
 ## 1. Local, per-connection throttled server (repeatable)
 
-**What it measures:** how the engine scales when a server limits each connection, **not real-world speed**. A local server (`src-tauri/engine/tests/common/mod.rs`) serves one 64 MiB file and limits every connection to 1 MiB/s; the engine downloads it with a fixed number of connections. **Adaptive connections are off**, so each row uses exactly that many connections from the start (no ramp-up). Time runs from the probe to the finished, checked file.
+**What it measures:** how the engine scales when a server limits each connection, **not real-world speed**. A local server (`shared/src-tauri/engine/tests/common/mod.rs`) serves one 64 MiB file and limits every connection to 1 MiB/s; the engine downloads it with a fixed number of connections. **Adaptive connections are off**, so each row uses exactly that many connections from the start (no ramp-up). Time runs from the probe to the finished, checked file.
 
 - **Run:** `npm run bench` (release build; about 100 s). `KSDM_BENCH_MIB` and `KSDM_BENCH_RATE_KIB` change the file size and the per-connection rate.
 - **Machine:** Mac17,3, Apple M5 (10 cores), 16 GB, macOS 27.2.1. Loopback only, so the line speed plays no part.
@@ -22,7 +22,7 @@ How the download engine scales with the number of connections ([engine spec](../
 The spec's target, at least 19× with 20 connections, is met (19.95×). The spec describes a 1 GB file at 1 MB/s per connection; the single-connection run alone would take 17 minutes, so the file is 64 MiB at the same rate per connection. The overhead that can show (probe, splitting, the last range finishing) is a fixed cost, so it weighs a little more in a smaller file.
 
 **Regression check (ready for CI):** the same run fails when
-- a speed-up drops more than 10 % below `src-tauri/engine/tests/bench-baseline.txt` (the spec's rule), or a measured count is missing from the baseline;
+- a speed-up drops more than 10 % below `shared/src-tauri/engine/tests/bench-baseline.txt` (the spec's rule), or a measured count is missing from the baseline;
 - the one-connection run does not take size ÷ rate within 5 % (64 s here): otherwise the throttle did not work and the ratios would measure nothing;
 - an **unthrottled** run (256 MiB over 8 connections from the same local server, no limit) stays below a floor (`KSDM_BENCH_FLOOR_MIBS`). Speed-ups alone cannot catch an engine that got slower everywhere; the floor can. **The floor is a machine-dependent sanity check, not a measured speed:** strict locally (default 500 MiB/s; measured on the owner's Mac: **3,095 MiB/s**), loose on shared runners (CI sets 100 MiB/s, because GitHub's `macos-15` runners measured 187 to 627 MiB/s for the same code on 2026-11-21). On CI it only catches a catastrophic slowdown; the measured value is printed in each run's job summary, so a downward trend is visible while it still passes.
 
@@ -32,7 +32,7 @@ Speed-ups, not times, are compared with the baseline, because under a per-connec
 
 **What it measures:** one public speed-test file downloaded in full with one connection, then as the app does it (adaptive connections, at most 16), back to back on the same line.
 
-- **Run:** `cargo test --release --manifest-path src-tauri/Cargo.toml -p engine --test bench real_world -- --ignored --nocapture` (`KSDM_BENCH_URLS` replaces the list).
+- **Run:** `cargo test --release --manifest-path shared/src-tauri/Cargo.toml -p engine --test bench real_world -- --ignored --nocapture` (`KSDM_BENCH_URLS` replaces the list).
 - **Line:** the development Mac's connection; one connection reached about 49 Mbit/s. Date 2026-11-21.
 
 | File | Size | 1 connection | Engine (adaptive) | Speed-up |

@@ -17,7 +17,7 @@ The app is built one stage per request. Stage 5 is built in one go, part by part
 - Exact versions recorded in `CLAUDE.md`; every dependency in `docs/THIRD_PARTY.md`.
 
 ## Stage 2 — Engine core (single file)
-- Rust crate `engine` inside `src-tauri/`: probe (size, range support, `ETag`/`Last-Modified`), segmented range download into a pre-allocated file, buffered writes.
+- Rust crate `engine` inside `shared/src-tauri/`: probe (size, range support, `ETag`/`Last-Modified`), segmented range download into a pre-allocated file, buffered writes.
 - Local test server that throttles each connection; unit and integration tests.
 
 ## Stage 3 — Dynamic splitting, retry, resume
@@ -45,7 +45,7 @@ Rules for the whole stage:
 - Ad-hoc signed hardened-runtime build with a real download from it; what still needs a real certificate recorded.
 - README: the app now bundles runtimes and is larger.
 
-### Part 2 — Chrome extension (`extension/`, TypeScript, Manifest V3)
+### Part 2 — Chrome extension (`shared/extension/`, TypeScript, Manifest V3)
 - Native messaging restricted to our extension ID. The socket bind is the single-instance lock (stale socket: connect first, unlink and rebind only if that fails). Host mode checks its origin argument exactly. The app is started through LaunchServices. Socket path under the 104-byte limit. Host manifest written only if Chrome's folder exists.
 - YouTube: one Download button on watch pages, Shorts and youtu.be links; one click, best quality, no menu.
 - X (x.com, twitter.com): hover button for the largest version of an image. Other sites: the same button, off by default, enabled per site through optional host permissions.
@@ -80,11 +80,11 @@ Rules for the whole stage:
 
 ## Release
 Plan: `docs/release-plan.md`; decisions: `docs/decisions-release.md`; owner's steps: `docs/release.md`.
-- **Phase A (built, not yet run on GitHub):** versions from the tag (`scripts/set-version.mjs`, only `vX.Y.Z`); CI on `macos-15` (`ci.yml`: build, every test, clippy, benchmark); a tag on `main` builds a **draft** release (`release.yml`): two macOS disk images (arm64, x64) made after signing, ad hoc unless all six Apple secrets exist (then Developer ID, notarised and stapled), the extension zip with its ID checked, the ffmpeg source, `SHA256SUMS`, and a build-provenance attestation for each file. The draft is published by hand only after the hand checks pass on its files. The Chrome host is not registered from a disk image or a translocated copy. Deno's notices give the standard text of each declared licence for crates without a licence file.
+- **Phase A (built, not yet run on GitHub):** versions from the tag (`shared/scripts/set-version.mjs`, only `vX.Y.Z`); CI on `macos-15` (`ci.yml`: build, every test, clippy, benchmark); a tag on `main` builds a **draft** release (`release.yml`): two macOS disk images (arm64, x64) made after signing, ad hoc unless all six Apple secrets exist (then Developer ID, notarised and stapled), the extension zip with its ID checked, the ffmpeg source, `SHA256SUMS`, and a build-provenance attestation for each file. The draft is published by hand only after the hand checks pass on its files. The Chrome host is not registered from a disk image or a translocated copy. Deno's notices give the standard text of each declared licence for crates without a licence file.
 - **Phase B (built):** Windows on the same workflows: sidecars (ffmpeg cross-built on Linux), named-pipe hand-off with a same-user check, Chrome registration from the installer and at each start, no console windows, UTF-8 PowerShell, and tests for each Windows path plus a silent install/uninstall test, all on `windows-2025`. Shipped as an unsigned beta, untested by hand, starting with v0.1.2 (v0.1.0 and v0.1.1 were tagged but never released). Decisions: `docs/decisions-release.md`.
 
 ## Done means
-- `npm run build` and `cargo test` (in `src-tauri/`) succeed; `npm run tauri dev` opens the window.
+- `npm run build` and `cargo test` (in `shared/src-tauri/`) succeed; `npm run tauri dev` opens the window.
 - No new warnings from `cargo clippy`.
 - New dependencies recorded in `docs/THIRD_PARTY.md` in the same commit.
 - Owner has run the app and approved before anything is committed.

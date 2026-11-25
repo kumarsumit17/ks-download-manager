@@ -112,4 +112,7 @@ Each step is one or more commits on `dev`, tested before the next. Nothing is pu
 | 4 | VoiceOver (here) and Narrator (owner) passes; startup measured on both | both | Recorded in `docs/` |
 | 5 | Release **v0.2.0** (both apps and the extension, one tag) | release workflow | Both apps update themselves from 0.1.x to 0.2.0 |
 
+**Built so far (2026-11-25):**
+- Step 1, part 1: the Tauri project is in `shared/`, with every workflow, script, guide and spec path updated; all local checks pass. Still to do in step 1: the `Platform` trait and the per-OS config files.
+
 Windows cannot be run from this Mac, so step 3 is checked by its CI build and tests and by the owner on a real PC.

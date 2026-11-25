@@ -50,5 +50,5 @@ test("the notes match how the files were signed", () => {
     assert.ok(n.includes(`built from ffmpeg ${FFMPEG.version}. Its exact source is attached as \`ffmpeg-${FFMPEG.version}.tar.xz\` (from ${FFMPEG.source}, SHA-256 \`${FFMPEG.sha256}\`)`));
   }
   // The real changelog has the section for the first release.
-  assert.ok(changelogSection(readFileSync(join(root, "CHANGELOG.md"), "utf8"), "0.1.2").length > 0);
+  assert.ok(changelogSection(readFileSync(join(root, "..", "CHANGELOG.md"), "utf8"), "0.1.2").length > 0);
 });

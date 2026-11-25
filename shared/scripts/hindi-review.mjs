@@ -53,5 +53,6 @@ ${terms.map((t) => `| ${cell(t.en)} | ${cell(t.hi)} | ${t.avoid.length ? cell(t.
 
 ${sections.map(([title, body]) => `## ${title}\n\n${body}`).join("\n\n")}
 `;
-writeFileSync(join(root, "docs/hindi-review.md"), out);
+// docs/ is at the repository root, one level above shared/.
+writeFileSync(join(root, "..", "docs/hindi-review.md"), out);
 console.log(`docs/hindi-review.md: ${unsure.length} strings marked unsure.`);

@@ -66,7 +66,7 @@ graphify-out/
 .claude/settings.local.json
 
 # ---- Bundled programs (scripts/sidecars.mjs) ----
-src-tauri/binaries/
+shared/src-tauri/binaries/
 
 # ---- Chrome extension build ----
-extension/dist/
+shared/extension/dist/

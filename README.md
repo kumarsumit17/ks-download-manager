@@ -8,7 +8,7 @@ A free download manager for images, audio and video, built for speed: each file 
 |---|---|
 | **Platform** | Windows · macOS (desktop) |
 | **Tech stack** | Rust (download engine) · Tauri (desktop shell) · TypeScript + React with shadcn/ui and Lucide icons (interface) |
-| **Chrome extension** | TypeScript, Manifest V3, in `extension/` (loaded unpacked, not on the Chrome Web Store) |
+| **Chrome extension** | TypeScript, Manifest V3, in `shared/extension/` (loaded unpacked, not on the Chrome Web Store) |
 | **Status** | Latest release v0.1.3 (first release v0.1.2; v0.1.0 and v0.1.1 were tagged but never released): macOS and the Chrome extension; Windows as a beta, untested by hand. See [stages](specs/stages.md) and the [changelog](CHANGELOG.md) |
 
 ## Features
@@ -51,6 +51,7 @@ Every file of a release has a build-provenance attestation showing it was built 
 ## Building
 
 ```bash
+cd shared
 npm install
 npm run sidecars        # fetch yt-dlp and Deno, build ffmpeg (checked against pinned SHA-256)
 npm run tauri dev       # run with hot reload
@@ -63,7 +64,7 @@ The extension adds a Download button on YouTube watch pages and Shorts, and on i
 
 It is not published on the Chrome Web Store. To install it:
 
-1. Download `ks-download-manager-extension-vX.Y.Z.zip` from the [Releases page](https://github.com/kumarsumit17/ks-download-manager/releases) and unzip it to a folder you keep (Chrome loads it from there, so do not delete or move that folder). Or build it yourself: `npm install`, then `npm run build:extension`, and use `extension/dist`.
+1. Download `ks-download-manager-extension-vX.Y.Z.zip` from the [Releases page](https://github.com/kumarsumit17/ks-download-manager/releases) and unzip it to a folder you keep (Chrome loads it from there, so do not delete or move that folder). Or build it yourself: in `shared/`, `npm install`, then `npm run build:extension`, and use `shared/extension/dist`.
 2. Open the desktop app once (from Applications on macOS), so it registers itself with Chrome.
 3. In Chrome, open `chrome://extensions`, turn on **Developer mode** (top right), click **Load unpacked** and choose that folder.
 4. The extension's ID must be `ikplfdbdfikcokpegkapjdedlgifmkbe`; the app accepts no other.

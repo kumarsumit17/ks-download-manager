@@ -26,6 +26,10 @@ jobs:
           - os: macos-15
             triple: aarch64-apple-darwin
     runs-on: ${{ matrix.os }}
+    # The Tauri project lives in shared/ (CLAUDE.md, "Platform folders").
+    defaults:
+      run:
+        working-directory: shared
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -34,20 +38,21 @@ jobs:
         with:
           node-version: "26"
           cache: npm
+          cache-dependency-path: shared/package-lock.json
       - name: Cache Rust build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            src-tauri/target
-          key: rust-${{ runner.os }}-${{ matrix.triple }}-${{ hashFiles('rust-toolchain.toml', 'src-tauri/Cargo.lock') }}
+            shared/src-tauri/target
+          key: rust-${{ runner.os }}-${{ matrix.triple }}-${{ hashFiles('rust-toolchain.toml', 'shared/src-tauri/Cargo.lock') }}
           restore-keys: rust-${{ runner.os }}-${{ matrix.triple }}-
       - name: Cache bundled programs
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: src-tauri/binaries
-          key: sidecars-${{ matrix.triple }}-${{ hashFiles('src-tauri/sidecars.json', 'scripts/build-ffmpeg.sh', 'scripts/sidecars.mjs', 'scripts/deno-notices.mjs') }}
+          path: shared/src-tauri/binaries
+          key: sidecars-${{ matrix.triple }}-${{ hashFiles('shared/src-tauri/sidecars.json', 'shared/scripts/build-ffmpeg.sh', 'shared/scripts/sidecars.mjs', 'shared/scripts/deno-notices.mjs') }}
       - run: npm ci
       - name: Bundled programs (hash-checked; ffmpeg built from source)
         run: node scripts/sidecars.mjs ${{ matrix.triple }}
@@ -60,7 +65,7 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: extension-unpacked
-          path: extension/dist/
+          path: shared/extension/dist/
           if-no-files-found: error
           retention-days: 14
       - name: Script tests
@@ -80,7 +85,7 @@ jobs:
           persist-credentials: false
       - name: Cache key
         id: key
-        run: echo "key=ffmpeg-windows-x86_64-$( (jq -c '[.ffmpeg, .zlib]' src-tauri/sidecars.json; cat scripts/build-ffmpeg.sh) | sha256sum | cut -c1-32)" >> "$GITHUB_OUTPUT"
+        run: echo "key=ffmpeg-windows-x86_64-$( (jq -c '[.ffmpeg, .zlib]' shared/src-tauri/sidecars.json; cat shared/scripts/build-ffmpeg.sh) | sha256sum | cut -c1-32)" >> "$GITHUB_OUTPUT"
       - name: Cache the build
         id: cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -92,7 +97,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends mingw-w64 nasm >/dev/null
-          sh scripts/build-ffmpeg.sh "$PWD/ffmpeg-work" windows-x86_64
+          sh shared/scripts/build-ffmpeg.sh "$PWD/ffmpeg-work" windows-x86_64
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ffmpeg-windows
@@ -108,6 +113,7 @@ jobs:
     defaults:
       run:
         shell: bash
+        working-directory: shared
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -116,24 +122,25 @@ jobs:
         with:
           node-version: "26"
           cache: npm
+          cache-dependency-path: shared/package-lock.json
       - name: Cache Rust build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            src-tauri/target
-          key: rust-${{ runner.os }}-x86_64-pc-windows-msvc-${{ hashFiles('rust-toolchain.toml', 'src-tauri/Cargo.lock') }}
+            shared/src-tauri/target
+          key: rust-${{ runner.os }}-x86_64-pc-windows-msvc-${{ hashFiles('rust-toolchain.toml', 'shared/src-tauri/Cargo.lock') }}
           restore-keys: rust-${{ runner.os }}-x86_64-pc-windows-msvc-
       - name: Cache bundled programs
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: src-tauri/binaries
-          key: sidecars-x86_64-pc-windows-msvc-${{ hashFiles('src-tauri/sidecars.json', 'scripts/sidecars.mjs', 'scripts/deno-notices.mjs') }}
+          path: shared/src-tauri/binaries
+          key: sidecars-x86_64-pc-windows-msvc-${{ hashFiles('shared/src-tauri/sidecars.json', 'shared/scripts/sidecars.mjs', 'shared/scripts/deno-notices.mjs') }}
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ffmpeg-windows
-          path: ffmpeg-windows
+          path: shared/ffmpeg-windows
       - run: npm ci
       - name: Bundled programs (hash-checked; ffmpeg from the cross build)
         run: node scripts/sidecars.mjs x86_64-pc-windows-msvc --ffmpeg-from ffmpeg-windows
@@ -168,6 +175,7 @@ jobs:
     defaults:
       run:
         shell: bash
+        working-directory: shared
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -176,24 +184,25 @@ jobs:
         with:
           node-version: "26"
           cache: npm
+          cache-dependency-path: shared/package-lock.json
       - name: Cache Rust release build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            src-tauri/target
-          key: rust-release-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'src-tauri/Cargo.lock') }}
+            shared/src-tauri/target
+          key: rust-release-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'shared/src-tauri/Cargo.lock') }}
           restore-keys: rust-release-${{ runner.os }}-
       - name: Cache bundled programs
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: src-tauri/binaries
-          key: sidecars-x86_64-pc-windows-msvc-${{ hashFiles('src-tauri/sidecars.json', 'scripts/sidecars.mjs', 'scripts/deno-notices.mjs') }}
+          path: shared/src-tauri/binaries
+          key: sidecars-x86_64-pc-windows-msvc-${{ hashFiles('shared/src-tauri/sidecars.json', 'shared/scripts/sidecars.mjs', 'shared/scripts/deno-notices.mjs') }}
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ffmpeg-windows
-          path: ffmpeg-windows
+          path: shared/ffmpeg-windows
       - run: npm ci
       - run: node scripts/sidecars.mjs x86_64-pc-windows-msvc --ffmpeg-from ffmpeg-windows
       - name: Build the installer
@@ -207,12 +216,15 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-installer-unsigned
-          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          path: shared/src-tauri/target/release/bundle/nsis/*-setup.exe
           if-no-files-found: error
           retention-days: 14
 
   bench:
     runs-on: macos-15
+    defaults:
+      run:
+        working-directory: shared
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -223,8 +235,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            src-tauri/target
-          key: bench-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'src-tauri/Cargo.lock') }}
+            shared/src-tauri/target
+          key: bench-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'shared/src-tauri/Cargo.lock') }}
           restore-keys: bench-${{ runner.os }}-
       # The unthrottled floor is a machine-dependent sanity check: 500 MiB/s on the owner's
       # Mac (bench.rs default), 100 here, since shared runners have measured 187 to 627 MiB/s.

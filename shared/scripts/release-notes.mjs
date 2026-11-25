@@ -53,5 +53,5 @@ export function notes(changelog, version, mac, windows = "none") {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const [version, mac, windows] = process.argv.slice(2);
-  process.stdout.write(notes(readFileSync(join(ROOT, "CHANGELOG.md"), "utf8"), version, mac, windows));
+  process.stdout.write(notes(readFileSync(join(ROOT, "..", "CHANGELOG.md"), "utf8"), version, mac, windows));
 }
