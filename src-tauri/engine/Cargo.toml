@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 # First-party shared utilities (KS-Suite), the same commit as in src-tauri/Cargo.toml.
-ks-utility = { git = "https://github.com/kumarsumit17/ks-utility", tag = "v0.3.0" }
+ks-utility = { git = "https://github.com/kumarsumit17/ks-utility", tag = "v0.9.0" }
 # HTTP/1.1 only (no http2 feature), rustls TLS, no decompression features:
 # byte offsets must match the file exactly.
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }

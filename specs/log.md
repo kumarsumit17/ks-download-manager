@@ -1,3 +1,7 @@
+# 2026-11-25
+
+* **Update**: `ks-utility` moved from `v0.3.0` to `v0.9.0` (more languages, the translation tools; [ks-utility translation tools](https://github.com/kumarsumit17/ks-utility/blob/main/specs/translating.md)).
+
 # 2026-11-23
 
 * **Update**: [UI direction](ui.md), App updates: uses ks-utility `v0.3.0` (shared version, schedule, file and checksum rules, `createUpdateStore`, `common.appUpdate.*` texts); the automatic check also asks hourly while the app runs; SHA-256 is computed in-process instead of with `shasum`/`certutil`.
