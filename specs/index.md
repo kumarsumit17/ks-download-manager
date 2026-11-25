@@ -5,6 +5,7 @@ okf_version: "0.2"
 # Plan
 
 * [Build stages](stages.md) - The nine build stages, what each delivers, and the checks that must pass before a stage is committed.
+* [Per-platform optimization plan](plan-per-platform.md) - Approved plan for making the macOS and Windows builds each the best on its OS, released together under one version.
 
 # Product specifications
 

@@ -1,5 +1,6 @@
 # 2026-11-25
 
+* **Creation**: [Per-platform optimization plan](plan-per-platform.md): audit of the macOS and Windows builds, the plan per platform (layout, menus, Dock and taskbar progress, keep awake, notifications, signing, size, accessibility), and the owner's decisions; versions stay one plain tag for both apps and the extension (suite rule). Approved by the owner with the recommended answers.
 * **Update**: `ks-utility` moved from `v0.3.0` to `v0.9.0` (more languages, the translation tools; [ks-utility translation tools](https://github.com/kumarsumit17/ks-utility/blob/main/specs/translating.md)).
 
 # 2026-11-23
