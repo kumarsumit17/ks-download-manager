@@ -62,9 +62,10 @@ fn quarantine_value(now: SystemTime) -> String {
     format!("0081;{secs:08x};{AGENT};")
 }
 
-/// Sets the quarantine attribute, so Gatekeeper checks the file before it is opened. A file
-/// system without extended attributes (FAT, exFAT, some shares) cannot carry it.
-pub fn mark(file: &Path, _url: &str) -> io::Result<()> {
+/// Sets the quarantine attribute, so Gatekeeper checks the file before it is opened, and
+/// records the link it came from. A file system without extended attributes (FAT, exFAT,
+/// some shares) cannot carry either.
+pub fn mark(file: &Path, url: &str) -> io::Result<()> {
     let status = Command::new("/usr/bin/xattr")
         .args(["-w", "com.apple.quarantine", &quarantine_value(SystemTime::now())])
         .arg(file)
@@ -72,7 +73,102 @@ pub fn mark(file: &Path, _url: &str) -> io::Result<()> {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()?;
-    if status.success() { Ok(()) } else { Err(io::Error::other("xattr could not set the quarantine attribute")) }
+    if !status.success() {
+        return Err(io::Error::other("xattr could not set the quarantine attribute"));
+    }
+    if let Err(e) = set_where_from(file, url) {
+        eprintln!("could not record where the file came from: {e}");
+    }
+    Ok(())
+}
+
+/// Records where the file came from (`kMDItemWhereFroms`), as Safari does: Finder's Get Info
+/// and Spotlight show it. Best effort: a file system without extended attributes cannot
+/// carry it. The value is a binary property list, made by the system's `plutil`.
+fn set_where_from(file: &Path, url: &str) -> io::Result<()> {
+    if !(url.starts_with("https://") || url.starts_with("http://")) || url.contains(['\r', '\n']) {
+        return Ok(());
+    }
+    let escaped = url.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+    let xml = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<plist version=\"1.0\"><array><string>{escaped}</string></array></plist>\n"
+    );
+    let mut child = Command::new("/usr/bin/plutil")
+        .args(["-convert", "binary1", "-o", "-", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()?;
+    {
+        use std::io::Write;
+        child.stdin.take().ok_or_else(|| io::Error::other("plutil stdin"))?.write_all(xml.as_bytes())?;
+    }
+    let out = child.wait_with_output()?;
+    if !out.status.success() || out.stdout.is_empty() {
+        return Err(io::Error::other("plutil could not make the property list"));
+    }
+    let hex: String = out.stdout.iter().map(|b| format!("{b:02x}")).collect();
+    let status = Command::new("/usr/bin/xattr")
+        .args(["-wx", "com.apple.metadata:kMDItemWhereFroms", &hex])
+        .arg(file)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()?;
+    if status.success() { Ok(()) } else { Err(io::Error::other("xattr could not set where the file came from")) }
+}
+
+// ---- A finished download -----------------------------------------------------------------
+
+/// Called once a download has its final name: a file saved in `~/Downloads` makes the Dock's
+/// Downloads stack bounce, as a browser download does (the `com.apple.DownloadFileFinished`
+/// distributed notification, posted through `osascript`'s JavaScript bridge; the path is an
+/// argument, never part of the script).
+pub fn download_finished(file: &Path) {
+    let Some(home) = std::env::var_os("HOME") else { return };
+    if !file.starts_with(Path::new(&home).join("Downloads")) {
+        return;
+    }
+    const SCRIPT: &str = "ObjC.import('Foundation'); function run(argv) { \
+        $.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObject('com.apple.DownloadFileFinished', argv[0]); }";
+    let _ = Command::new("/usr/bin/osascript")
+        .args(["-l", "JavaScript", "-e", SCRIPT])
+        .arg(file)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(|mut c| std::thread::spawn(move || c.wait()));
+}
+
+// ---- Keep the Mac awake while downloads run ----------------------------------------------
+
+/// The `caffeinate` process holding the "no idle sleep" assertion, while one runs.
+static AWAKE: std::sync::Mutex<Option<std::process::Child>> = std::sync::Mutex::new(None);
+
+/// On: the Mac does not go to idle sleep (the display still may). `caffeinate -i -w <pid>`
+/// holds a power assertion and ends by itself if the app ends, even after a crash. Off:
+/// the assertion is released. Calling it again with the same value does nothing.
+pub fn set_keep_awake(on: bool) {
+    let mut awake = AWAKE.lock().unwrap_or_else(|e| e.into_inner());
+    let alive = awake.as_mut().is_some_and(|c| matches!(c.try_wait(), Ok(None)));
+    if on && !alive {
+        *awake = Command::new("/usr/bin/caffeinate")
+            .args(["-i", "-w", &std::process::id().to_string()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .ok();
+    } else if !on && let Some(mut c) = awake.take() {
+        let _ = c.kill();
+        let _ = c.wait();
+    }
+}
+
+/// Whether the assertion is held (for tests and diagnostics).
+pub fn keeping_awake() -> bool {
+    AWAKE.lock().unwrap_or_else(|e| e.into_inner()).as_mut().is_some_and(|c| matches!(c.try_wait(), Ok(None)))
 }
 
 // ---- Folder picker -----------------------------------------------------------------------
@@ -138,6 +234,44 @@ mod tests {
         let value = String::from_utf8_lossy(&out.stdout);
         assert!(value.starts_with("0081;") && value.contains(";KS Download Manager;"), "{value}");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_marked_file_says_where_it_came_from() {
+        let dir = std::env::temp_dir().join(format!("ks-where-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("a.bin");
+        std::fs::write(&f, b"x").unwrap();
+        mark(&f, "https://a.example/a.bin?x=1&y=<2>").unwrap();
+        let out = Command::new("/usr/bin/mdls").args(["-raw", "-name", "kMDItemWhereFroms"]).arg(&f).output().unwrap();
+        let shown = String::from_utf8_lossy(&out.stdout);
+        // Spotlight may not have indexed the temp folder; the attribute itself must be there.
+        let raw = Command::new("/usr/bin/xattr").args(["-px", "com.apple.metadata:kMDItemWhereFroms"]).arg(&f).output().unwrap();
+        assert!(raw.status.success() && !raw.stdout.is_empty(), "no where-from attribute ({shown})");
+        let hex: String = String::from_utf8_lossy(&raw.stdout).split_whitespace().collect();
+        let bytes: Vec<u8> = (0..hex.len()).step_by(2).map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap()).collect();
+        assert!(bytes.starts_with(b"bplist00"));
+        let back = Command::new("/usr/bin/plutil").args(["-convert", "xml1", "-o", "-", "--", "-"]).stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+        let mut back = back;
+        {
+            use std::io::Write;
+            back.stdin.take().unwrap().write_all(&bytes).unwrap();
+        }
+        let xml = String::from_utf8(back.wait_with_output().unwrap().stdout).unwrap();
+        assert!(xml.contains("<string>https://a.example/a.bin?x=1&amp;y=&lt;2&gt;</string>"), "{xml}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn keeping_awake_holds_and_releases_a_power_assertion() {
+        set_keep_awake(true);
+        set_keep_awake(true); // a second call starts no second process
+        assert!(keeping_awake());
+        let pid = AWAKE.lock().unwrap().as_ref().unwrap().id();
+        let ps = Command::new("/bin/ps").args(["-o", "command=", "-p", &pid.to_string()]).output().unwrap();
+        assert!(String::from_utf8_lossy(&ps.stdout).contains("caffeinate -i -w"), "{:?}", ps);
+        set_keep_awake(false);
+        assert!(!keeping_awake());
     }
 
     /// The picker's script must compile; this does not show a dialog.

@@ -93,6 +93,44 @@ fn zone_identifier(url: &str) -> String {
     s
 }
 
+// ---- A finished download -----------------------------------------------------------------
+
+/// Called once a download has its final name. Nothing yet on Windows (the jump list's
+/// recent files come with the Windows step of the per-platform plan).
+pub fn download_finished(_file: &Path) {}
+
+// ---- Keep the PC awake while downloads run -----------------------------------------------
+
+/// Set while a thread holds `ES_SYSTEM_REQUIRED`; dropping it ends that thread.
+static AWAKE: std::sync::Mutex<Option<std::sync::mpsc::Sender<()>>> = std::sync::Mutex::new(None);
+
+/// On: Windows does not go to idle sleep (the display still may). The request belongs to
+/// the thread that makes it, so one thread holds it until switched off. Calling it again
+/// with the same value does nothing.
+pub fn set_keep_awake(on: bool) {
+    use windows_sys::Win32::System::Power::{ES_CONTINUOUS, ES_SYSTEM_REQUIRED, SetThreadExecutionState};
+    let mut awake = AWAKE.lock().unwrap_or_else(|e| e.into_inner());
+    if on && awake.is_none() {
+        let (tx, rx) = std::sync::mpsc::channel::<()>();
+        std::thread::spawn(move || {
+            // SAFETY: plain Win32 call with documented flag values; no pointers involved.
+            unsafe { SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED) };
+            // Returns when the sender is dropped (switched off) or the app ends.
+            let _ = rx.recv();
+            // SAFETY: as above; clears this thread's request.
+            unsafe { SetThreadExecutionState(ES_CONTINUOUS) };
+        });
+        *awake = Some(tx);
+    } else if !on {
+        awake.take();
+    }
+}
+
+/// Whether the request is held (for tests and diagnostics).
+pub fn keeping_awake() -> bool {
+    AWAKE.lock().unwrap_or_else(|e| e.into_inner()).is_some()
+}
+
 // ---- Folder picker -----------------------------------------------------------------------
 
 /// The PowerShell script. The values reach it only as environment variables. `answer` is
@@ -175,6 +213,15 @@ mod tests {
             .unwrap();
         assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), mark.len().to_string());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn keeping_awake_is_switched_on_and_off() {
+        set_keep_awake(true);
+        set_keep_awake(true);
+        assert!(keeping_awake());
+        set_keep_awake(false);
+        assert!(!keeping_awake());
     }
 
     /// Puts text on the real clipboard and reads it back the way the app does. Replaces

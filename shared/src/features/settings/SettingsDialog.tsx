@@ -278,6 +278,23 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
 
               <Separator />
 
+              <Section title={t("settings.computer")}>
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={s.keepAwake}
+                    onChange={(e) => setS({ ...s, keepAwake: e.target.checked })}
+                    className="mt-0.5 size-4 accent-primary"
+                  />
+                  <span>
+                    {t("settings.keepAwake")}
+                    <span className="block text-xs text-muted-foreground">{t("settings.keepAwakeHint")}</span>
+                  </span>
+                </label>
+              </Section>
+
+              <Separator />
+
               <Section title={t("video")}>
                 <label className="flex items-start gap-2 text-sm">
                   <input

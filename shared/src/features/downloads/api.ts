@@ -23,6 +23,8 @@ export interface Settings {
   clipboardPrefill: boolean;
   /** Asks GitHub once a day whether a newer version of the app exists (on by default). */
   updateCheck: boolean;
+  /** The computer does not go to idle sleep while downloads run (on by default). */
+  keepAwake: boolean;
 }
 
 /** A newer release with an installer for this system (Rust's `appupdate::Available`). */

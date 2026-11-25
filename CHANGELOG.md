@@ -4,6 +4,15 @@ All notable changes to KS Download Manager. The layout follows [Keep a Changelog
 
 ## [Unreleased]
 
+### Added
+
+- While downloads run, the computer stays awake (a new switch in Settings, on by default), and the Dock icon or taskbar button shows their progress; on macOS the Dock badge shows how many are running.
+- On macOS, finished files record the link they came from (Finder's Get Info and Spotlight show it), and files saved in Downloads make the Dock's Downloads stack bounce.
+
+### Changed
+
+- The code is now laid out per platform: the shared Tauri project in `shared/`, each operating system's own code in `desktop/mac` and `desktop/windows`.
+
 ## [0.1.5] - 2026-11-23
 
 The update check now uses the KS-Suite shared update code; nothing to do by hand. 0.1.4 finds this version by itself.

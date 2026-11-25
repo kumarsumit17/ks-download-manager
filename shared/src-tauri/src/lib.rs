@@ -275,6 +275,21 @@ fn video_tools(app: &tauri::App, data: &std::path::Path) -> Option<video::Tools>
     Some(video::Tools::new(programs, &resources, data))
 }
 
+/// Progress of the running downloads on the Dock icon (macOS) or taskbar button (Windows),
+/// and on macOS their number as the Dock badge; both cleared when none run.
+fn show_progress(app: &AppHandle, totals: manager::Totals) {
+    use tauri::window::{ProgressBarState, ProgressBarStatus};
+    let Some(window) = app.get_webview_window("main") else { return };
+    let (status, progress) = match (totals.running, totals.percent()) {
+        (0, _) => (ProgressBarStatus::None, None),
+        (_, Some(p)) => (ProgressBarStatus::Normal, Some(p)),
+        (_, None) => (ProgressBarStatus::Indeterminate, None),
+    };
+    let _ = window.set_progress_bar(ProgressBarState { status: Some(status), progress });
+    #[cfg(target_os = "macos")]
+    let _ = window.set_badge_count((totals.running > 0).then_some(totals.running as i64));
+}
+
 /// Stops every download (resumable ones save their place), then exits.
 #[tauri::command]
 async fn quit(app: AppHandle, m: Downloads<'_>) -> Result<(), msg::Msg> {
@@ -432,12 +447,22 @@ pub fn run() {
             {
                 eprintln!("could not register with Chrome: {e}");
             }
+            let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let mut ticker = tokio::time::interval(manager::TICK);
                 ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                // What the Dock or taskbar shows now; it is only updated when this changes.
+                let mut shown: Option<(usize, Option<u64>)> = None;
                 loop {
                     ticker.tick().await;
-                    manager.tick();
+                    let totals = manager.tick();
+                    // No idle sleep while downloads run, unless switched off in Settings.
+                    os::set_keep_awake(totals.running > 0 && manager.settings().keep_awake);
+                    let now = (totals.running, totals.percent());
+                    if shown != Some(now) {
+                        show_progress(&handle, totals);
+                        shown = Some(now);
+                    }
                 }
             });
 

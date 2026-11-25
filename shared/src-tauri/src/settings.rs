@@ -42,6 +42,9 @@ pub struct Settings {
     /// Asks GitHub once a day whether a newer version of the app exists (src/appupdate.rs).
     /// Off: the app checks only when the user clicks "Check for updates".
     pub update_check: bool,
+    /// While downloads run, the computer does not go to idle sleep (src/os.rs). Off: the
+    /// system's own sleep settings apply.
+    pub keep_awake: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -81,6 +84,7 @@ impl Default for Settings {
             notice_seen: false,
             clipboard_prefill: true,
             update_check: true,
+            keep_awake: true,
         }
     }
 }
@@ -174,6 +178,7 @@ mod tests {
             notice_seen: true,
             clipboard_prefill: false,
             update_check: false,
+            keep_awake: false,
         }
         .checked();
         assert_eq!((s.max_active, s.total_connections, s.per_download, s.speed_limit), (1, MAX_TOTAL_CONNECTIONS, 32, None));
@@ -185,5 +190,6 @@ mod tests {
         assert!(partial.settings.clipboard_prefill, "pre-fill is on for settings saved before the switch existed");
         assert!(!partial.settings.notice_seen);
         assert!(partial.settings.update_check, "the daily update check is on for settings saved before the switch existed");
+        assert!(partial.settings.keep_awake, "keeping the computer awake is on for settings saved before the switch existed");
     }
 }

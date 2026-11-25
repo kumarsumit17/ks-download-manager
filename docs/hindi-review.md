@@ -214,6 +214,9 @@ Every interface string of KS Download Manager in English and Hindi, for the owne
 | `preferMp4Hint` | Among streams of the best resolution, H.264 and AAC are chosen, which play everywhere, including QuickTime. The resolution is never lowered. | सबसे अच्छे रिज़ॉल्यूशन वाली स्ट्रीम में से H.264 और AAC चुने जाते हैं, जो QuickTime समेत हर जगह चलते हैं। रिज़ॉल्यूशन कभी कम नहीं होता। |
 | `settings.clipboard` | Fill in a link from the clipboard | क्लिपबोर्ड से लिंक भरें |
 | `settings.clipboardHint` | When Add download opens, a web link you copied is filled in. Nothing else on the clipboard is read into the app. | डाउनलोड जोड़ें खुलने पर, आपका कॉपी किया हुआ वेब लिंक अपने आप भर जाता है। क्लिपबोर्ड की कोई और चीज़ ऐप में नहीं आती। |
+| `settings.computer` | This computer | यह कंप्यूटर |
+| `settings.keepAwake` | Keep the computer awake while downloading | डाउनलोड के दौरान कंप्यूटर को जगाए रखें |
+| `settings.keepAwakeHint` | Downloads keep going instead of stopping when the computer would go to sleep. The display can still turn off. | कंप्यूटर के स्लीप में जाने पर डाउनलोड रुकते नहीं, चलते रहते हैं। डिस्प्ले फिर भी बंद हो सकता है। |
 | `updateVideo` | Update video component | वीडियो कंपोनेंट अपडेट करें |
 | `updating` | Updating… | अपडेट हो रहा है… |
 | `upToDate` | Already the newest version ({version}). | नया वर्ज़न पहले से है ({version})। |

@@ -41,4 +41,8 @@ mod other {
     pub fn mark(_file: &Path, _url: &str) -> std::io::Result<()> {
         Ok(())
     }
+
+    pub fn download_finished(_file: &Path) {}
+
+    pub fn set_keep_awake(_on: bool) {}
 }

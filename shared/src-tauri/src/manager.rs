@@ -160,6 +160,22 @@ pub struct Active {
     pub not_resumable: usize,
 }
 
+/// What the Dock or taskbar shows, from one tick: how many run, and their bytes so far
+/// out of the total of those whose size is known.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Totals {
+    pub running: usize,
+    pub received: u64,
+    pub total: u64,
+}
+
+impl Totals {
+    /// Percent done (0 to 100), or `None` when no running download knows its size.
+    pub fn percent(&self) -> Option<u64> {
+        (self.total > 0).then(|| (self.received.min(self.total) * 100 / self.total).min(100))
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Stop {
     Pause,
@@ -1292,6 +1308,9 @@ impl Manager {
         match result {
             Ok(bytes) => {
                 r.status = Status::Finished;
+                // The system's own touch for a finished download (src/os.rs), off the lock.
+                let path = r.path.clone();
+                std::thread::spawn(move || crate::os::download_finished(&path));
                 r.size = Some(bytes);
                 r.received = bytes;
                 r.error = None;
@@ -1588,7 +1607,7 @@ impl Manager {
     }
 
     /// Reads every running download's progress and sends one batched event.
-    pub fn tick(&self) {
+    pub fn tick(&self) -> Totals {
         let ticks: Vec<Tick> = {
             let mut inner = self.lock();
             let now = Instant::now();
@@ -1597,7 +1616,15 @@ impl Manager {
         if !ticks.is_empty() {
             self.events.progress(&ticks);
         }
+        totals(&ticks)
     }
+}
+
+/// Sums the ticks; only downloads with a known size count toward the percentage.
+fn totals(ticks: &[Tick]) -> Totals {
+    let known = ticks.iter().filter_map(|t| t.size.map(|s| (t.received, s)));
+    let (received, total) = known.fold((0u64, 0u64), |(r, s), (tr, ts)| (r.saturating_add(tr.min(ts)), s.saturating_add(ts)));
+    Totals { running: ticks.len(), received, total }
 }
 
 /// Why a run ended without a finished file.
@@ -1810,6 +1837,16 @@ fn url_host(url: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn totals_count_every_running_download_and_the_bytes_of_those_with_a_size() {
+        let t = |size: Option<u64>, received: u64| Tick { id: 1, size, received, speed: 0.0, connections: Vec::new(), merging: false, stalled: false };
+        let totals = super::totals(&[t(Some(100), 50), t(None, 999), t(Some(300), 350)]);
+        assert_eq!(totals, Totals { running: 3, received: 350, total: 400 });
+        assert_eq!(totals.percent(), Some(87));
+        assert_eq!(super::totals(&[t(None, 5)]).percent(), None, "no size known: no percentage");
+        assert_eq!(super::totals(&[]), Totals::default());
+    }
+
     #[test]
     fn cookie_host_is_the_links_own_host() {
         assert_eq!(super::url_host("https://Files.Example.com:8443/a?b").as_deref(), Some("files.example.com"));

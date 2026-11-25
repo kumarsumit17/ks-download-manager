@@ -104,6 +104,12 @@ The design must be our own: our own UI and icons, and no code, assets, screensho
 - **Reduced motion:** the spinner and the indeterminate progress bars stop when the system asks for reduced motion (CSS `prefers-reduced-motion`).
 - **Window material:** not done. Tauri's window effects need a transparent window, which on macOS needs Tauri's private-API flag (`macos-private-api`); the window keeps its solid background.
 
+## The system's own touches (per-platform plan, step 2)
+- **Keep awake** (Settings → This computer → **Keep the computer awake while downloading**, `keepAwake`, on by default): while at least one download runs, the computer does not go to idle sleep; the display still may. macOS: a `caffeinate -i -w <app pid>` process holds the power assertion (it ends with the app, even after a crash); Windows: one thread holds `SetThreadExecutionState(ES_SYSTEM_REQUIRED)`. Released when the last download ends.
+- **Dock and taskbar**: the progress of the running downloads (bytes so far out of the total of those whose size is known; indeterminate when none knows its size) on the Dock icon or the taskbar button, and on macOS the number running as the Dock badge; both cleared when none run, updated only when they change.
+- **Where from** (macOS): a finished file records the link it came from (`com.apple.metadata:kMDItemWhereFroms`, a binary property list made by `plutil`), shown by Finder's Get Info and Spotlight, as for a Safari download.
+- **Downloads stack** (macOS): a file saved in `~/Downloads` makes the Dock's Downloads stack bounce (`com.apple.DownloadFileFinished`).
+
 ## App updates
 - **Where:** Settings → **App updates** shows the running version ("built from source" for `0.0.0`), the switch **Check for updates automatically** (on by default, `updateCheck` in `settings.json`) and a **Check for updates** button. When a newer version is found, a bar above the download list says "Version X is available." with **Download and install (size)** and **Later**; Settings shows the same install button.
 - **Shared rules:** the suite's [app-update behaviour](https://github.com/kumarsumit17/ks-utility/blob/main/specs/app-update.md): versions, the daily schedule, reading the release, which file and the checksum rule come from `ks_utility::app_update`, the interface state from `createUpdateStore`, and the texts from the shared `common.appUpdate.*` catalogue (ks-utility `v0.3.0`).
