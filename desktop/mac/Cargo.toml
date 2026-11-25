@@ -1,0 +1,18 @@
+[package]
+name = "ksdm-mac"
+version = "0.0.0"
+description = "KS Download Manager: the macOS-only code (opener, clipboard, download marking, folder picker, commands)"
+authors = ["Kumar Sumit"]
+license = "MIT"
+edition = "2024"
+publish = false
+# Part of the Tauri project's Cargo workspace (shared/src-tauri), so it shares its lock file.
+workspace = "../../shared/src-tauri"
+
+# The whole crate is macOS-only (`#![cfg(target_os = "macos")]` in lib.rs); elsewhere it is empty.
+[target.'cfg(target_os = "macos")'.dependencies]
+# Already in the workspace's Cargo.lock: no new package.
+tokio = { version = "1.54.1", features = ["process"] }
+
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+tokio = { version = "1.54.1", features = ["process", "rt", "macros"] }

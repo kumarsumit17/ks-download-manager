@@ -1,0 +1,19 @@
+[package]
+name = "ksdm-windows"
+version = "0.0.0"
+description = "KS Download Manager: the Windows-only code (opener, clipboard, download marking, folder picker, commands)"
+authors = ["Kumar Sumit"]
+license = "MIT"
+edition = "2024"
+publish = false
+# Part of the Tauri project's Cargo workspace (shared/src-tauri), so it shares its lock file.
+workspace = "../../shared/src-tauri"
+
+# The whole crate is Windows-only (`#![cfg(windows)]` in lib.rs); elsewhere it is empty.
+[target.'cfg(windows)'.dependencies]
+# Both already in the workspace's Cargo.lock: no new package.
+tokio = { version = "1.54.1", features = ["process"] }
+windows-sys = { version = "0.61.2", features = ["Win32_System_Threading"] }
+
+[target.'cfg(windows)'.dev-dependencies]
+tokio = { version = "1.54.1", features = ["process", "rt", "macros"] }

@@ -15,6 +15,7 @@ mod marker;
 #[macro_use]
 mod msg;
 mod open;
+mod os;
 mod picker;
 mod settings;
 mod store;
@@ -328,7 +329,7 @@ pub fn run() {
         let socket = handoff::data_dir_without_tauri().map(|d| handoff::socket_path(&d));
         std::process::exit(socket.map_or(1, |s| handoff::run_host(&args, &s)));
     }
-    // Windows installer: register the Chrome host for this copy, then exit (src-tauri/windows/hooks.nsh).
+    // Windows installer: register the Chrome host for this copy, then exit (desktop/windows/installer/hooks.nsh).
     #[cfg(windows)]
     if args.get(1).map(String::as_str) == Some("--register-chrome-host") {
         let done = std::env::current_exe().and_then(|exe| handoff::install_manifest(&exe));

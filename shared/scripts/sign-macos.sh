@@ -44,16 +44,16 @@ while IFS= read -r f; do
 done < "$LIST"
 rm -f "$LIST"
 if [ "$ID" = "-" ]; then
-  sign --entitlements "$HERE/src-tauri/yt-dlp-adhoc.entitlements.plist" "$YT/yt-dlp_macos"
+  sign --entitlements "$HERE/../desktop/mac/signing/yt-dlp-adhoc.entitlements.plist" "$YT/yt-dlp_macos"
 else
   sign "$YT/yt-dlp_macos"
 fi
 
 # Deno needs JIT; nothing else does.
-sign --entitlements "$HERE/src-tauri/deno.entitlements.plist" "$APP/Contents/MacOS/deno"
+sign --entitlements "$HERE/../desktop/mac/signing/deno.entitlements.plist" "$APP/Contents/MacOS/deno"
 sign "$APP/Contents/MacOS/ffmpeg" "$APP/Contents/MacOS/ffprobe"
 
 # Seal the app again over the re-signed contents.
-sign --entitlements "$HERE/src-tauri/entitlements.plist" "$APP"
+sign --entitlements "$HERE/../desktop/mac/signing/entitlements.plist" "$APP"
 codesign --verify --deep --strict "$APP"
 echo "signed: $APP ($ID); files that could not be signed: $UNSIGNED"

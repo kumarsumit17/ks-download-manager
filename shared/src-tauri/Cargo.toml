@@ -16,9 +16,11 @@ name = "ks_download_manager_lib"
 crate-type = ["rlib"]
 
 [workspace]
-members = ["engine"]
-# Plain `cargo test` / `cargo clippy` in src-tauri/ also cover the engine crate.
-default-members = [".", "engine"]
+# engine: the download engine. desktop/mac and desktop/windows: each OS's own code (empty on
+# the other system), so they share this lock file.
+members = ["engine", "../../desktop/mac", "../../desktop/windows"]
+# Plain `cargo test` / `cargo clippy` in src-tauri/ also cover the engine and the platform crates.
+default-members = [".", "engine", "../../desktop/mac", "../../desktop/windows"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -36,10 +38,15 @@ serde_json = "1.0.154"
 # thumbnail fetches at once.
 tokio = { version = "1.54.1", features = ["time", "process", "io-util", "macros", "rt", "net", "sync"] }
 
-# Windows only: who is at the other end of the extension's named pipe (the user SID of the
+# The per-platform code (src/os.rs, specs/plan-per-platform.md).
+[target.'cfg(target_os = "macos")'.dependencies]
+ksdm-mac = { path = "../../desktop/mac" }
+
+# Windows only: the per-platform code, and who is at the other end of the extension's named pipe (the user SID of the
 # process, src/handoff.rs), the process-creation flags, and Windows constants. Already in
 # Cargo.lock through tokio and Tauri: no new package. Approved by the owner (docs/release-plan.md, 8).
 [target.'cfg(windows)'.dependencies]
+ksdm-windows = { path = "../../desktop/windows" }
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Pipes", "Win32_System_Threading"] }
 
 [dev-dependencies]

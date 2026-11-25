@@ -945,7 +945,19 @@ mod tests {
         drop(first);
         // The file is left behind, nobody answers: it is replaced.
         assert!(path.exists());
-        assert!(matches!(bind(&path).unwrap(), Bound::Listener(_)));
+        // macOS cannot create a socket with close-on-exec set atomically, so a program another
+        // test starts at that moment may hold a copy of the listener until it exits, and the
+        // socket still answers meanwhile. Wait for that, briefly; the app itself binds before
+        // it starts any program.
+        let mut again = bind(&path).unwrap();
+        for _ in 0..100 {
+            if matches!(again, Bound::Listener(_)) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            again = bind(&path).unwrap();
+        }
+        assert!(matches!(again, Bound::Listener(_)));
         // A regular file with that name is never removed.
         let other = dir.join("file.sock");
         std::fs::write(&other, b"keep").unwrap();

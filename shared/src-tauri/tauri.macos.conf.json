@@ -1,0 +1,11 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "macOS": {
+      "signingIdentity": "-",
+      "hardenedRuntime": true,
+      "entitlements": "../../desktop/mac/signing/entitlements.plist",
+      "minimumSystemVersion": "11.0"
+    }
+  }
+}

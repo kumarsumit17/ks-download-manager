@@ -113,6 +113,6 @@ Each step is one or more commits on `dev`, tested before the next. Nothing is pu
 | 5 | Release **v0.2.0** (both apps and the extension, one tag) | release workflow | Both apps update themselves from 0.1.x to 0.2.0 |
 
 **Built so far (2026-11-25):**
-- Step 1, part 1: the Tauri project is in `shared/`, with every workflow, script, guide and spec path updated; all local checks pass. Still to do in step 1: the `Platform` trait and the per-OS config files.
+- Step 1, done: the Tauri project is in `shared/` (every workflow, script, guide and spec path updated; CI and a release rehearsal passed on it). Each OS's own code moved into the crates `desktop/mac` (`ksdm-mac`) and `desktop/windows` (`ksdm-windows`): opener, clipboard, download marking, folder picker and command creation, with their tests; instead of a trait object, both crates have the same functions and `shared/src-tauri/src/os.rs` picks one at build time. Per-OS bundle settings are in `tauri.macos.conf.json` and `tauri.windows.conf.json` (beside `tauri.conf.json`, where Tauri reads them); the signing entitlements are in `desktop/mac/signing/` and the installer hooks in `desktop/windows/installer/`. The extension hand-off (`handoff.rs`), the video tools and the yt-dlp update keep their `cfg` branches for now; they move when their platform step changes them.
 
 Windows cannot be run from this Mac, so step 3 is checked by its CI build and tests and by the owner on a real PC.
