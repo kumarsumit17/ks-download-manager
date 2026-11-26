@@ -4,6 +4,8 @@ All notable changes to KS Download Manager. The layout follows [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-26
+
 ### Added
 
 - While downloads run, the computer stays awake (a new switch in Settings, on by default), and the Dock icon or taskbar button shows their progress; on macOS the Dock badge shows how many are running.
@@ -16,6 +18,8 @@ All notable changes to KS Download Manager. The layout follows [Keep a Changelog
 
 - The project moved to the GitHub account `kumasumit` (https://github.com/kumasumit/ks-download-manager). Copies installed before this release cannot find it by themselves: download it once from the Releases page; later updates arrive as usual.
 - The code is now laid out per platform: the shared Tauri project in `shared/`, each operating system's own code in `desktop/mac` and `desktop/windows`.
+- macOS, Windows and the Chrome extension can now be released on their own, each with its own version (tags `mac-v…`, `windows-v…`, `chrome-v…`). The daily update check looks for the newest release for this computer's system, and the extension is told the newest extension version.
+- The files are now attested by KS-Suite's shared release workflow: check them with `gh attestation verify <file> -R kumasumit/ks-download-manager --signer-workflow kumasumit/ks-utility/.github/workflows/tauri-app-release-publish.yml`.
 
 ## [0.1.5] - 2026-11-23
 

@@ -34,7 +34,9 @@ The Windows installer (beta, phase B; built by the `windows` job, switched on in
 
 ## 2. The cycle: dev, main, tag
 
-Work happens on a branch, is merged into `dev`, then `dev` into `main` (fast-forward only). **The tag is made on `main`.** The workflow fails at its first step if the tagged commit is not on `main`, if the tag is not `vMAJOR.MINOR.PATCH`, or if `CHANGELOG.md` has no dated section for that version. Never tag while anything is red.
+Work happens on `dev`, then `main` fast-forwards to `dev`. **The tag is made on `main`.** Tags: `vX.Y.Z` releases every platform (macOS, Windows and the Chrome extension); `mac-vX.Y.Z`, `windows-vX.Y.Z` or `chrome-vX.Y.Z` releases that one platform, so each platform has its own version. The workflow fails at its first step if the tagged commit is not on `main`, if the tag is not one of these, if it is not higher than every earlier plain tag and every earlier tag of the same platform, or if `CHANGELOG.md` has no dated section for it: `## [X.Y.Z] - YYYY-MM-DD` for a plain tag, `## [macOS X.Y.Z] - …`, `## [Windows X.Y.Z] - …` or `## [Chrome X.Y.Z] - …` for a platform tag. A plain release is marked latest; a platform release is not (the app's update check reads the release list and takes its own platform's newest). Never tag while anything is red.
+
+The checks before the build and the attesting and publishing after it are ks-utility's shared workflows (`tauri-app-release-check.yml` and `tauri-app-release-publish.yml`, pinned in `release.yml` to the same ks-utility tag as the app); the build jobs are this app's own.
 
 ```bash
 # 1. On dev: the changelog section for the version is dated ("## [X.Y.Z] - YYYY-MM-DD"),
@@ -42,7 +44,8 @@ Work happens on a branch, is merged into `dev`, then `dev` into `main` (fast-for
 git switch dev
 git pull --ff-only origin dev
 git push origin dev                        # wait for CI to pass on dev
-gh workflow run release.yml --ref dev -f version=X.Y.Z -R kumasumit/ks-download-manager
+gh workflow run release.yml --ref dev -f version=X.Y.Z -f platform=all -R kumasumit/ks-download-manager
+                                           # (platform: all, mac, windows or chrome, as the tag)
                                            # wait for the rehearsal to pass; check its file list
 
 # 2. dev into main
@@ -55,7 +58,7 @@ git push origin main                       # wait for CI to pass on main
 git fetch origin
 git merge-base --is-ancestor main origin/main && git diff --quiet main origin/main
 git show main:CHANGELOG.md | grep -E '^## \[X\.Y\.Z\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$'
-git tag -a vX.Y.Z -m "vX.Y.Z" main
+git tag -a vX.Y.Z -m "vX.Y.Z" main      # or mac-vX.Y.Z, windows-vX.Y.Z, chrome-vX.Y.Z
 git push origin vX.Y.Z                     # the workflow builds, checks and publishes
 ```
 
@@ -65,21 +68,23 @@ Check before step 3 that you are on `main` and it matches `origin/main` (`git st
 
 Actions tab → **Release** → the run for the tag:
 
-1. `version`: checks the tag, that it is on `main`, and the changelog section.
-2. `mac (aarch64)` and `mac (x86_64)`: build the app, check the licence files are inside, run the bundled programs, sign (and with the secrets, notarise and staple), make the disk image after signing.
-3. `extension`: builds the zip and checks the extension ID `ikplfdbdfikcokpegkapjdedlgifmkbe` and the version in the zipped manifest.
-4. `attest`: takes exactly the five release files by name (two disk images, the Windows installer, the extension zip, and the ffmpeg source tarball, fetched from its pinned URL and hash-checked; nothing else is ever attached) and records a build-provenance attestation for each. A `SHA256SUMS` is written for the next job only, not attached.
-5. `release`: the only job with write access. Checks the files arrived unchanged, that there are exactly those files, and each attestation again; writes the notes from `CHANGELOG.md` plus how the files were signed; and **publishes the release** as a full release marked latest. It runs only if every job before it passed.
+1. `check` (shared): checks the tag, that it is on `main` and higher than the tags before it, the changelog section, and the version (`set-version.mjs`).
+2. `plan`: names exactly the release files for the platform: the two disk images (mac), the Windows installer (windows), the extension zip (chrome), and the ffmpeg source tarball whenever macOS or Windows files are released.
+3. `ffmpeg-source`: fetches the ffmpeg source from its pinned URL and checks its hash.
+4. `mac (aarch64)` and `mac (x86_64)`: build the app, check the licence files are inside, run the bundled programs, sign (and with the secrets, notarise and staple), make the disk image after signing.
+5. `ffmpeg-windows` and `windows`: cross-build ffmpeg, build the installer, install it, check it and uninstall it.
+6. `extension`: builds the zip and checks the extension ID `ikplfdbdfikcokpegkapjdedlgifmkbe` and the version in the zipped manifest.
+7. `publish` (shared): takes exactly the planned files by name (nothing else is ever attached), attests each one, checks they arrived unchanged and are attested, writes the notes (`release-notes.mjs`: the changelog section plus how the files were signed), and **publishes the release**. It runs only if every job before it passed; jobs a platform release does not need are skipped.
 
 ## 4. Rehearsal (before every tag)
 
 **Actions → Release → Run workflow**, pick `dev` and give the version (`X.Y.Z`, with its dated changelog section on `dev`), or
 
 ```bash
-gh workflow run release.yml --ref dev -f version=X.Y.Z -R kumasumit/ks-download-manager
+gh workflow run release.yml --ref dev -f version=X.Y.Z -f platform=all -R kumasumit/ks-download-manager
 ```
 
-Every job runs as for a tag, except the check that the tag is on `main`. Nothing is attested and nothing is ever published; the files (`release-files`) and the notes (`release-notes`) are kept as the run's artifacts. Check the file list: exactly the five release files.
+Every job runs as for a tag, except the check that the tag is on `main`. Nothing is attested and nothing is ever published; the files (`release-files`) and the notes (`release-notes`) are kept as the run's artifacts. Check the file list: exactly the planned files (five for `all`).
 
 ## 5. After the release: checks and hand checks
 
@@ -87,7 +92,8 @@ Releases page → the release → download every file into an empty folder, then
 
 ```bash
 ls                       # two .dmg, the -setup-beta.exe, the extension .zip, ffmpeg-<v>.tar.xz; nothing else
-for f in *; do gh attestation verify "$f" -R kumasumit/ks-download-manager; done
+for f in *; do gh attestation verify "$f" -R kumasumit/ks-download-manager \
+  --signer-workflow kumasumit/ks-utility/.github/workflows/tauri-app-release-publish.yml; done
 ```
 
 Read the notes: they must say "signed with a Developer ID and notarised" only if the secrets were set, and otherwise give the "Open Anyway" steps. Then do the hand checks in `docs/release-plan.md` section 9 on these files. **Anything they find goes into the next version** (a fix on `dev` and the next tag); the published release is not changed.

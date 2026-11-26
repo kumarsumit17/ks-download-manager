@@ -36,11 +36,14 @@ test("a good tag writes the version into every file", () => {
 });
 
 test("bad tags are refused", () => {
-  for (const tag of ["v0.1", "0.1.0", "v0.1.0-beta", "v01.0.0", "v0.01.0", "v1.2.3.4", "", undefined, "refs/tags/v1.0.0"]) {
+  for (const tag of ["v0.1", "0.1.0", "v0.1.0-beta", "v01.0.0", "v0.01.0", "v1.2.3.4", "linux-v1.0.0", "mac-1.0.0", "mac-v1.0", "-v1.0.0", "", undefined, "refs/tags/v1.0.0"]) {
     assert.throws(() => versionOf(tag), /not a release tag/, String(tag));
   }
   assert.equal(versionOf("v0.0.0"), "0.0.0");
   assert.equal(versionOf("v10.0.12"), "10.0.12");
+  assert.equal(versionOf("mac-v0.2.1"), "0.2.1");
+  assert.equal(versionOf("windows-v1.0.0"), "1.0.0");
+  assert.equal(versionOf("chrome-v0.3.0"), "0.3.0");
 });
 
 test("a file already changed stops the script before anything is written", () => {

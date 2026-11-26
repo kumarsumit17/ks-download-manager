@@ -2,9 +2,10 @@
 // fresh checkout; the repository itself keeps the placeholder 0.0.0 (specs/versioning in the
 // workspace: versions come from git tags, never hardcoded).
 //
-//   node scripts/set-version.mjs <tag> [root]      e.g. v1.2.3
+//   node scripts/set-version.mjs <tag> [root]      e.g. v1.2.3, mac-v1.2.3
 //
-// Accepts only vMAJOR.MINOR.PATCH (no leading zeros, no suffix). Every edit is checked: each
+// Accepts only vMAJOR.MINOR.PATCH, or the same with a platform prefix (mac-, windows-,
+// chrome-: that platform's own release), with no leading zeros and no suffix. Every edit is checked: each
 // file must still hold exactly the placeholder (or, for the JSON files without a version, no
 // version key), otherwise nothing is written and the script exits 1. Each file keeps its own
 // line ends (LF, or CRLF in a Windows checkout made without .gitattributes).
@@ -12,12 +13,12 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const TAG = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+export const TAG = /^(?:(?:mac|windows|chrome)-)?v((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))$/;
 
 /** Returns "X.Y.Z" for a valid tag, or throws. */
 export function versionOf(tag) {
-  if (!TAG.test(tag ?? "")) throw new Error(`"${tag}" is not a release tag (expected vMAJOR.MINOR.PATCH, e.g. v1.2.3)`);
-  return tag.slice(1);
+  if (!TAG.test(tag ?? "")) throw new Error(`"${tag}" is not a release tag (expected vMAJOR.MINOR.PATCH or <platform>-vMAJOR.MINOR.PATCH, e.g. v1.2.3, mac-v1.2.3)`);
+  return TAG.exec(tag)[1];
 }
 
 const once = (text, find, replace, file) => {

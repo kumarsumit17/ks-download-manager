@@ -1,5 +1,6 @@
 # 2026-11-26
 
+* **Update**: [per-platform plan](plan-per-platform.md), step 5: the release moves to ks-utility v0.14.0's shared Tauri release workflows with platform tags (`mac-v`, `windows-v`, `chrome-v`; plain `v` releases all), and the updater reads the release list for this computer's platform and the extension's newest version. `docs/release.md` updated.
 * **Update**: `ks-utility` pin moved from `v0.13.2` (`1713f01`) to `v0.14.0` (`83d81ec`): the shared Tauri release workflows; every check passes unchanged.
 * **Update**: `ks-utility` pin moved from `v0.9.0` (`9ce7296`) to `v0.13.2` (`1713f01`), the newest tag, as the suite rule now asks before each release (KS-Suite c274bee): platform release helpers (incl. `chrome-`) and the stricter language-file check, which passes unchanged.
 * **Update**: [per-platform plan](plan-per-platform.md) and `docs/release.md`: "Build, test, release, no waiting" (suite rule, KS-Suite ff464ae): tested work is pushed and released with the next tag without asking first; hand checks follow and never block a release.

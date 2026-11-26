@@ -1,15 +1,19 @@
-# Release (docs/release.md, specs/release-cycle.md in the KS-Suite workspace). Two ways in:
+# Release (docs/release.md, specs/release-cycle.md in the KS-Suite workspace). The checks
+# before the build and the publishing after it are ks-utility's shared Tauri release
+# workflows (pinned to a ks-utility tag, the same as the app's ks-utility pin); the build jobs
+# in between are this app's own. Two ways in:
 #
-#   Tag push (vX.Y.Z on main)  Builds the macOS disk images, the Windows beta installer and
-#                              the Chrome extension, attests every file, and PUBLISHES the
-#                              GitHub release as a full release marked latest: only from the
-#                              `release` job, and only after every build and check passed.
-#                              No draft. A failure anywhere publishes nothing.
+#   Tag push       vX.Y.Z releases every platform: the macOS disk images, the Windows beta
+#                  installer and the Chrome extension. mac-vX.Y.Z, windows-vX.Y.Z or
+#                  chrome-vX.Y.Z releases that platform only. The tag must be on main and
+#                  higher than the tags before it; CHANGELOG.md needs a dated section for it
+#                  ("## [0.2.0] - …", or "## [macOS 0.2.1] - …" for a platform tag). Every file
+#                  is attested and the GitHub release is PUBLISHED, only after every build and
+#                  check passed. No draft. A failure anywhere publishes nothing.
 #
-#   Manual run (rehearsal)     On any branch, e.g. dev, with the version to rehearse. Every
-#                              job runs as for a tag, except "the tag is on main"; nothing is
-#                              attested and nothing is ever published. The files and the notes
-#                              stay as workflow artifacts.
+#   Manual run     On any branch, e.g. dev, with the version and platform to rehearse. Every
+#   (rehearsal)    job runs as for a tag, except "the tag is on main"; nothing is attested and
+#                  nothing is ever published. The files and the notes stay as workflow artifacts.
 #
 # Our own environment variables start with KSDM_: tools read some plain names by
 # themselves (zip reads $KSDM_EXT_ZIP as options, make imports every variable).
@@ -19,13 +23,18 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["v*", "mac-v*", "windows-v*", "chrome-v*"]
   workflow_dispatch:
     inputs:
       version:
         description: "Version to rehearse, X.Y.Z (CHANGELOG.md needs a dated section for it). Builds everything, releases nothing."
         required: true
         type: string
+      platform:
+        description: "Platform to rehearse, as its tag would: all (vX.Y.Z) or one platform (mac-vX.Y.Z, …)."
+        type: choice
+        options: [all, mac, windows, chrome]
+        default: all
 
 permissions: {}
 
@@ -34,60 +43,70 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  version:
+  check:
+    uses: kumasumit/ks-utility/.github/workflows/tauri-app-release-check.yml@v0.14.0
+    permissions:
+      contents: read
+    with:
+      version: ${{ inputs.version }}
+      platform: ${{ inputs.platform || 'all' }}
+      platforms: "mac windows chrome"
+      set-version: node shared/scripts/set-version.mjs "$KS_TAG"
+
+  # What this release builds and attaches: exactly these files, by name.
+  plan:
+    needs: check
     runs-on: ubuntu-24.04
     permissions:
       contents: read
     outputs:
-      tag: ${{ steps.v.outputs.tag }}
-      version: ${{ steps.v.outputs.version }}
-      rehearsal: ${{ steps.v.outputs.rehearsal }}
-      # The Windows beta installer: "off" builds no Windows file at all. Switched on on
-      # 2026-11-21, after every Windows test passed on windows-2025 (CI run 44930392469).
-      windows: "on"
+      files: ${{ steps.p.outputs.files }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - id: p
+        env:
+          KSDM_VERSION: ${{ needs.check.outputs.version }}
+          KSDM_PLATFORM: ${{ needs.check.outputs.platform }}
+        run: |
+          P="ks-download-manager-v$KSDM_VERSION"
+          SRC=$(basename "$(jq -r .ffmpeg.source shared/src-tauri/sidecars.json)")
+          f=""
+          case "$KSDM_PLATFORM" in all|mac) f="$f $P-macos-arm64.dmg $P-macos-x64.dmg" ;; esac
+          case "$KSDM_PLATFORM" in all|windows) f="$f $P-windows-x64-setup-beta.exe" ;; esac
+          case "$KSDM_PLATFORM" in all|chrome) f="$f ks-download-manager-extension-v$KSDM_VERSION.zip" ;; esac
+          # The LGPL source of the bundled ffmpeg goes with every release that bundles it.
+          case "$KSDM_PLATFORM" in all|mac|windows) f="$f $SRC" ;; esac
+          echo "files=${f# }" >> "$GITHUB_OUTPUT"
+          echo "files:${f}"
+
+  # The ffmpeg source the bundled ffmpeg is built from: from the pinned URL, hash-checked.
+  ffmpeg-source:
+    needs: check
+    if: contains(fromJSON('["all","mac","windows"]'), needs.check.outputs.platform)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: "26"
-      - name: The tag is vMAJOR.MINOR.PATCH
-        id: v
-        env:
-          KSDM_INPUT_VERSION: ${{ inputs.version }}
-        run: |
-          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
-            KSDM_TAG="v$KSDM_INPUT_VERSION"
-            echo "rehearsal=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::Rehearsal of $KSDM_TAG on $GITHUB_REF_NAME: no attestation, no release."
-          else
-            KSDM_TAG="$GITHUB_REF_NAME"
-            echo "rehearsal=false" >> "$GITHUB_OUTPUT"
-          fi
-          node shared/scripts/set-version.mjs "$KSDM_TAG"
-          echo "tag=$KSDM_TAG" >> "$GITHUB_OUTPUT"
-          echo "version=${KSDM_TAG#v}" >> "$GITHUB_OUTPUT"
-      - name: The tagged commit is on main
-        if: github.event_name == 'push'
-        run: |
-          git fetch --no-tags origin main
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "::error::$GITHUB_REF_NAME points to $GITHUB_SHA, which is not on main. Merge into main first and tag there (docs/release.md)."
-            exit 1
-          fi
-      - name: CHANGELOG.md has a dated section for this version
-        env:
-          V: ${{ steps.v.outputs.version }}
-        run: |
-          if ! tr -d '\r' < CHANGELOG.md | grep -Eq "^## \[${V//./\\.}\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$"; then
-            echo "::error::CHANGELOG.md needs a line '## [$V] - YYYY-MM-DD' (docs/release.md)."
-            exit 1
-          fi
+          persist-credentials: false
+      - run: |
+          SRC=$(jq -r .ffmpeg.source shared/src-tauri/sidecars.json)
+          SHA=$(jq -r .ffmpeg.sha256 shared/src-tauri/sidecars.json)
+          mkdir -p out
+          curl -fsSL -o "out/$(basename "$SRC")" "$SRC"
+          echo "$SHA  out/$(basename "$SRC")" | sha256sum -c -
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ffmpeg-source
+          path: out/
+          if-no-files-found: error
 
   mac:
-    needs: version
+    needs: check
+    if: contains(fromJSON('["all","mac"]'), needs.check.outputs.platform)
     strategy:
       fail-fast: false
       matrix:
@@ -104,10 +123,10 @@ jobs:
       run:
         working-directory: shared
     env:
-      KSDM_TAG: ${{ needs.version.outputs.tag }}
-      KSDM_VERSION: ${{ needs.version.outputs.version }}
+      KSDM_TAG: ${{ needs.check.outputs.tag }}
+      KSDM_VERSION: ${{ needs.check.outputs.version }}
       KSDM_APP: src-tauri/target/${{ matrix.triple }}/release/bundle/macos/KS Download Manager.app
-      KSDM_DMG: ks-download-manager-v${{ needs.version.outputs.version }}-macos-${{ matrix.arch }}.dmg
+      KSDM_DMG: ks-download-manager-v${{ needs.check.outputs.version }}-macos-${{ matrix.arch }}.dmg
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -224,7 +243,8 @@ jobs:
           if-no-files-found: error
 
   extension:
-    needs: version
+    needs: check
+    if: contains(fromJSON('["all","chrome"]'), needs.check.outputs.platform)
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -232,8 +252,8 @@ jobs:
       run:
         working-directory: shared
     env:
-      KSDM_TAG: ${{ needs.version.outputs.tag }}
-      KSDM_EXT_ZIP: ks-download-manager-extension-v${{ needs.version.outputs.version }}.zip
+      KSDM_TAG: ${{ needs.check.outputs.tag }}
+      KSDM_EXT_ZIP: ks-download-manager-extension-v${{ needs.check.outputs.version }}.zip
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -264,7 +284,7 @@ jobs:
           node scripts/extension-id.mjs "$D/manifest.json" ikplfdbdfikcokpegkapjdedlgifmkbe
           node -e 'const a=require(process.argv[1]).key,b=require(process.argv[2]).key; if(a!==b){console.error("key differs from the repository manifest");process.exit(1)}' "$D/manifest.json" "$PWD/extension/manifest.json"
           V=$(node -p 'require(process.argv[1]).version' "$D/manifest.json")
-          [ "$V" = "${{ needs.version.outputs.version }}" ] || { echo "::error::zipped manifest version $V"; exit 1; }
+          [ "$V" = "${{ needs.check.outputs.version }}" ] || { echo "::error::zipped manifest version $V"; exit 1; }
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: extension
@@ -273,8 +293,8 @@ jobs:
 
   # ffmpeg/ffprobe for Windows, cross-built on Linux (as in ci.yml).
   ffmpeg-windows:
-    needs: version
-    if: needs.version.outputs.windows == 'on'
+    needs: check
+    if: contains(fromJSON('["all","windows"]'), needs.check.outputs.platform)
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -295,8 +315,7 @@ jobs:
 
   # The Windows installer, beta: per-user NSIS, not code-signed (docs/release-plan.md, 3.2).
   windows:
-    needs: [version, ffmpeg-windows]
-    if: needs.version.outputs.windows == 'on'
+    needs: [check, ffmpeg-windows]
     runs-on: windows-2025
     permissions:
       contents: read
@@ -305,9 +324,9 @@ jobs:
         shell: bash
         working-directory: shared
     env:
-      KSDM_TAG: ${{ needs.version.outputs.tag }}
-      KSDM_VERSION: ${{ needs.version.outputs.version }}
-      KSDM_SETUP: ks-download-manager-v${{ needs.version.outputs.version }}-windows-x64-setup-beta.exe
+      KSDM_TAG: ${{ needs.check.outputs.tag }}
+      KSDM_VERSION: ${{ needs.check.outputs.version }}
+      KSDM_SETUP: ks-download-manager-v${{ needs.check.outputs.version }}-windows-x64-setup-beta.exe
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -341,134 +360,21 @@ jobs:
           path: shared/release/
           if-no-files-found: error
 
-  attest:
-    needs: [version, mac, extension, windows]
-    # Runs when Windows was built, and when it is switched off (skipped); never after a failure.
-    if: ${{ !cancelled() && needs.mac.result == 'success' && needs.extension.result == 'success' && (needs.windows.result == 'success' || (needs.windows.result == 'skipped' && needs.version.outputs.windows == 'off')) }}
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      id-token: write
-      attestations: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          path: artifacts
-      # Exactly the release files, by name, and nothing else: the two disk images, the Windows
-      # installer (when switched on), the extension zip and the ffmpeg source the bundled
-      # ffmpeg is built from (LGPL source, from the pinned URL, hash-checked). The run's other
-      # artifacts (e.g. ffmpeg-windows) are never released. SHA256SUMS is kept in meta/ only,
-      # so the release job can check the files arrived unchanged; it is not attached.
-      - name: Collect the release files
-        env:
-          KSDM_VERSION: ${{ needs.version.outputs.version }}
-          KSDM_WINDOWS: ${{ needs.version.outputs.windows }}
-        run: |
-          mkdir -p files meta
-          P="ks-download-manager-v$KSDM_VERSION"
-          want="$P-macos-arm64.dmg $P-macos-x64.dmg ks-download-manager-extension-v$KSDM_VERSION.zip"
-          [ "$KSDM_WINDOWS" = on ] && want="$want $P-windows-x64-setup-beta.exe"
-          for f in $want; do
-            found=$(find artifacts -type f -name "$f")
-            [ "$(printf '%s\n' "$found" | grep -c .)" = 1 ] || { echo "::error::expected exactly one $f in the artifacts, found: ${found:-none}"; exit 1; }
-            cp "$found" files/
-          done
-          for a in arm64 x64; do
-            found=$(find artifacts -type f -name "signing-macos-$a.txt")
-            [ "$(printf '%s\n' "$found" | grep -c .)" = 1 ] || { echo "::error::expected one signing-macos-$a.txt"; exit 1; }
-            cp "$found" meta/
-          done
-          SRC=$(jq -r .ffmpeg.source shared/src-tauri/sidecars.json)
-          SHA=$(jq -r .ffmpeg.sha256 shared/src-tauri/sidecars.json)
-          curl -fsSL -o "files/$(basename "$SRC")" "$SRC"
-          echo "$SHA  files/$(basename "$SRC")" | sha256sum -c -
-          want="$want $(basename "$SRC")"
-          (cd files && sha256sum $(ls | LC_ALL=C sort)) > meta/SHA256SUMS
-          cat meta/SHA256SUMS
-          n=$(ls files | wc -l)
-          [ "$n" -eq "$(echo $want | wc -w)" ] || { echo "::error::files/ has $n entries; expected only the release files"; ls files; exit 1; }
-          ls meta
-      # Not in a rehearsal: an attestation is a permanent, public, signed record (Sigstore's
-      # transparency log cannot be edited), and files that are never released must not
-      # have one (docs/decisions-release.md).
-      - name: Build provenance for every file
-        if: needs.version.outputs.rehearsal != 'true'
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-path: files/*
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: release-files
-          path: |
-            files/
-            meta/
-          if-no-files-found: error
-
-  release:
-    needs: [version, attest]
-    if: ${{ !cancelled() && needs.attest.result == 'success' }}
-    runs-on: ubuntu-24.04
+  # Attests exactly the planned files and publishes them as one release, or nothing. A job
+  # this release does not need is skipped; a failed or cancelled one stops it.
+  publish:
+    needs: [check, plan, ffmpeg-source, mac, extension, ffmpeg-windows, windows]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+    uses: kumasumit/ks-utility/.github/workflows/tauri-app-release-publish.yml@v0.14.0
     permissions:
       contents: write
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
-      KSDM_TAG: ${{ needs.version.outputs.tag }}
-      KSDM_VERSION: ${{ needs.version.outputs.version }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: release-files
-          path: .
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: "26"
-      - name: Check every file arrived unchanged, and nothing else is attached
-        env:
-          KSDM_WINDOWS: ${{ needs.version.outputs.windows }}
-        run: |
-          (cd files && sha256sum -c ../meta/SHA256SUMS)
-          want=4; [ "$KSDM_WINDOWS" = on ] && want=5
-          [ "$(ls files | wc -l)" -eq "$want" ] || { echo "::error::expected $want release files"; ls files; exit 1; }
-      - name: Check the attestation of every file
-        if: needs.version.outputs.rehearsal != 'true'
-        run: |
-          for f in files/*; do gh attestation verify "$f" -R "$GH_REPO" > /dev/null && echo "attested: $(basename "$f")"; done
-      - name: Release notes
-        run: |
-          A=$(cat meta/signing-macos-arm64.txt); X=$(cat meta/signing-macos-x64.txt)
-          [ "$A" = "$X" ] || { echo "::error::the two macOS builds were signed differently ($A, $X)"; exit 1; }
-          W=none; ls files/*.exe >/dev/null 2>&1 && W=unsigned
-          node shared/scripts/release-notes.mjs "$KSDM_VERSION" "$A" "$W" > notes.md
-          cat notes.md
-      - name: Rehearsal - keep the notes with the files, create no release
-        if: needs.version.outputs.rehearsal == 'true'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: release-notes
-          path: notes.md
-          if-no-files-found: error
-      # gh uploads the files to a hidden draft first and publishes it once every upload is
-      # done, so a failed upload never leaves a public release with missing files. A draft
-      # left behind by such a failure is removed by a re-run; a published release for this
-      # tag is never changed (the run fails instead; the next version gets a new tag).
-      - name: Publish the release (full release, marked latest)
-        if: needs.version.outputs.rehearsal != 'true'
-        run: |
-          if state=$(gh release view "$KSDM_TAG" --json isDraft --jq .isDraft 2>/dev/null); then
-            if [ "$state" = "true" ]; then
-              gh release delete "$KSDM_TAG" --yes
-            else
-              echo "::error::$KSDM_TAG is already published; it is never changed. Make the next version instead (docs/release.md)."
-              exit 1
-            fi
-          fi
-          gh release create "$KSDM_TAG" --verify-tag --latest --title "KS Download Manager $KSDM_VERSION" --notes-file notes.md files/*
-          gh release view "$KSDM_TAG" --json isDraft,isPrerelease,assets --jq '"draft=\(.isDraft) prerelease=\(.isPrerelease) files=\(.assets|length)"'
-          [ "$(gh release view "$KSDM_TAG" --json isDraft --jq .isDraft)" = false ] || { echo "::error::the release was not published"; exit 1; }
+      id-token: write
+      attestations: write
+    with:
+      tag: ${{ needs.check.outputs.tag }}
+      version: ${{ needs.check.outputs.version }}
+      platform: ${{ needs.check.outputs.platform }}
+      rehearsal: ${{ needs.check.outputs.rehearsal }}
+      files: ${{ needs.plan.outputs.files }}
+      title: KS Download Manager ${{ needs.check.outputs.heading }}
+      notes: node shared/scripts/release-notes.mjs "$KS_VERSION" "$KS_PLATFORM" artifacts > notes.md
