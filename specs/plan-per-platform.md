@@ -117,7 +117,7 @@ Each step is one or more commits on `dev`, tested before the next, pushed as it 
 | 2 | macOS: menu bar, Dock progress and badge, keep awake, Where from, Downloads bounce, drag and drop, (notifications) | `desktop/mac/`, `shared/` | This Mac: the app, a real download, sleep held (`pmset -g assertions`), Finder Get Info |
 | 3 | Windows: Mica, taskbar progress and overlay, keep awake, jump list, Edge host, MotW details, High Contrast, (notifications, ARM64) | `desktop/windows/`, `shared/` | CI build and tests; the owner's hand check on a PC |
 | 4 | VoiceOver (here) and Narrator (owner) passes; startup measured on both | both | Recorded in `docs/` |
-| 5 | Versioning per platform (2.4): ks-utility v0.11.0 updater reading the release list, `mac-v`, `windows-v` and `chrome-v` tag patterns and a `platform` input in the release workflow; the **plain bridge release v0.2.0** with everything above | `shared/src-tauri/src/appupdate.rs`, `.github/workflows/release.yml` | Rust tests; a rehearsal per platform; 0.1.x updates itself to 0.2.0 |
+| 5 | Versioning per platform (2.4): ks-utility v0.11.0 updater reading the release list, `mac-v`, `windows-v` and `chrome-v` tag patterns and a `platform` input in the release workflow; the **plain bridge release v0.2.0** with everything above | `shared/src-tauri/src/appupdate.rs`, `.github/workflows/release.yml` | Rust tests; a rehearsal per platform; 0.1.x updates itself to 0.2.0. **Done 2026-11-26**: on ks-utility v0.14.0's shared Tauri release workflows; v0.2.0 released (all five files attested) |
 | 6 | First platform releases (`mac-v0.2.1`, `windows-v0.2.1`, `chrome-v0.2.1`) when one of them next changes on its own | release workflow | Each app updates itself from its own releases |
 
 **Built so far (2026-11-25):**

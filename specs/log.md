@@ -1,5 +1,6 @@
 # 2026-11-26
 
+* **Update**: [per-platform plan](plan-per-platform.md): step 5 done; v0.2.0, the plain bridge release, is published (five files, attested by ks-utility's publish workflow).
 * **Update**: links to the suite repository and landing page now use its new lower-case name, `kumasumit/ks-suite` and https://kumasumit.github.io/ks-suite/ (README, docs, [per-platform plan](plan-per-platform.md)).
 * **Update**: [per-platform plan](plan-per-platform.md), step 5: the release moves to ks-utility v0.14.0's shared Tauri release workflows with platform tags (`mac-v`, `windows-v`, `chrome-v`; plain `v` releases all), and the updater reads the release list for this computer's platform and the extension's newest version. `docs/release.md` updated.
 * **Update**: `ks-utility` pin moved from `v0.13.2` (`1713f01`) to `v0.14.0` (`83d81ec`): the shared Tauri release workflows; every check passes unchanged.
