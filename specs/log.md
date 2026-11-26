@@ -1,5 +1,6 @@
 # 2026-11-26
 
+* **Update**: `ks-utility` pin moved from `v0.9.0` (`9ce7296`) to `v0.13.2` (`1713f01`), the newest tag, as the suite rule now asks before each release (KS-Suite c274bee): platform release helpers (incl. `chrome-`) and the stricter language-file check, which passes unchanged.
 * **Update**: [per-platform plan](plan-per-platform.md) and `docs/release.md`: "Build, test, release, no waiting" (suite rule, KS-Suite ff464ae): tested work is pushed and released with the next tag without asking first; hand checks follow and never block a release.
 * **Update**: [per-platform plan](plan-per-platform.md): the Chrome extension gets its own `chrome-vX.Y.Z` tags, and step 5 moves to ks-utility v0.11.0 (adds `Platform::Chrome`).
 * **Update**: the repository moved from the GitHub account `kumarsumit17` to `kumasumit` (owner confirmed; KS-Suite `dev` 05b83d7): the updater's repo, the ks-utility git dependencies and both lock files (same commit, `9ce7296`), the Help and extension links, the release notes and the docs. Copies installed before the move must fetch their next release once by hand. History records keep their old links, which GitHub redirects.

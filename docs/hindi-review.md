@@ -97,12 +97,68 @@ Every interface string of KS Download Manager in English and Hindi, for the owne
 | Select all | सभी चुनें | — | approved |
 | Hide | छिपाएं | छिपाएँ | approved |
 | Show | दिखाएं | दिखाएँ | approved |
-| App | ऐप | एप | owner review |
-| Install | इंस्टॉल करें | स्थापित | owner review |
-| Installer | इंस्टॉलर | — | owner review |
-| Check (for updates) | जांच करें | जाँच | owner review |
-| Disk image | डिस्क इमेज | — | owner review |
-| Unknown apps (Android) | अनजान ऐप | अज्ञात | owner review |
+| App | ऐप | एप | approved |
+| Install | इंस्टॉल करें | स्थापित | approved |
+| Installer | इंस्टॉलर | — | approved |
+| Check (for updates) | जांच करें | जाँच | approved |
+| Disk image | डिस्क इमेज | — | approved |
+| Unknown apps (Android) | अनजान ऐप | अज्ञात | approved |
+| Expense | खर्च | — | approved |
+| Amount | राशि | रकम | approved |
+| Note | नोट | टिप्पणी | approved |
+| Date | तारीख | दिनांक | approved |
+| Export | एक्सपोर्ट | निर्यात | approved |
+| Spreadsheet | स्प्रेडशीट | — | approved |
+| Food | खाना | भोजन | approved |
+| Transport | यातायात | ट्रांसपोर्ट | approved |
+| Shopping | खरीदारी | शॉपिंग | approved |
+| Bills | बिल | — | approved |
+| Health | स्वास्थ्य | सेहत | approved |
+| Entertainment | मनोरंजन | — | approved |
+| Hidden | छिपी हुई | — | approved |
+| Vault | वॉल्ट | — | approved |
+| Pattern | पैटर्न | — | approved |
+| Lock | लॉक | — | approved |
+| Unlock | अनलॉक करें | — | approved |
+| Title | शीर्षक | टाइटल | approved |
+| Encrypt | एन्क्रिप्ट | — | approved |
+| Dot | बिंदु | — | approved |
+| Tab | टैब | — | approved |
+| Pane | हिस्सा | — | approved |
+| Panel | पैनल | — | approved |
+| Split | बांटें | बाँटें | approved |
+| Terminal | टर्मिनल | — | approved |
+| Shell | शेल | — | approved |
+| Theme | थीम | — | approved |
+| Shortcut | शॉर्टकट | — | approved |
+| Font | फ़ॉन्ट | — | approved |
+| Command palette | कमांड पैलेट | — | approved |
+| Shell integration | शेल इंटीग्रेशन | — | approved |
+| Scrollback | स्क्रॉलबैक | — | approved |
+| Accent colour | मुख्य रंग | — | approved |
+| Appearance | रूप-रंग | — | approved |
+| Budget | बजट | — | approved |
+| Result | नतीजा | — | approved |
+| Results | नतीजे | — | approved |
+| Left (remaining) | बाकी | — | approved |
+| Over (budget) | बजट से ज़्यादा | — | approved |
+| Subscription | सब्सक्रिप्शन | — | approved |
+| Pin (to Home) | होम स्क्रीन पर जोड़ें | — | approved |
+| Unpin | होम स्क्रीन से हटाएं | अनपिन करें | approved |
+| Wallpaper | वॉलपेपर | — | approved |
+| Weather | मौसम | — | approved |
+| Renewal | रिन्यूअल | — | approved |
+| Reminder | रिमाइंडर | — | approved |
+| Storage | स्टोरेज | — | approved |
+| Uninstall | अनइंस्टॉल करें | — | approved |
+| Screensaver | स्क्रीनसेवर | — | approved |
+| Input (HDMI) | इनपुट | — | approved |
+| Home (screen) | होम स्क्रीन | — | approved |
+| Notification | नोटिफ़िकेशन | नोटिफिकेशन | approved |
+| Display | डिस्प्ले | — | approved |
+| Control Center | कंट्रोल सेंटर | — | approved |
+| Currency | करेंसी | — | approved |
+| Default (setting) | डिफ़ॉल्ट | — | approved |
 
 ## Shared catalogue (ks-utility `lang/common`)
 
