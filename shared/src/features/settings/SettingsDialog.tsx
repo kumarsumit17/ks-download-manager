@@ -291,6 +291,18 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
                     <span className="block text-xs text-muted-foreground">{t("settings.keepAwakeHint")}</span>
                   </span>
                 </label>
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={s.notify}
+                    onChange={(e) => setS({ ...s, notify: e.target.checked })}
+                    className="mt-0.5 size-4 accent-primary"
+                  />
+                  <span>
+                    {t("settings.notify")}
+                    <span className="block text-xs text-muted-foreground">{t("settings.notifyHint")}</span>
+                  </span>
+                </label>
               </Section>
 
               <Separator />

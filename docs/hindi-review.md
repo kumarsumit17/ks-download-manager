@@ -217,6 +217,8 @@ Every interface string of KS Download Manager in English and Hindi, for the owne
 | `settings.computer` | This computer | यह कंप्यूटर |
 | `settings.keepAwake` | Keep the computer awake while downloading | डाउनलोड के दौरान कंप्यूटर को जगाए रखें |
 | `settings.keepAwakeHint` | Downloads keep going instead of stopping when the computer would go to sleep. The display can still turn off. | कंप्यूटर के स्लीप में जाने पर डाउनलोड रुकते नहीं, चलते रहते हैं। डिस्प्ले फिर भी बंद हो सकता है। |
+| `settings.notify` | Notify when a download finishes or fails | डाउनलोड पूरा होने या न हो पाने पर सूचना दें |
+| `settings.notifyHint` | Only while the window is not in front. | सिर्फ़ तब, जब विंडो सामने न हो। |
 | `updateVideo` | Update video component | वीडियो कंपोनेंट अपडेट करें |
 | `updating` | Updating… | अपडेट हो रहा है… |
 | `upToDate` | Already the newest version ({version}). | नया वर्ज़न पहले से है ({version})। |
@@ -374,6 +376,7 @@ Every interface string of KS Download Manager in English and Hindi, for the owne
 | `error.folderMissing` | The folder {path} does not exist. | फ़ोल्डर {path} मौजूद नहीं है। |
 | `error.notAFolder` | {path} is not a folder. | {path} फ़ोल्डर नहीं है। |
 | `error.menu` | Could not set up the menu bar: {detail}. | मेन्यू बार नहीं बन पाया: {detail}। |
+| `error.notify` | Could not show a notification: {detail}. | सूचना नहीं दिखाई जा सकी: {detail}। |
 | `error.picker` | Could not open the folder picker: {detail}. | फ़ोल्डर चुनने वाली विंडो नहीं खुल पाई: {detail}। |
 | `error.pickerMissing` | The folder picker is not available on this system. | इस सिस्टम पर फ़ोल्डर चुनने वाली विंडो उपलब्ध नहीं है। |
 | `error.noDownloadsFolder` | The system Downloads folder was not found: {detail}. | सिस्टम का Downloads फ़ोल्डर नहीं मिला: {detail}। |
@@ -439,6 +442,8 @@ Every interface string of KS Download Manager in English and Hindi, for the owne
 | `menu.zoom` | Zoom | ज़ूम |
 | `menu.fullscreen` | Full Screen | फ़ुल स्क्रीन |
 | `menu.helpItem` | KS Download Manager Help | KS Download Manager मदद |
+| `notify.finished` | Download finished | डाउनलोड पूरा हुआ |
+| `notify.failed` | Download failed | डाउनलोड नहीं हो पाया |
 
 ## Chrome extension (`extension/_locales`)
 

@@ -37,6 +37,10 @@ serde_json = "1.0.154"
 # net: the Unix socket (macOS) or named pipe (Windows) the Chrome extension's native host talks to; sync: the limit on
 # thumbnail fetches at once.
 tokio = { version = "1.54.1", features = ["time", "process", "io-util", "macros", "rt", "net", "sync"] }
+# Notifications when a download finishes or fails (approved by the owner, specs/plan-per-platform.md, 3.2).
+# On macOS it uses mac-notification-sys, on Windows tauri-winrt-notification; its Linux backend
+# (zbus, notify-rust) is in Cargo.lock but never built for our targets.
+tauri-plugin-notification = "2.8.1"
 
 # The per-platform code (src/os.rs, specs/plan-per-platform.md).
 [target.'cfg(target_os = "macos")'.dependencies]

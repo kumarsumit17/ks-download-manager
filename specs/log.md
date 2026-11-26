@@ -1,5 +1,10 @@
+# 2026-11-26
+
+* **Update**: [UI direction](ui.md): notifications when a download finishes or fails (new setting, `tauri-plugin-notification`) and drag and drop of links and `.webloc`/`.url` files ([per-platform plan](plan-per-platform.md), step 2 done).
+
 # 2026-11-25
 
+* **Update**: [per-platform plan](plan-per-platform.md): versioning per platform is back (suite rule, KS-Suite `dev` d373527): `mac-v`/`windows-v` tags, the updater on ks-utility v0.10.0 reading the release list, and a plain bridge release v0.2.0 first (step 5).
 * **Update**: [UI direction](ui.md): the macOS menu bar ([per-platform plan](plan-per-platform.md), step 2, part 2).
 * **Update**: [UI direction](ui.md), "The system's own touches": keep the computer awake while downloading (new setting), Dock and taskbar progress with the Dock badge, Where from on finished files and the Downloads stack bounce on macOS ([per-platform plan](plan-per-platform.md), step 2, part 1).
 * **Update**: [per-platform plan](plan-per-platform.md) step 1 done: OS code in the crates `desktop/mac` and `desktop/windows` (same functions, chosen at build time in `os.rs`), per-OS Tauri config files, signing entitlements and installer hooks in the platform folders.

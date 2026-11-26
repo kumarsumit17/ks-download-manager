@@ -25,6 +25,8 @@ export interface Settings {
   updateCheck: boolean;
   /** The computer does not go to idle sleep while downloads run (on by default). */
   keepAwake: boolean;
+  /** A notification when a download finishes or fails while the window is not in front. */
+  notify: boolean;
 }
 
 /** A newer release with an installer for this system (Rust's `appupdate::Available`). */
@@ -86,6 +88,8 @@ export const api = {
   quit: () => invoke<void>("quit"),
   /** Opens the app's help (its README on GitHub) in the browser. */
   openHelp: () => invoke<void>("open_help"),
+  /** A system notification; nothing when switched off in Settings. */
+  notify: (title: string, body: string) => invoke<void>("notify", { title, body }),
   appVersion: () => invoke<string>("app_version"),
   updateStatus: () => invoke<AppUpdate | null>("update_status"),
   checkForUpdate: () => invoke<UpdateCheck>("check_for_update"),

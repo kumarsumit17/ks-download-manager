@@ -290,6 +290,19 @@ fn set_app_menu(app: AppHandle, labels: std::collections::HashMap<String, String
     Ok(())
 }
 
+/// A system notification (a download finished or failed), with the text in the user's
+/// language from the interface. Nothing when switched off in Settings.
+#[tauri::command]
+fn notify(app: AppHandle, m: Downloads<'_>, title: String, body: String) -> Result<(), msg::Msg> {
+    use tauri_plugin_notification::NotificationExt;
+    if !m.settings().notify {
+        return Ok(());
+    }
+    let title: String = title.chars().take(120).collect();
+    let body: String = body.chars().take(300).collect();
+    app.notification().builder().title(title).body(body).show().map_err(|e| msg!("error.notify", detail = e))
+}
+
 /// Help ▸ KS Download Manager Help: the README on GitHub, in the default browser. A fixed
 /// address only; the interface cannot pass one.
 #[tauri::command]
@@ -401,6 +414,7 @@ pub fn run() {
     };
 
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .setup(move |app| {
             let data = app.path().app_data_dir()?;
             let manager = Manager::new(store::path(&data), Arc::new(WindowEvents(app.handle().clone())));
@@ -532,6 +546,7 @@ pub fn run() {
             install_update,
             set_app_menu,
             open_help,
+            notify,
             get_settings,
             set_settings,
             category_folder,

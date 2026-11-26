@@ -35,6 +35,8 @@
   "settings.computer": "This computer",
   "settings.keepAwake": "Keep the computer awake while downloading",
   "settings.keepAwakeHint": "Downloads keep going instead of stopping when the computer would go to sleep. The display can still turn off.",
+  "settings.notify": "Notify when a download finishes or fails",
+  "settings.notifyHint": "Only while the window is not in front.",
   "updateVideo": "Update video component",
   "updating": "Updating…",
   "upToDate": "Already the newest version ({version}).",
@@ -210,6 +212,7 @@
   "error.folderMissing": "The folder {path} does not exist.",
   "error.notAFolder": "{path} is not a folder.",
   "error.menu": "Could not set up the menu bar: {detail}.",
+  "error.notify": "Could not show a notification: {detail}.",
   "error.picker": "Could not open the folder picker: {detail}.",
   "error.pickerMissing": "The folder picker is not available on this system.",
   "error.noDownloadsFolder": "The system Downloads folder was not found: {detail}.",
@@ -274,5 +277,7 @@
   "menu.minimize": "Minimize",
   "menu.zoom": "Zoom",
   "menu.fullscreen": "Full Screen",
-  "menu.helpItem": "KS Download Manager Help"
+  "menu.helpItem": "KS Download Manager Help",
+  "notify.finished": "Download finished",
+  "notify.failed": "Download failed"
 }

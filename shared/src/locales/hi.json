@@ -35,6 +35,8 @@
   "settings.computer": "यह कंप्यूटर",
   "settings.keepAwake": "डाउनलोड के दौरान कंप्यूटर को जगाए रखें",
   "settings.keepAwakeHint": "कंप्यूटर के स्लीप में जाने पर डाउनलोड रुकते नहीं, चलते रहते हैं। डिस्प्ले फिर भी बंद हो सकता है।",
+  "settings.notify": "डाउनलोड पूरा होने या न हो पाने पर सूचना दें",
+  "settings.notifyHint": "सिर्फ़ तब, जब विंडो सामने न हो।",
   "updateVideo": "वीडियो कंपोनेंट अपडेट करें",
   "updating": "अपडेट हो रहा है…",
   "upToDate": "नया वर्ज़न पहले से है ({version})।",
@@ -210,6 +212,7 @@
   "error.folderMissing": "फ़ोल्डर {path} मौजूद नहीं है।",
   "error.notAFolder": "{path} फ़ोल्डर नहीं है।",
   "error.menu": "मेन्यू बार नहीं बन पाया: {detail}।",
+  "error.notify": "सूचना नहीं दिखाई जा सकी: {detail}।",
   "error.picker": "फ़ोल्डर चुनने वाली विंडो नहीं खुल पाई: {detail}।",
   "error.pickerMissing": "इस सिस्टम पर फ़ोल्डर चुनने वाली विंडो उपलब्ध नहीं है।",
   "error.noDownloadsFolder": "सिस्टम का Downloads फ़ोल्डर नहीं मिला: {detail}।",
@@ -274,5 +277,7 @@
   "menu.minimize": "छोटा करें",
   "menu.zoom": "ज़ूम",
   "menu.fullscreen": "फ़ुल स्क्रीन",
-  "menu.helpItem": "KS Download Manager मदद"
+  "menu.helpItem": "KS Download Manager मदद",
+  "notify.finished": "डाउनलोड पूरा हुआ",
+  "notify.failed": "डाउनलोड नहीं हो पाया"
 }

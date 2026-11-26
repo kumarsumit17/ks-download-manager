@@ -14,7 +14,9 @@ import { FirstRunNotice } from "@/features/notice/FirstRunNotice";
 import { UpdateBanner } from "@/features/update/UpdateBanner";
 import { checkNow, startUpdates } from "@/features/update/appUpdate";
 import { onMenu, startAppMenu } from "@/features/menu/appMenu";
+import { startNotifications } from "@/features/notify/notifications";
 import type { Category } from "@/features/downloads/types";
+import { linkFromShortcut, linkFromText } from "@/features/downloads/dropLink";
 import { t } from "@/lib/i18n";
 import { api, message, onQuitRequested } from "@/features/downloads/api";
 import { useDownloads, useQueues } from "@/features/downloads/store";
@@ -59,6 +61,26 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  /** A link dropped on the window: Add download opens with it. */
+  const [dropped, setDropped] = useState<string | null>(null);
+
+  // Drag and drop: a link from a browser or another app, or a .webloc/.url file.
+  const canDrop = (e: React.DragEvent) => ["text/uri-list", "text/plain", "Files"].some((t) => e.dataTransfer.types.includes(t));
+  const onDragOver = (e: React.DragEvent) => {
+    if (!canDrop(e) || document.querySelector("[role=dialog],[role=alertdialog]")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  };
+  const onDrop = async (e: React.DragEvent) => {
+    if (document.querySelector("[role=dialog],[role=alertdialog]")) return;
+    e.preventDefault();
+    let link = linkFromText(e.dataTransfer.getData("text/uri-list")) ?? linkFromText(e.dataTransfer.getData("text/plain"));
+    const file = e.dataTransfer.files[0];
+    if (!link && file && file.size < 64 * 1024) link = linkFromShortcut(file.name, await file.text());
+    if (!link) return;
+    setDropped(link);
+    setAdding(true);
+  };
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -143,6 +165,8 @@ export default function App() {
     else if (id === "resume" && canResume(selected)) actions.resume(selected);
     else if (id === "pause" && canPause(selected)) actions.pause(selected);
   };
+  useEffect(startNotifications, []);
+
   useEffect(() => {
     startAppMenu();
     const off = onMenu((id) => menuAction.current(id));
@@ -188,7 +212,7 @@ export default function App() {
   return (
     <TooltipProvider delayDuration={400}>
       <FirstRunNotice />
-      <div className="flex h-full flex-col bg-background text-foreground">
+      <div className="flex h-full flex-col bg-background text-foreground" onDragOver={onDragOver} onDrop={(e) => void onDrop(e)}>
         <Toolbar
           canResume={selected !== null && canResume(selected)}
           canPause={selected !== null && canPause(selected)}
@@ -231,7 +255,15 @@ export default function App() {
         </div>
         <StatusBar downloads={downloads} />
 
-        <AddDownloadDialog open={adding} onOpenChange={setAdding} onAdded={setSelectedId} />
+        <AddDownloadDialog
+          open={adding}
+          onOpenChange={(o) => {
+            setAdding(o);
+            if (!o) setDropped(null);
+          }}
+          onAdded={setSelectedId}
+          initialUrl={dropped}
+        />
         <QueuesDialog
           open={queuesOpen}
           onOpenChange={setQueuesOpen}

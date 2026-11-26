@@ -7,6 +7,8 @@ All notable changes to KS Download Manager. The layout follows [Keep a Changelog
 ### Added
 
 - While downloads run, the computer stays awake (a new switch in Settings, on by default), and the Dock icon or taskbar button shows their progress; on macOS the Dock badge shows how many are running.
+- A notification when a download finishes or fails while the window is in the background (a new switch in Settings, on by default).
+- Drag a link, or a `.webloc` or `.url` file, onto the window to add it as a download.
 - On macOS, a full menu bar (File, Edit, Downloads, View, Window, Help) with the usual shortcuts, such as ⌘N to add a download and ⌘1–⌘7 for the lists.
 - On macOS, finished files record the link they came from (Finder's Get Info and Spotlight show it), and files saved in Downloads make the Dock's Downloads stack bounce.
 

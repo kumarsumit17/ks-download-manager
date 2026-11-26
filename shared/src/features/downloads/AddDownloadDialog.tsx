@@ -33,9 +33,11 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onAdded: (id: number) => void;
+  /** A link to start with (dropped on the window); the clipboard is not read then. */
+  initialUrl?: string | null;
 }
 
-export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
+export function AddDownloadDialog({ open, onOpenChange, onAdded, initialUrl }: Props) {
   const [url, setUrl] = useState("");
   const [probe, setProbe] = useState<ProbeView | null>(null);
   const [probing, setProbing] = useState(false);
@@ -55,7 +57,7 @@ export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
   // the category's folder (Settings) once the link is looked up, unless the user chose one.
   useEffect(() => {
     if (!open) return;
-    setUrl("");
+    setUrl(initialUrl ?? "");
     setProbe(null);
     setName("");
     setError(null);
@@ -63,6 +65,7 @@ export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
     setFolderChosen(false);
     setNumbered(true);
     api.defaultFolder().then((d) => setFolder(d), () => {});
+    if (initialUrl) return;
     // A web link on the clipboard fills the field, selected so typing replaces it. Rust
     // reads the clipboard only now and passes it on only when it is exactly one link.
     api.clipboardLink().then(
@@ -73,7 +76,7 @@ export function AddDownloadDialog({ open, onOpenChange, onAdded }: Props) {
       },
       () => {},
     );
-  }, [open]);
+  }, [open, initialUrl]);
 
   useEffect(() => {
     if (!probe || folderChosen) return;
