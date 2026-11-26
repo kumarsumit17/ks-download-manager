@@ -353,7 +353,7 @@ impl handoff::Handler for ExtensionRequests {
             match req {
                 handoff::Request::Ping { .. } => {
                     let mut r = handoff::Reply::ok(None);
-                    r.update = self.0.state::<Arc<appupdate::Updater>>().found_version();
+                    r.update = self.0.state::<Arc<appupdate::Updater>>().extension_latest();
                     r
                 }
                 handoff::Request::Show { .. } => {

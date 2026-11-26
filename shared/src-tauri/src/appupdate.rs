@@ -70,12 +70,15 @@ pub struct Updater {
     current: String,
     dir: PathBuf,
     found: Mutex<Option<Available>>,
+    /// The newest version of the Chrome extension (a plain or `chrome-v` release), from the
+    /// last check, for the extension's own update notice.
+    extension_latest: Mutex<Option<String>>,
     busy: AtomicBool,
 }
 
 impl Updater {
     pub fn new(current: String, data_dir: &Path) -> Self {
-        Self { current, dir: data_dir.to_path_buf(), found: Mutex::new(None), busy: AtomicBool::new(false) }
+        Self { current, dir: data_dir.to_path_buf(), found: Mutex::new(None), extension_latest: Mutex::new(None), busy: AtomicBool::new(false) }
     }
 
     pub fn current(&self) -> &str {
@@ -87,9 +90,10 @@ impl Updater {
         self.found.lock().ok()?.clone()
     }
 
-    /// The version of the update found, for the Chrome extension's notice.
-    pub fn found_version(&self) -> Option<String> {
-        self.found().map(|a| a.version)
+    /// The extension's newest released version (its own `chrome-v` tags or a plain tag), for
+    /// the extension's notice; the extension compares it with its own version.
+    pub fn extension_latest(&self) -> Option<String> {
+        self.extension_latest.lock().ok()?.clone()
     }
 
     /// The daily check is due: a tagged build, and no check in the last day.
@@ -104,15 +108,23 @@ impl Updater {
 
     pub async fn check(&self) -> Result<Check, Msg> {
         let repo = repo();
-        let json = engine::fetch_text(&repo.latest_release_api_url(), app_update::MAX_RESPONSE_BYTES)
+        // The release list, not `releases/latest`: each platform has its own releases
+        // (`mac-v…`, `windows-v…`, `chrome-v…`), and a plain `v…` is every platform's.
+        let json = engine::fetch_text(&repo.releases_api_url(), app_update::MAX_RESPONSE_BYTES)
             .await
             .map_err(|e| msg!("common.appUpdate.checkFailed", detail = e))?;
         let _ = std::fs::create_dir_all(&self.dir);
         if let Ok(data) = serde_json::to_vec(&State { last_check: now_secs() }) {
             let _ = write_atomic(&self.dir.join(STATE_FILE), &data);
         }
-        let release = app_update::parse_release(&json, &repo).ok_or_else(|| msg!("common.appUpdate.unreadable"))?;
-        let asset = Platform::current().and_then(|p| app_update::pick_asset(&release.assets, p, &repo));
+        if let Ok(mut e) = self.extension_latest.lock() {
+            *e = app_update::parse_releases(&json, &repo, Platform::Chrome).map(|t| t.release.version);
+        }
+        let platform = Platform::current().ok_or_else(|| msg!("common.appUpdate.unreadable"))?;
+        let release = app_update::parse_releases(&json, &repo, platform)
+            .ok_or_else(|| msg!("common.appUpdate.unreadable"))?
+            .release;
+        let asset = app_update::pick_asset(&release.assets, platform, &repo);
         let found = match app_update::decide(&release, &self.current, asset) {
             Outcome::UpToDate { .. } => None,
             Outcome::NoInstaller { version } => return Err(msg!("common.appUpdate.noInstaller", version = version)),
@@ -203,6 +215,37 @@ mod tests {
         assert_eq!(pick(Platform::WindowsX64), Some(NAMES[3]));
         assert!(Platform::current().is_some(), "built for a platform we release for");
         assert_eq!(repo().latest_release_api_url(), format!("https://api.github.com/repos/{REPO}/releases/latest"));
+    }
+
+    /// A release list with a plain release and one of each platform's own: each platform finds
+    /// its newest release (its own or a plain one) and its own file, and the extension its version.
+    #[test]
+    fn each_platform_reads_its_own_releases_from_the_list() {
+        let release = |tag: &str, files: &[&str]| -> String {
+            let assets: Vec<String> = files
+                .iter()
+                .map(|n| format!(r#"{{"name":"{n}","size":9,"digest":"sha256:{}","browser_download_url":"https://github.com/{REPO}/releases/download/{tag}/{n}"}}"#, "b".repeat(64)))
+                .collect();
+            format!(r#"{{"tag_name":"{tag}","draft":false,"prerelease":false,"assets":[{}]}}"#, assets.join(","))
+        };
+        let list = format!(
+            "[{},{},{},{}]",
+            release("chrome-v0.2.3", &["ks-download-manager-extension-v0.2.3.zip"]),
+            release("windows-v0.2.2", &["ks-download-manager-v0.2.2-windows-x64-setup-beta.exe"]),
+            release("mac-v0.2.1", &["ks-download-manager-v0.2.1-macos-arm64.dmg", "ks-download-manager-v0.2.1-macos-x64.dmg"]),
+            release("v0.2.0", &NAMES),
+        );
+        let newest = |p| app_update::parse_releases(&list, &repo(), p).map(|t| (t.release.version, t.tag));
+        assert_eq!(newest(Platform::MacosArm64), Some(("0.2.1".into(), "mac-v0.2.1".into())));
+        assert_eq!(newest(Platform::WindowsX64), Some(("0.2.2".into(), "windows-v0.2.2".into())));
+        assert_eq!(newest(Platform::Chrome), Some(("0.2.3".into(), "chrome-v0.2.3".into())));
+        let mac = app_update::parse_releases(&list, &repo(), Platform::MacosArm64).unwrap().release;
+        let file = app_update::pick_asset(&mac.assets, Platform::MacosArm64, &repo()).map(|a| a.name.clone());
+        assert_eq!(file.as_deref(), Some("ks-download-manager-v0.2.1-macos-arm64.dmg"));
+        // Before any platform release, the plain one is every platform's.
+        let plain = format!("[{}]", release("v0.2.0", &NAMES));
+        assert_eq!(app_update::parse_releases(&plain, &repo(), Platform::WindowsX64).map(|t| t.release.version).as_deref(), Some("0.2.0"));
+        assert_eq!(repo().releases_api_url(), format!("https://api.github.com/repos/{REPO}/releases?per_page={}", app_update::RELEASES_PER_PAGE));
     }
 
     #[test]
