@@ -69,8 +69,8 @@ mod tests {
     fn only_https_addresses_are_opened() {
         assert!(open_url("file:///etc/passwd").is_err());
         assert!(open_url("javascript:alert(1)").is_err());
-        let cmd = crate::os::url_opener("https://github.com/kumarsumit17/ks-download-manager#readme");
-        assert_eq!(cmd.get_args().last().unwrap(), "https://github.com/kumarsumit17/ks-download-manager#readme");
+        let cmd = crate::os::url_opener("https://github.com/kumasumit/ks-download-manager#readme");
+        assert_eq!(cmd.get_args().last().unwrap(), "https://github.com/kumasumit/ks-download-manager#readme");
     }
 
     #[test]

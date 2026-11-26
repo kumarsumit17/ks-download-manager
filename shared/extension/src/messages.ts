@@ -22,7 +22,7 @@ export interface Reply {
 }
 
 /** Where a new version is downloaded; the extension is loaded unpacked, so it cannot update itself. */
-export const RELEASES = "https://github.com/kumarsumit17/ks-download-manager/releases/latest";
+export const RELEASES = "https://github.com/kumasumit/ks-download-manager/releases/latest";
 
 /** `MAJOR.MINOR.PATCH` compared by number. A copy built from source ("0.0.0") never asks. */
 export function isNewer(candidate: unknown, current: string): candidate is string {

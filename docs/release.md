@@ -2,7 +2,7 @@
 
 For the owner. The workflow is `.github/workflows/release.yml`; the plan behind it is `docs/release-plan.md` and the decisions are in `docs/decisions-release.md`.
 
-**The cycle** (the same for every KS-Suite app: [Release cycle](https://github.com/kumarsumit17/KS-Suite/blob/main/specs/release-cycle.md)): test on `dev` (CI and a rehearsal green), fast-forward `main` to `dev`, push the tag, and the workflow publishes the release, a full release marked latest, once every build and check has passed. There is no draft step. Hand checks are done on the published files afterwards; anything they find goes into the next version. A published release's files are never changed, and a pushed tag is never moved or deleted.
+**The cycle** (the same for every KS-Suite app: [Release cycle](https://github.com/kumasumit/KS-Suite/blob/main/specs/release-cycle.md)): test on `dev` (CI and a rehearsal green), fast-forward `main` to `dev`, push the tag, and the workflow publishes the release, a full release marked latest, once every build and check has passed. There is no draft step. Hand checks are done on the published files afterwards; anything they find goes into the next version. A published release's files are never changed, and a pushed tag is never moved or deleted.
 
 ## 1. Secrets (optional: Developer ID signing on macOS)
 
@@ -20,8 +20,8 @@ Without any Apple secret, the macOS disk images are signed ad hoc and the releas
 Add each from a file so it never appears in your shell history, then delete the files:
 
 ```bash
-gh secret set APPLE_CERTIFICATE -R kumarsumit17/ks-download-manager < cert.txt
-gh secret set APPLE_CERTIFICATE_PASSWORD -R kumarsumit17/ks-download-manager   # prompts for the value
+gh secret set APPLE_CERTIFICATE -R kumasumit/ks-download-manager < cert.txt
+gh secret set APPLE_CERTIFICATE_PASSWORD -R kumasumit/ks-download-manager   # prompts for the value
 # … the same for the other four
 rm cert.p12 cert.txt
 ```
@@ -40,7 +40,7 @@ Work happens on a branch, is merged into `dev`, then `dev` into `main` (fast-for
 git switch dev
 git pull --ff-only origin dev
 git push origin dev                        # wait for CI to pass on dev
-gh workflow run release.yml --ref dev -f version=X.Y.Z -R kumarsumit17/ks-download-manager
+gh workflow run release.yml --ref dev -f version=X.Y.Z -R kumasumit/ks-download-manager
                                            # wait for the rehearsal to pass; check its file list
 
 # 2. dev into main
@@ -74,7 +74,7 @@ Actions tab → **Release** → the run for the tag:
 **Actions → Release → Run workflow**, pick `dev` and give the version (`X.Y.Z`, with its dated changelog section on `dev`), or
 
 ```bash
-gh workflow run release.yml --ref dev -f version=X.Y.Z -R kumarsumit17/ks-download-manager
+gh workflow run release.yml --ref dev -f version=X.Y.Z -R kumasumit/ks-download-manager
 ```
 
 Every job runs as for a tag, except the check that the tag is on `main`. Nothing is attested and nothing is ever published; the files (`release-files`) and the notes (`release-notes`) are kept as the run's artifacts. Check the file list: exactly the five release files.
@@ -85,7 +85,7 @@ Releases page → the release → download every file into an empty folder, then
 
 ```bash
 ls                       # two .dmg, the -setup-beta.exe, the extension .zip, ffmpeg-<v>.tar.xz; nothing else
-for f in *; do gh attestation verify "$f" -R kumarsumit17/ks-download-manager; done
+for f in *; do gh attestation verify "$f" -R kumasumit/ks-download-manager; done
 ```
 
 Read the notes: they must say "signed with a Developer ID and notarised" only if the secrets were set, and otherwise give the "Open Anyway" steps. Then do the hand checks in `docs/release-plan.md` section 9 on these files. **Anything they find goes into the next version** (a fix on `dev` and the next tag); the published release is not changed.

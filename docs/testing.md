@@ -1,6 +1,6 @@
 # Testing builds
 
-How to build and test each target from a Mac. The suite-wide matrix is in the KS-Suite workspace's [specs/testing.md](https://github.com/kumarsumit17/KS-Suite/blob/main/specs/testing.md).
+How to build and test each target from a Mac. The suite-wide matrix is in the KS-Suite workspace's [specs/testing.md](https://github.com/kumasumit/KS-Suite/blob/main/specs/testing.md).
 
 ## macOS (on the Mac)
 

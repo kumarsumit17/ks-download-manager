@@ -46,7 +46,7 @@ test("the notes match how the files were signed", () => {
   // official URL and pinned hash.
   for (const n of [adhoc, signed]) {
     assert.doesNotMatch(n, /SHA256SUMS/);
-    assert.match(n, /gh attestation verify <file> -R kumarsumit17\/ks-download-manager/);
+    assert.match(n, /gh attestation verify <file> -R kumasumit\/ks-download-manager/);
     assert.ok(n.includes(`built from ffmpeg ${FFMPEG.version}. Its exact source is attached as \`ffmpeg-${FFMPEG.version}.tar.xz\` (from ${FFMPEG.source}, SHA-256 \`${FFMPEG.sha256}\`)`));
   }
   // The real changelog has the section for the first release.

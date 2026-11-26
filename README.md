@@ -1,6 +1,6 @@
 # KS Download Manager
 
-> Part of the [KS-Suite](https://github.com/kumarsumit17/KS-Suite).
+> Part of the [KS-Suite](https://github.com/kumasumit/KS-Suite).
 
 A free download manager for images, audio and video, built for speed: each file is fetched over many connections at once. No ads and no tracking.
 
@@ -24,7 +24,7 @@ A clean, classic single-window layout: toolbar on top, categories and queues on 
 
 ## Install
 
-Downloads are on the [Releases page](https://github.com/kumarsumit17/ks-download-manager/releases). **The app does not check for updates** (it uses the network only for the downloads you start); new versions are published on that page, so look there for updates.
+Downloads are on the [Releases page](https://github.com/kumasumit/ks-download-manager/releases). **The app does not check for updates** (it uses the network only for the downloads you start); new versions are published on that page, so look there for updates.
 
 ### macOS (11 or later)
 
@@ -46,7 +46,7 @@ To remove it: **Settings → Apps → Installed apps → KS Download Manager →
 
 ### Checking a download
 
-Every file of a release has a build-provenance attestation showing it was built by this repository's GitHub Actions from the release tag; with the [GitHub CLI](https://cli.github.com): `gh attestation verify <file> -R kumarsumit17/ks-download-manager`.
+Every file of a release has a build-provenance attestation showing it was built by this repository's GitHub Actions from the release tag; with the [GitHub CLI](https://cli.github.com): `gh attestation verify <file> -R kumasumit/ks-download-manager`.
 
 ## Building
 
@@ -64,7 +64,7 @@ The extension adds a Download button on YouTube watch pages and Shorts, and on i
 
 It is not published on the Chrome Web Store. To install it:
 
-1. Download `ks-download-manager-extension-vX.Y.Z.zip` from the [Releases page](https://github.com/kumarsumit17/ks-download-manager/releases) and unzip it to a folder you keep (Chrome loads it from there, so do not delete or move that folder). Or build it yourself: in `shared/`, `npm install`, then `npm run build:extension`, and use `shared/extension/dist`.
+1. Download `ks-download-manager-extension-vX.Y.Z.zip` from the [Releases page](https://github.com/kumasumit/ks-download-manager/releases) and unzip it to a folder you keep (Chrome loads it from there, so do not delete or move that folder). Or build it yourself: in `shared/`, `npm install`, then `npm run build:extension`, and use `shared/extension/dist`.
 2. Open the desktop app once (from Applications on macOS), so it registers itself with Chrome.
 3. In Chrome, open `chrome://extensions`, turn on **Developer mode** (top right), click **Load unpacked** and choose that folder.
 4. The extension's ID must be `ikplfdbdfikcokpegkapjdedlgifmkbe`; the app accepts no other.

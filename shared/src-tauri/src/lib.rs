@@ -307,7 +307,7 @@ fn notify(app: AppHandle, m: Downloads<'_>, title: String, body: String) -> Resu
 /// address only; the interface cannot pass one.
 #[tauri::command]
 fn open_help() -> Result<(), msg::Msg> {
-    const HELP: &str = "https://github.com/kumarsumit17/ks-download-manager#readme";
+    const HELP: &str = "https://github.com/kumasumit/ks-download-manager#readme";
     open::open_url(HELP).map_err(|e| msg!("error.openFile", detail = e))
 }
 

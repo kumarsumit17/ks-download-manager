@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 use crate::msg;
 use crate::msg::Msg;
 
-const REPO: &str = "kumarsumit17/ks-download-manager";
+const REPO: &str = "kumasumit/ks-download-manager";
 /// Saved between runs: when the last check was, so restarts do not ask again.
 const STATE_FILE: &str = "app-update.json";
 

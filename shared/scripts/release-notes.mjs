@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const REPO = "kumarsumit17/ks-download-manager";
+const REPO = "kumasumit/ks-download-manager";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 /** The pinned ffmpeg source: version, official URL and SHA-256 (src-tauri/sidecars.json). */
 export const FFMPEG = JSON.parse(readFileSync(join(ROOT, "src-tauri/sidecars.json"), "utf8")).ffmpeg;

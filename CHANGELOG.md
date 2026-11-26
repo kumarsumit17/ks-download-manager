@@ -14,6 +14,7 @@ All notable changes to KS Download Manager. The layout follows [Keep a Changelog
 
 ### Changed
 
+- The project moved to the GitHub account `kumasumit` (https://github.com/kumasumit/ks-download-manager). Copies installed before this release cannot find it by themselves: download it once from the Releases page; later updates arrive as usual.
 - The code is now laid out per platform: the shared Tauri project in `shared/`, each operating system's own code in `desktop/mac` and `desktop/windows`.
 
 ## [0.1.5] - 2026-11-23
