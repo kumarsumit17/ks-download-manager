@@ -1,6 +1,6 @@
 # KS Download Manager
 
-> Part of the [KS-Suite](https://github.com/kumasumit/KS-Suite).
+> Part of the [KS-Suite](https://github.com/kumasumit/ks-suite).
 
 A free download manager for images, audio and video, built for speed: each file is fetched over many connections at once. No ads and no tracking.
 
