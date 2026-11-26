@@ -4,6 +4,8 @@ For the owner. The workflow is `.github/workflows/release.yml`; the plan behind 
 
 **The cycle** (the same for every KS-Suite app: [Release cycle](https://github.com/kumasumit/KS-Suite/blob/main/specs/release-cycle.md)): test on `dev` (CI and a rehearsal green), fast-forward `main` to `dev`, push the tag, and the workflow publishes the release, a full release marked latest, once every build and check has passed. There is no draft step. Hand checks are done on the published files afterwards; anything they find goes into the next version. A published release's files are never changed, and a pushed tag is never moved or deleted.
 
+**Build, test, release, no waiting** (suite rule, [Release cycle](https://github.com/kumasumit/KS-Suite/blob/main/specs/release-cycle.md)): every feature or fix is built, tested (unit tests, CI on macOS and Windows, and the app on this Mac where it can be run) and pushed to `dev`, and goes out with the next tag; no approval is asked before a tag. Never commit or release while a test fails. A feature raises MINOR, a fix raises PATCH. The owner's hand checks on real devices (a Windows PC, the owner's own Mac) come after the release and never block it; what they find goes into the next version.
+
 ## 1. Secrets (optional: Developer ID signing on macOS)
 
 Without any Apple secret, the macOS disk images are signed ad hoc and the release notes give the "Open Anyway" steps. With all six, they are signed with your Developer ID and notarised. Setting only some of them fails the build on purpose.

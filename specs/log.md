@@ -1,5 +1,6 @@
 # 2026-11-26
 
+* **Update**: [per-platform plan](plan-per-platform.md) and `docs/release.md`: "Build, test, release, no waiting" (suite rule, KS-Suite ff464ae): tested work is pushed and released with the next tag without asking first; hand checks follow and never block a release.
 * **Update**: [per-platform plan](plan-per-platform.md): the Chrome extension gets its own `chrome-vX.Y.Z` tags, and step 5 moves to ks-utility v0.11.0 (adds `Platform::Chrome`).
 * **Update**: the repository moved from the GitHub account `kumarsumit17` to `kumasumit` (owner confirmed; KS-Suite `dev` 05b83d7): the updater's repo, the ks-utility git dependencies and both lock files (same commit, `9ce7296`), the Help and extension links, the release notes and the docs. Copies installed before the move must fetch their next release once by hand. History records keep their old links, which GitHub redirects.
 * **Update**: [UI direction](ui.md): notifications when a download finishes or fails (new setting, `tauri-plugin-notification`) and drag and drop of links and `.webloc`/`.url` files ([per-platform plan](plan-per-platform.md), step 2 done).

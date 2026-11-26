@@ -109,7 +109,7 @@ New dependencies are reported as [Dependencies](dependencies.md) requires. Every
 
 ## 4. Build order and testing
 
-Each step is one or more commits on `dev`, tested before the next. Nothing is pushed or tagged without the owner's OK.
+Each step is one or more commits on `dev`, tested before the next, pushed as it is done and released with the next tag (suite rule "Build, test, release, no waiting"; the owner's hand checks follow the release and never block it).
 
 | Step | What | Where | Tested on |
 |---|---|---|---|
