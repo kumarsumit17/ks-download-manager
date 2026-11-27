@@ -29,7 +29,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 engine = { path = "engine" }
 # First-party shared utilities (KS-Suite), pinned to one commit; see CLAUDE.md.
-ks-utility = { git = "https://github.com/kumasumit/ks-utility", tag = "v0.14.0" }
+ks-utility = { git = "https://github.com/kumasumit/ks-utility", tag = "v0.15.0" }
 # Already in Cargo.lock through tauri and the engine: no new packages.
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
