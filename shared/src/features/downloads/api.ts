@@ -94,7 +94,7 @@ export const api = {
   updateStatus: () => invoke<AppUpdate | null>("update_status"),
   checkForUpdate: () => invoke<UpdateCheck>("check_for_update"),
   /** Downloads the installer found, checks it and opens it; `quit` on Windows. */
-  installUpdate: () => invoke<{ quit: boolean }>("install_update"),
+  installUpdate: () => invoke<{ quit: boolean; quitAfterMs: number }>("install_update"),
 };
 
 export function onUpdateAvailable(f: (u: AppUpdate) => void): Promise<UnlistenFn> {

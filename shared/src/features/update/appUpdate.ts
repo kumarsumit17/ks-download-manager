@@ -9,10 +9,18 @@ import { isMsg, t, type TextKey } from "@/lib/i18n";
 
 export type { UpdateState } from "ks-utility";
 
+/** When the app quits after the installer opened (ks-utility's `app_update::install`):
+ * at once on Windows, after a moment on macOS so Finder can replace it. */
+let quitAfterMs: number | null = null;
+
 const store = createUpdateStore(
   {
     check: () => api.checkForUpdate(),
-    install: async () => ((await api.installUpdate()).quit ? "windows" : "macos"),
+    install: async () => {
+      const opened = await api.installUpdate();
+      quitAfterMs = opened.quitAfterMs;
+      return opened.quit ? "windows" : "macos";
+    },
     // Rust's errors are message codes already.
     errorNote: (e) => (isMsg(e) ? { key: e.code, params: e.params } : { key: "common.error.generic" }),
   },
@@ -33,15 +41,21 @@ export function startUpdates() {
 /** "Check for updates". */
 export const checkNow = () => store.checkNow();
 
-/** Downloads the installer, checks it and opens it; on Windows the app then closes. */
+/** Downloads the installer, checks it and opens it; the app then saves and closes (at once
+ * on Windows, after a moment on macOS, while the note says so). */
 export async function installNow() {
-  if ((await store.installNow()) === "windows") await api.quit();
+  if ((await store.installNow()) === null || quitAfterMs === null) return;
+  const wait = quitAfterMs;
+  setTimeout(() => void api.quit(), wait);
 }
 
 export const dismiss = () => store.dismiss();
 
 /** A note from the store in the interface language. */
 export function noteText(note: UpdateNote | null): string | null {
+  // This app closes after opening the disk image, so it says so (ks-utility's store still
+  // gives "openedMac", the text for an app that stays open).
+  if (note?.key === "common.appUpdate.openedMac") return t("common.appUpdate.openedMacCloses", note.params);
   return note && t(note.key as TextKey, note.params);
 }
 

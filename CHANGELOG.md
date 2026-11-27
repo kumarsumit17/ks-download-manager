@@ -4,6 +4,10 @@ All notable changes to KS Download Manager. The layout follows [Keep a Changelog
 
 ## [Unreleased]
 
+### Changed
+
+- Installing an update on macOS: once the disk image is open, the app says it now closes and quits after a few seconds, so dragging the new version into Applications replaces it straight away.
+
 ## [0.3.0] - 2026-11-27
 
 ### Added

@@ -28,6 +28,9 @@ use serde::{Deserialize, Serialize};
 use crate::msg;
 use crate::msg::Msg;
 
+/// The app's name, as the downloader in the update's quarantine mark (macOS).
+const APP_NAME: &str = "KS Download Manager";
+
 const REPO: &str = "kumasumit/ks-download-manager";
 /// Saved between runs: when the last check was, so restarts do not ask again.
 const STATE_FILE: &str = "app-update.json";
@@ -52,12 +55,25 @@ pub enum Check {
     Available { update: Available },
 }
 
-/// What the interface does once the installer is open.
+/// What the interface does once the installer is open: the app then saves and quits, so the
+/// new version can replace it (ks-utility's `app_update::install`).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Opened {
-    /// Windows: the installer replaces the app, so the app closes now.
+    /// Windows: the installer is starting, the app quits now.
     pub quit: bool,
+    /// When to quit, in milliseconds: 0 on Windows; on macOS long enough to read that the
+    /// app now closes (Finder cannot replace a running app).
+    pub quit_after_ms: u64,
+}
+
+impl From<app_update::install::Opened> for Opened {
+    fn from(opened: app_update::install::Opened) -> Self {
+        match opened {
+            app_update::install::Opened::Windows => Opened { quit: true, quit_after_ms: 0 },
+            app_update::install::Opened::Mac => Opened { quit: false, quit_after_ms: app_update::install::MAC_QUIT_AFTER.as_millis() as u64 },
+        }
+    }
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -164,12 +180,13 @@ impl Updater {
             let _ = std::fs::remove_file(&file);
             return Err(msg!("common.appUpdate.damaged"));
         }
-        // Marked like any other download, so the system checks it as it would a browser download.
-        if let Err(e) = crate::mark::mark_from_internet(&file, &update.url) {
-            eprintln!("could not mark the update as downloaded: {e}");
-        }
-        crate::open::open_file(&file).map_err(|e| msg!("common.appUpdate.openFailed", detail = e))?;
-        Ok(Opened { quit: cfg!(target_os = "windows") })
+        // ks-utility marks it as downloaded from the internet (quarantine or Mark of the Web, so
+        // the system checks it as it would a browser download) and opens it.
+        let opened = tokio::task::spawn_blocking(move || app_update::install::open(&file, APP_NAME))
+            .await
+            .map_err(|e| msg!("common.appUpdate.openFailed", detail = e))?
+            .map_err(|e| msg!("common.appUpdate.openFailed", detail = e))?;
+        Ok(opened.into())
     }
 }
 
@@ -184,6 +201,12 @@ fn repo() -> Repo {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_app_quits_at_once_on_windows_and_after_a_moment_on_macos() {
+        assert_eq!(Opened::from(app_update::install::Opened::Windows), Opened { quit: true, quit_after_ms: 0 });
+        assert_eq!(Opened::from(app_update::install::Opened::Mac), Opened { quit: false, quit_after_ms: 6000 });
+    }
 
     const NAMES: [&str; 4] = [
         "ks-download-manager-extension-v0.2.0.zip",

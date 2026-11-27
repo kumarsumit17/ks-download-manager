@@ -1,5 +1,6 @@
 # 2026-11-27
 
+* **Update**: `ks-utility` pin moved from `v0.14.0` (`83d81ec`) to `v0.15.0` (`c1a5eb7`); ks-suite-check passes. [UI direction](ui.md), "App updates": the installer is opened by ks-utility's `app_update::install::open`, and on macOS the app now closes 6 seconds after opening the disk image so Finder can replace it; the check reads the release list. The release workflow calls ks-utility's shared workflows at `v0.15.0` (which run ks-suite-check), and `ks-utility-bump.yml` moves the pin to each new ks-utility tag by itself.
 * **Update**: [per-platform plan](plan-per-platform.md), step 3 (first part) and [UI direction](ui.md): Windows taskbar overlay with the number running, yellow while every download retries and red after a failure until the window is looked at; the native host is registered with Microsoft Edge too (Windows registry and macOS); Mica title bar on Windows 11; Windows contrast themes. The jump list waits (COM).
 
 # 2026-11-26

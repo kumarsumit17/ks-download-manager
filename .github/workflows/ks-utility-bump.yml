@@ -1,0 +1,29 @@
+# Moves the ks-utility pin to its newest tag, the same day it is released (ks-utility's
+# specs/release-workflow.md, "Moving to the newest ks-utility"). ks-utility's shared workflow
+# checks out dev, moves the git tag in shared/package.json and the two Cargo.toml files plus
+# both lock files, runs the tests below and, only when they pass, commits
+# "chore: move ks-utility to vX.Y.Z" to dev. A failure pushes nothing and opens an issue.
+name: Move to the newest ks-utility
+
+on:
+  repository_dispatch:
+    types: [ks-utility-released]
+  schedule:
+    - cron: "17 4 * * *" # daily, in case a notice was missed
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  bump:
+    permissions: { contents: write, issues: write }
+    uses: kumasumit/ks-utility/.github/workflows/ks-utility-bump.yml@v0.15.0
+    with:
+      kind: tauri
+      # macOS: the Rust tests use the macOS code (desktop/mac) and the Unix socket.
+      runs-on: macos-15
+      node-version: "26"
+      test: >-
+        cd shared && npm ci && npm run build && npm run test:lang && npm run test:ui &&
+        npm run test:extension && node --test scripts/test/ &&
+        cargo test --locked --manifest-path src-tauri/Cargo.toml
