@@ -4,6 +4,8 @@ All notable changes to KS Download Manager. The layout follows [Keep a Changelog
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-27
+
 ### Added
 
 - The browser extension now works in Microsoft Edge too: the app registers itself with Edge as well as Chrome (on Windows and macOS).
