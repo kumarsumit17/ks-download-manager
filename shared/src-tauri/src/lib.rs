@@ -313,17 +313,48 @@ fn open_help() -> Result<(), msg::Msg> {
 
 /// Progress of the running downloads on the Dock icon (macOS) or taskbar button (Windows),
 /// and on macOS their number as the Dock badge; both cleared when none run.
-fn show_progress(app: &AppHandle, totals: manager::Totals) {
+fn show_progress(app: &AppHandle, running: usize, bar: Bar) {
     use tauri::window::{ProgressBarState, ProgressBarStatus};
     let Some(window) = app.get_webview_window("main") else { return };
-    let (status, progress) = match (totals.running, totals.percent()) {
-        (0, _) => (ProgressBarStatus::None, None),
-        (_, Some(p)) => (ProgressBarStatus::Normal, Some(p)),
-        (_, None) => (ProgressBarStatus::Indeterminate, None),
+    let (status, progress) = match bar {
+        Bar::None => (ProgressBarStatus::None, None),
+        Bar::Normal(p) => (ProgressBarStatus::Normal, Some(p)),
+        Bar::Indeterminate => (ProgressBarStatus::Indeterminate, None),
+        Bar::Paused(p) => (ProgressBarStatus::Paused, p),
+        Bar::Error(p) => (ProgressBarStatus::Error, p),
     };
     let _ = window.set_progress_bar(ProgressBarState { status: Some(status), progress });
     #[cfg(target_os = "macos")]
-    let _ = window.set_badge_count((totals.running > 0).then_some(totals.running as i64));
+    let _ = window.set_badge_count((running > 0).then_some(running as i64));
+    // Windows: the number running as an overlay on the taskbar button.
+    #[cfg(windows)]
+    let _ = window.set_overlay_icon(os::count_badge(running).map(|(rgba, w, h)| tauri::image::Image::new_owned(rgba, w, h)));
+}
+
+/// What the Dock's or taskbar button's progress bar shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Bar {
+    None,
+    Normal(u64),
+    /// Running, but no running download knows its size.
+    Indeterminate,
+    /// Every running download is retrying a server that stopped answering (yellow on Windows).
+    Paused(Option<u64>),
+    /// A download failed and the window has not had the focus since (red on Windows).
+    Error(Option<u64>),
+}
+
+/// The bar for these totals. `unseen_failure`: a download failed since the window last had
+/// the focus; the bar stays red until it is looked at.
+/// `paused`: whether retrying downloads get their own state.
+fn bar(totals: &manager::Totals, unseen_failure: bool, paused: bool) -> Bar {
+    let percent = totals.percent();
+    match totals.running {
+        _ if unseen_failure => Bar::Error(percent.or(Some(100))),
+        0 => Bar::None,
+        n if paused && totals.stalled == n => Bar::Paused(percent),
+        _ => percent.map_or(Bar::Indeterminate, Bar::Normal),
+    }
 }
 
 /// Stops every download (resumable ones save their place), then exits.
@@ -489,15 +520,21 @@ pub fn run() {
                 let mut ticker = tokio::time::interval(manager::TICK);
                 ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 // What the Dock or taskbar shows now; it is only updated when this changes.
-                let mut shown: Option<(usize, Option<u64>)> = None;
+                let mut shown: Option<(usize, Bar)> = None;
+                // Failures the user has seen: those before the window last had the focus.
+                let mut seen = 0;
                 loop {
                     ticker.tick().await;
                     let totals = manager.tick();
                     // No idle sleep while downloads run, unless switched off in Settings.
                     os::set_keep_awake(totals.running > 0 && manager.settings().keep_awake);
-                    let now = (totals.running, totals.percent());
+                    if handle.get_webview_window("main").is_some_and(|w| w.is_focused().unwrap_or(false)) {
+                        seen = totals.failures;
+                    }
+                    // The red and yellow states are the taskbar's (Windows); the Dock shows plain progress.
+                    let now = (totals.running, bar(&totals, cfg!(windows) && totals.failures > seen, cfg!(windows)));
                     if shown != Some(now) {
-                        show_progress(&handle, totals);
+                        show_progress(&handle, now.0, now.1);
                         shown = Some(now);
                     }
                 }
@@ -507,6 +544,10 @@ pub fn run() {
             if let Some(window) = app.get_webview_window("main") {
                 let theme = window.theme().unwrap_or(Theme::Light);
                 window.set_background_color(Some(background(theme)))?;
+                // Windows 11: the Mica material in the title bar, as Windows' own apps have.
+                // Windows 10 has no Mica and refuses it; the title bar then stays as it was.
+                #[cfg(windows)]
+                let _ = window.set_effects(tauri::window::EffectsBuilder::new().effect(tauri::window::Effect::Mica).build());
                 window.show()?;
             }
             Ok(())
@@ -575,4 +616,25 @@ pub fn run() {
             api.prevent_exit();
         }
     });
+}
+
+#[cfg(test)]
+mod bar_tests {
+    use super::{Bar, bar};
+    use crate::manager::Totals;
+
+    #[test]
+    fn the_progress_bar_follows_the_downloads() {
+        let t = |running, received, total, stalled| Totals { running, received, total, stalled, failures: 0 };
+        assert_eq!(bar(&t(0, 0, 0, 0), false, true), Bar::None);
+        assert_eq!(bar(&t(2, 50, 200, 0), false, true), Bar::Normal(25));
+        assert_eq!(bar(&t(1, 50, 0, 0), false, true), Bar::Indeterminate, "no size known");
+        // Every running download retrying: yellow; only some: still normal.
+        assert_eq!(bar(&t(2, 50, 200, 2), false, true), Bar::Paused(Some(25)));
+        assert_eq!(bar(&t(2, 50, 200, 1), false, true), Bar::Normal(25));
+        assert_eq!(bar(&t(2, 50, 200, 2), false, false), Bar::Normal(25), "no paused state on this system");
+        // A failure not yet seen: red, with the others' progress, or full when none run.
+        assert_eq!(bar(&t(1, 50, 200, 0), true, true), Bar::Error(Some(25)));
+        assert_eq!(bar(&t(0, 0, 0, 0), true, true), Bar::Error(Some(100)));
+    }
 }

@@ -1,3 +1,7 @@
+# 2026-11-27
+
+* **Update**: [per-platform plan](plan-per-platform.md), step 3 (first part) and [UI direction](ui.md): Windows taskbar overlay with the number running, yellow while every download retries and red after a failure until the window is looked at; the native host is registered with Microsoft Edge too (Windows registry and macOS); Mica title bar on Windows 11; Windows contrast themes. The jump list waits (COM).
+
 # 2026-11-26
 
 * **Update**: [per-platform plan](plan-per-platform.md): step 5 done; v0.2.0, the plain bridge release, is published (five files, attested by ks-utility's publish workflow).

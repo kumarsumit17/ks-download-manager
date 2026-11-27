@@ -167,6 +167,10 @@ pub struct Totals {
     pub running: usize,
     pub received: u64,
     pub total: u64,
+    /// Running downloads whose server has not answered for a while (they are retrying).
+    pub stalled: usize,
+    /// Downloads that failed since the app started, counted when each one ends.
+    pub failures: u64,
 }
 
 impl Totals {
@@ -256,6 +260,8 @@ pub struct Manager {
     restored: AtomicBool,
     /// Wakes [`Manager::wait_restored`] when `restored` is set.
     restored_notify: tokio::sync::Notify,
+    /// Downloads that failed since the app started ([`Totals::failures`]).
+    failures: std::sync::atomic::AtomicU64,
 }
 
 fn now_ms() -> u64 {
@@ -382,6 +388,7 @@ impl Manager {
             settings: Mutex::new(s),
             default_folder: Mutex::new(None),
             leftovers: Mutex::new(None),
+            failures: std::sync::atomic::AtomicU64::new(0),
             playlists: Mutex::new(HashMap::new()),
             thumbnails: engine::SmallClient::new(THUMBNAIL_TIMEOUT).ok(),
             thumbnail_slots: tokio::sync::Semaphore::new(THUMBNAILS_AT_ONCE),
@@ -1338,6 +1345,9 @@ impl Manager {
             }
         }
         let r = r.clone();
+        if r.status == Status::Failed {
+            self.failures.fetch_add(1, Ordering::Relaxed);
+        }
         self.save(&inner);
         drop(inner);
         self.events.changed(&r);
@@ -1616,7 +1626,7 @@ impl Manager {
         if !ticks.is_empty() {
             self.events.progress(&ticks);
         }
-        totals(&ticks)
+        Totals { failures: self.failures.load(Ordering::Relaxed), ..totals(&ticks) }
     }
 }
 
@@ -1624,7 +1634,7 @@ impl Manager {
 fn totals(ticks: &[Tick]) -> Totals {
     let known = ticks.iter().filter_map(|t| t.size.map(|s| (t.received, s)));
     let (received, total) = known.fold((0u64, 0u64), |(r, s), (tr, ts)| (r.saturating_add(tr.min(ts)), s.saturating_add(ts)));
-    Totals { running: ticks.len(), received, total }
+    Totals { running: ticks.len(), received, total, stalled: ticks.iter().filter(|t| t.stalled).count(), failures: 0 }
 }
 
 /// Why a run ended without a finished file.
@@ -1840,8 +1850,8 @@ mod tests {
     #[test]
     fn totals_count_every_running_download_and_the_bytes_of_those_with_a_size() {
         let t = |size: Option<u64>, received: u64| Tick { id: 1, size, received, speed: 0.0, connections: Vec::new(), merging: false, stalled: false };
-        let totals = super::totals(&[t(Some(100), 50), t(None, 999), t(Some(300), 350)]);
-        assert_eq!(totals, Totals { running: 3, received: 350, total: 400 });
+        let totals = super::totals(&[t(Some(100), 50), t(None, 999), Tick { stalled: true, ..t(Some(300), 350) }]);
+        assert_eq!(totals, Totals { running: 3, received: 350, total: 400, stalled: 1, failures: 0 });
         assert_eq!(totals.percent(), Some(87));
         assert_eq!(super::totals(&[t(None, 5)]).percent(), None, "no size known: no percentage");
         assert_eq!(super::totals(&[]), Totals::default());

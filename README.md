@@ -9,7 +9,7 @@ A free download manager for images, audio and video, built for speed: each file 
 | **Platform** | Windows · macOS (desktop) |
 | **Tech stack** | Rust (download engine) · Tauri (desktop shell) · TypeScript + React with shadcn/ui and Lucide icons (interface) |
 | **Chrome extension** | TypeScript, Manifest V3, in `shared/extension/` (loaded unpacked, not on the Chrome Web Store) |
-| **Status** | Latest release v0.1.3 (first release v0.1.2; v0.1.0 and v0.1.1 were tagged but never released): macOS and the Chrome extension; Windows as a beta, untested by hand. See [stages](specs/stages.md) and the [changelog](CHANGELOG.md) |
+| **Status** | Latest release v0.2.0 (first release v0.1.2; v0.1.0 and v0.1.1 were tagged but never released): macOS and the Chrome extension; Windows as a beta, untested by hand. See [stages](specs/stages.md) and the [changelog](CHANGELOG.md) |
 
 ## Features
 
@@ -29,10 +29,10 @@ Downloads are on the [Releases page](https://github.com/kumasumit/ks-download-ma
 ### macOS (11 or later)
 
 1. Download the disk image for your Mac: `…-macos-arm64.dmg` for Apple silicon (M1 and later), `…-macos-x64.dmg` for Intel.
-2. Open it and drag **KS Download Manager** to **Applications**. Open the app from Applications, not from the disk image (from the disk image it cannot register with Chrome).
+2. Open it and drag **KS Download Manager** to **Applications**. Open the app from Applications, not from the disk image (from the disk image it cannot register with Chrome or Edge).
 3. If the release notes say the build is **not signed with an Apple Developer ID**, macOS refuses the first open ("cannot be opened" or "damaged"). Try to open it once, then open **System Settings → Privacy & Security**, choose **Open Anyway** next to the message about KS Download Manager, and confirm. Or, in Terminal: `xattr -dr com.apple.quarantine "/Applications/KS Download Manager.app"`.
 
-To remove it, drag the app to the Bin. It leaves Chrome's small registration file behind, which does nothing without the app; delete it by hand if you like: `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.ks.downloadmanager.json`. Settings and the download list are in `~/Library/Application Support/com.ks.downloadmanager`.
+To remove it, drag the app to the Bin. It leaves Chrome's and Edge's small registration files behind, which do nothing without the app; delete them by hand if you like: `com.ks.downloadmanager.json` in `~/Library/Application Support/Google/Chrome/NativeMessagingHosts` and `~/Library/Application Support/Microsoft Edge/NativeMessagingHosts`. Settings and the download list are in `~/Library/Application Support/com.ks.downloadmanager`.
 
 ### Windows 10 and 11 (beta, untested by hand)
 
@@ -40,9 +40,9 @@ The Windows installer is a **beta**: its automated tests pass on Windows in CI, 
 
 1. Download `…-windows-x64-setup-beta.exe`.
 2. The installer is not code-signed, so SmartScreen says "Windows protected your PC": choose **More info → Run anyway**.
-3. It installs for your user account only, without administrator rights, and registers the app with Chrome (if Chrome has been opened at least once on this PC). WebView2, which Windows 10 and 11 normally have, is installed for you if it is missing.
+3. It installs for your user account only, without administrator rights, and registers the app with Chrome and Edge (each one if it has been opened at least once on this PC). WebView2, which Windows 10 and 11 normally have, is installed for you if it is missing.
 
-To remove it: **Settings → Apps → Installed apps → KS Download Manager → Uninstall**. That also removes the app's Chrome registration.
+To remove it: **Settings → Apps → Installed apps → KS Download Manager → Uninstall**. That also removes the app's Chrome and Edge registrations.
 
 ### Checking a download
 
@@ -59,6 +59,8 @@ npm run bundle:mac      # release .app, then sign the bundled programs (ad-hoc u
 ```
 
 ## Chrome extension
+
+It works in Chrome and in Microsoft Edge (load it unpacked in `edge://extensions` the same way).
 
 The extension adds a Download button on YouTube watch pages and Shorts, and on images on X (and on other sites you enable one by one). Downloads you start in Chrome go to the app too (on by default, like IDM), where you can pause, resume and track them. With such a download go that site's cookies for the file, the page it came from and Chrome's identification, so files that need your sign-in work; the app uses them only for that download and never saves them. The buttons send only the link, and page content is never sent. Details: [specs/extension.md](specs/extension.md).
 

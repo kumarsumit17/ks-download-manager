@@ -260,3 +260,110 @@ mod tests {
         std::fs::remove_dir_all(dir.parent().unwrap()).unwrap();
     }
 }
+
+// ---- The taskbar button's count -----------------------------------------------------------
+
+/// The overlay icon on the taskbar button while downloads run: a filled circle with the
+/// number running, 1 to 9, then "9+". Returns 32×32 RGBA pixels (Windows scales the overlay
+/// to the taskbar's size), or `None` for 0 (no overlay).
+pub fn count_badge(running: usize) -> Option<(Vec<u8>, u32, u32)> {
+    const SIZE: usize = 32;
+    const FILL: [u8; 3] = [0x00, 0x5f, 0xb8]; // a deep blue, readable in light and dark taskbars
+    if running == 0 {
+        return None;
+    }
+    let text: Vec<usize> = if running > 9 { vec![9, 10] } else { vec![running] };
+    // Each glyph is 3×5 cells; one digit is drawn at 4 px a cell, "9+" at 3 px with a gap.
+    let (scale, gap) = if text.len() == 1 { (4, 0) } else { (3, 2) };
+    let width = text.len() * 3 * scale + (text.len() - 1) * gap;
+    let (left, top) = ((SIZE - width) / 2, (SIZE - 5 * scale) / 2);
+    let mut px = vec![0u8; SIZE * SIZE * 4];
+    let centre = (SIZE as f32 - 1.0) / 2.0;
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            // Coverage of the circle's edge, for a smooth outline.
+            let d = ((x as f32 - centre).powi(2) + (y as f32 - centre).powi(2)).sqrt();
+            let alpha = (SIZE as f32 / 2.0 - d).clamp(0.0, 1.0);
+            if alpha == 0.0 {
+                continue;
+            }
+            let lit = glyph_cell(&text, scale, gap, x as isize - left as isize, y as isize - top as isize);
+            let rgb = if lit { [0xff; 3] } else { FILL };
+            px[(y * SIZE + x) * 4..][..4].copy_from_slice(&[rgb[0], rgb[1], rgb[2], (alpha * 255.0).round() as u8]);
+        }
+    }
+    Some((px, SIZE as u32, SIZE as u32))
+}
+
+/// 3×5 glyphs, one row of three bits each (most significant bit first): 0–9, then "+".
+const GLYPHS: [[u8; 5]; 11] = [
+    [0b111, 0b101, 0b101, 0b101, 0b111],
+    [0b010, 0b110, 0b010, 0b010, 0b111],
+    [0b111, 0b001, 0b111, 0b100, 0b111],
+    [0b111, 0b001, 0b111, 0b001, 0b111],
+    [0b101, 0b101, 0b111, 0b001, 0b001],
+    [0b111, 0b100, 0b111, 0b001, 0b111],
+    [0b111, 0b100, 0b111, 0b101, 0b111],
+    [0b111, 0b001, 0b001, 0b001, 0b001],
+    [0b111, 0b101, 0b111, 0b101, 0b111],
+    [0b111, 0b101, 0b111, 0b001, 0b111],
+    [0b000, 0b010, 0b111, 0b010, 0b000],
+];
+
+/// Whether the pixel at (`x`, `y`), from the text's top-left corner, is part of a glyph.
+fn glyph_cell(text: &[usize], scale: usize, gap: usize, x: isize, y: isize) -> bool {
+    if x < 0 || y < 0 {
+        return false;
+    }
+    let (x, y) = (x as usize, y as usize);
+    let (row, step) = (y / scale, 3 * scale + gap);
+    let (index, within) = (x / step, x % step);
+    if row >= 5 || index >= text.len() || within >= 3 * scale {
+        return false;
+    }
+    GLYPHS[text[index]][row] & (0b100 >> (within / scale)) != 0
+}
+
+#[cfg(test)]
+mod badge_tests {
+    use super::*;
+
+    /// The badge as text: '#' where the pixel is white (a glyph), '.' elsewhere.
+    fn white(running: usize) -> Vec<String> {
+        let (px, w, _) = count_badge(running).unwrap();
+        px.chunks(4).collect::<Vec<_>>().chunks(w as usize).map(|row| row.iter().map(|p| if p[..3] == [0xff; 3] && p[3] > 0 { '#' } else { '.' }).collect()).collect()
+    }
+
+    #[test]
+    fn no_badge_without_downloads() {
+        assert!(count_badge(0).is_none());
+    }
+
+    #[test]
+    fn the_badge_is_a_round_32_pixel_icon() {
+        let (px, w, h) = count_badge(3).unwrap();
+        assert_eq!((w, h, px.len()), (32, 32, 32 * 32 * 4));
+        assert_eq!(px[3], 0, "the corner is transparent");
+        assert_eq!(&px[(16 * 32 + 2) * 4..][..4], &[0x00, 0x5f, 0xb8, 0xff], "the circle is filled");
+    }
+
+    #[test]
+    fn one_digit_is_drawn_large_and_centred() {
+        let rows = white(1);
+        let lit: Vec<usize> = (0..32).filter(|&y| rows[y].contains('#')).collect();
+        assert_eq!((lit[0], *lit.last().unwrap()), (6, 25), "five rows of 4 px");
+        // "1": the stem is the middle column, the base row is full width (12 px).
+        assert_eq!(rows[25].matches('#').count(), 12);
+        assert_eq!(rows[10].matches('#').count(), 8, "the flag: two cells");
+        assert_eq!(rows[14].matches('#').count(), 4, "the stem: one cell");
+    }
+
+    #[test]
+    fn ten_or_more_show_nine_plus() {
+        assert_eq!(white(10), white(25));
+        assert_ne!(white(9), white(10));
+        // "9+": the plus's middle row is lit across its three cells, beside the 9's.
+        let rows = white(12);
+        assert_eq!(rows[16].matches('#').count(), 9 + 9);
+    }
+}

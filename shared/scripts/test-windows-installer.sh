@@ -1,7 +1,7 @@
 #!/bin/sh
 # Installs the Windows installer silently, checks what it installed, uninstalls it and
 # checks what it removed (docs/release-plan.md, section 4.2). For a CI runner or a test
-# PC: it installs into the current user's account and pretends Chrome has run once.
+# PC: it installs into the current user's account and pretends Chrome and Edge have run once.
 #
 #   sh scripts/test-windows-installer.sh <setup.exe>        (Git Bash on Windows)
 set -eu
@@ -9,12 +9,13 @@ export MSYS_NO_PATHCONV=1 # keep /S and /ve as they are, not as paths (so Window
 
 SETUP=${1:?setup.exe}
 KEY='HKCU\Software\Google\Chrome\NativeMessagingHosts\com.ks.downloadmanager'
+EDGE_KEY='HKCU\Software\Microsoft\Edge\NativeMessagingHosts\com.ks.downloadmanager'
 LAD=$(cygpath -u "$LOCALAPPDATA")
 DIR="$LAD/KS Download Manager"
 fail() { echo "::error::$*"; exit 1; }
 
-# The app registers with Chrome only once Chrome's own folder exists.
-mkdir -p "$LAD/Google/Chrome"
+# The app registers with a browser only once that browser's own folder exists.
+mkdir -p "$LAD/Google/Chrome" "$LAD/Microsoft/Edge"
 
 echo "install: $SETUP /S"
 "$SETUP" /S
@@ -33,7 +34,7 @@ done
 "$DIR/deno.exe" --version | head -1
 "$DIR/yt-dlp/yt-dlp.exe" --version
 
-# The installer's hook registered the Chrome host for this copy.
+# The installer's hook registered the host with Chrome and Edge for this copy.
 MANIFEST="$DIR/com.ks.downloadmanager.json"
 [ -s "$MANIFEST" ] || fail "no host manifest next to the app"
 node -e '
@@ -44,6 +45,7 @@ node -e '
   if (m.name !== "com.ks.downloadmanager" || m.type !== "stdio") throw new Error("name/type");
 ' "$(cygpath -w "$MANIFEST")" "$(cygpath -w "$EXE")"
 reg query "$KEY" /ve | tr -d '\r' | grep -iF "$(cygpath -w "$MANIFEST")" || fail "registry key does not name the manifest"
+reg query "$EDGE_KEY" /ve | tr -d '\r' | grep -iF "$(cygpath -w "$MANIFEST")" || fail "Edge's registry key does not name the manifest"
 
 echo "uninstall: uninstall.exe /S"
 "$DIR/uninstall.exe" /S
@@ -52,4 +54,5 @@ for _ in $(seq 60); do [ -e "$EXE" ] || break; sleep 1; done
 [ ! -e "$EXE" ] || fail "the app is still there after uninstalling"
 [ ! -e "$MANIFEST" ] || fail "the host manifest is still there"
 if reg query "$KEY" >/dev/null 2>&1; then fail "the registry key is still there"; fi
+if reg query "$EDGE_KEY" >/dev/null 2>&1; then fail "Edge's registry key is still there"; fi
 echo "installer test passed"

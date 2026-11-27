@@ -4,6 +4,16 @@ All notable changes to KS Download Manager. The layout follows [Keep a Changelog
 
 ## [Unreleased]
 
+### Added
+
+- The browser extension now works in Microsoft Edge too: the app registers itself with Edge as well as Chrome (on Windows and macOS).
+- On Windows, the taskbar button shows how many downloads are running, turns yellow while the servers of all running downloads have stopped answering, and red when a download fails, until you look at the window.
+- On Windows 11, the title bar uses the Mica material.
+
+### Changed
+
+- Windows contrast themes: progress bars, the selected download, keyboard focus and buttons stay visible.
+
 ## [0.2.0] - 2026-11-26
 
 ### Added

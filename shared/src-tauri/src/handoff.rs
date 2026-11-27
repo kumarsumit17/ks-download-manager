@@ -645,8 +645,9 @@ async fn answer_one(
     write.write_all(&out).await.is_ok()
 }
 
-/// Writes Chrome's host manifest so our extension can find this program. Only when Chrome's
-/// own folder exists (Chrome is installed); never creates Chrome's folder. Skipped while the
+/// Writes the host manifest for Chrome and for Microsoft Edge (which runs the same unpacked
+/// extension, with the same ID), so our extension can find this program. Only for a browser
+/// whose own folder exists (it is installed); never creates a browser's folder. Skipped while the
 /// app runs from a place that goes away (see [`is_temporary_location`]); the next start from
 /// a lasting place writes it.
 #[cfg(not(windows))]
@@ -655,40 +656,65 @@ pub fn install_manifest(exe: &Path) -> io::Result<Option<PathBuf>> {
         return Ok(None);
     }
     let Some(home) = std::env::var_os("HOME") else { return Ok(None) };
-    let chrome = PathBuf::from(home).join("Library/Application Support/Google/Chrome");
-    if !cfg!(target_os = "macos") || !chrome.is_dir() {
+    if !cfg!(target_os = "macos") {
         return Ok(None);
     }
-    let dir = chrome.join("NativeMessagingHosts");
-    std::fs::create_dir_all(&dir)?;
+    let support = PathBuf::from(home).join("Library/Application Support");
+    let mut written = None;
+    for browser in MAC_BROWSERS {
+        let dir = support.join(browser);
+        if dir.is_dir() {
+            written = Some(write_manifest_in(&dir.join("NativeMessagingHosts"), exe)?);
+        }
+    }
+    Ok(written)
+}
+
+/// The browsers' folders in `~/Library/Application Support`: Chrome, then Edge.
+#[cfg(not(windows))]
+const MAC_BROWSERS: [&str; 2] = ["Google/Chrome", "Microsoft Edge"];
+
+/// Writes the manifest into `dir` (created if missing), only when it differs.
+#[cfg(not(windows))]
+fn write_manifest_in(dir: &Path, exe: &Path) -> io::Result<PathBuf> {
+    std::fs::create_dir_all(dir)?;
     let file = dir.join(format!("{HOST_NAME}.json"));
     let body = manifest_json(exe);
     if std::fs::read_to_string(&file).ok().as_deref() != Some(body.as_str()) {
         ks_utility::atomic::write_atomic(&file, body.as_bytes())?;
     }
-    Ok(Some(file))
+    Ok(file)
 }
 
 /// Windows: the manifest file goes next to the program (`<install folder>\com.ks.downloadmanager.json`)
-/// and Chrome finds it through `HKCU\Software\Google\Chrome\NativeMessagingHosts\com.ks.downloadmanager`.
-/// The installer writes both (`--register-chrome-host`) and the uninstaller deletes both;
+/// and Chrome finds it through `HKCU\Software\Google\Chrome\NativeMessagingHosts\com.ks.downloadmanager`,
+/// Edge through the same name under `HKCU\Software\Microsoft\Edge\NativeMessagingHosts`.
+/// The installer writes them (`--register-chrome-host`) and the uninstaller deletes them;
 /// each start rewrites whichever is missing or points elsewhere, so a moved copy heals
-/// itself. Only when Chrome's own folder exists (`%LOCALAPPDATA%\Google\Chrome`).
+/// itself. Only for a browser whose own folder exists (`%LOCALAPPDATA%\Google\Chrome`,
+/// `%LOCALAPPDATA%\Microsoft\Edge`).
 #[cfg(windows)]
 pub fn install_manifest(exe: &Path) -> io::Result<Option<PathBuf>> {
     if is_temporary_location(exe) {
         return Ok(None);
     }
-    let chrome = std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("Google").join("Chrome"));
-    if !chrome.is_some_and(|c| c.is_dir()) {
-        return Ok(None);
+    let Some(local) = std::env::var_os("LOCALAPPDATA").map(PathBuf::from) else { return Ok(None) };
+    let mut written = None;
+    for (folder, hosts_key) in WINDOWS_BROWSERS {
+        if local.join(folder).is_dir() {
+            written = Some(register_windows(exe, hosts_key)?);
+        }
     }
-    register_windows(exe, CHROME_HOSTS_KEY).map(Some)
+    Ok(written)
 }
 
-/// Where Chrome looks up native messaging hosts for the current user.
+/// Each browser's folder in `%LOCALAPPDATA%`, and where it looks up native messaging hosts
+/// for the current user: Chrome, then Edge.
 #[cfg(windows)]
-const CHROME_HOSTS_KEY: &str = r"HKCU\Software\Google\Chrome\NativeMessagingHosts";
+const WINDOWS_BROWSERS: [(&str, &str); 2] = [
+    (r"Google\Chrome", r"HKCU\Software\Google\Chrome\NativeMessagingHosts"),
+    (r"Microsoft\Edge", r"HKCU\Software\Microsoft\Edge\NativeMessagingHosts"),
+];
 
 /// Writes the manifest next to `exe` and names it in `<hosts_key>\<HOST_NAME>`, each only
 /// when it differs. `hosts_key` is a parameter so tests use a key of their own.
@@ -1048,6 +1074,26 @@ mod tests {
         assert_eq!(install_manifest(moved).unwrap(), None);
         assert!(!is_temporary_location(Path::new("/Applications/KS Download Manager.app/Contents/MacOS/ks-download-manager")));
         assert!(!is_temporary_location(Path::new("/Users/a/Applications/KS Download Manager.app/Contents/MacOS/ks-download-manager")));
+    }
+
+    /// The manifest each browser's folder gets: created with its folder, rewritten only when
+    /// it differs. Chrome and Edge are both looked for.
+    #[cfg(not(windows))]
+    #[test]
+    fn the_manifest_is_written_into_a_browsers_hosts_folder() {
+        assert_eq!(MAC_BROWSERS, ["Google/Chrome", "Microsoft Edge"]);
+        let dir = std::env::temp_dir().join(format!("ks-hosts-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let exe = Path::new("/Applications/KS Download Manager.app/Contents/MacOS/ks-download-manager");
+        let file = write_manifest_in(&dir.join("NativeMessagingHosts"), exe).unwrap();
+        assert_eq!(file, dir.join("NativeMessagingHosts/com.ks.downloadmanager.json"));
+        let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        assert_eq!(v["path"], exe.to_str().unwrap());
+        assert_eq!(v["allowed_origins"], serde_json::json!([origin()]));
+        std::fs::write(&file, "old").unwrap();
+        write_manifest_in(&dir.join("NativeMessagingHosts"), exe).unwrap();
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), manifest_json(exe));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// A socket path (in a fresh folder) or pipe name of this test's own.

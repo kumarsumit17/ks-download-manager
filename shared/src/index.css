@@ -158,3 +158,15 @@ body { user-select: none; -webkit-user-select: none; cursor: default; }
 @media (prefers-reduced-motion: reduce) {
   .progress-indeterminate::after { animation: none; width: 100%; opacity: 0.5; }
 }
+
+/* Windows contrast themes (forced colours): the system replaces every colour, so whatever
+   was shown by a background alone (progress, the selected row) gets a system colour or an
+   outline instead, and focus stays visible. */
+@media (forced-colors: active) {
+  [data-slot="progress"] { border: 1px solid CanvasText; background: Canvas; }
+  [data-slot="progress-indicator"], .progress-indeterminate::after { forced-color-adjust: none; background: Highlight; }
+  tr[aria-selected="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
+  :focus-visible { outline: 2px solid Highlight !important; outline-offset: 1px; }
+  button:not([data-slot="checkbox"]) { border: 1px solid ButtonText; }
+  button:disabled { border-color: GrayText; color: GrayText; }
+}
