@@ -2155,7 +2155,7 @@ dependencies = [
 [[package]]
 name = "ks-utility"
 version = "0.0.0"
-source = "git+https://github.com/kumasumit/ks-utility?tag=v0.18.1#2a8a7c2a5aa612608df533394b7a0b69a1823b2e"
+source = "git+https://github.com/kumasumit/ks-utility?tag=v0.18.4#6ea7db137c06b0fe974df5fcb1831ef4c6c0a938"
 
 [[package]]
 name = "ksdm-mac"
