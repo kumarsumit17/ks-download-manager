@@ -17,7 +17,7 @@ permissions: {}
 jobs:
   bump:
     permissions: { contents: write, issues: write }
-    uses: kumasumit/ks-utility/.github/workflows/ks-utility-bump.yml@v0.16.0
+    uses: kumasumit/ks-utility/.github/workflows/ks-utility-bump.yml@v0.17.0
     # The owner's token, so a move also rewrites the @vX refs to ks-utility's shared workflows
     # (GitHub's own token may not change workflow files). Without it only the pin moves.
     secrets:
