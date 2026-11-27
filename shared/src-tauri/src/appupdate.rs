@@ -60,18 +60,17 @@ pub enum Check {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Opened {
-    /// Windows: the installer is starting, the app quits now.
+    /// Windows: the installer is starting, the app quits now. Otherwise (macOS) the
+    /// interface quits after ks-utility's `MAC_QUIT_AFTER_MS`, since Finder cannot replace a
+    /// running app.
     pub quit: bool,
-    /// When to quit, in milliseconds: 0 on Windows; on macOS long enough to read that the
-    /// app now closes (Finder cannot replace a running app).
-    pub quit_after_ms: u64,
 }
 
 impl From<app_update::install::Opened> for Opened {
     fn from(opened: app_update::install::Opened) -> Self {
         match opened {
-            app_update::install::Opened::Windows => Opened { quit: true, quit_after_ms: 0 },
-            app_update::install::Opened::Mac => Opened { quit: false, quit_after_ms: app_update::install::MAC_QUIT_AFTER.as_millis() as u64 },
+            app_update::install::Opened::Windows => Opened { quit: true },
+            app_update::install::Opened::Mac => Opened { quit: false },
         }
     }
 }
@@ -204,8 +203,10 @@ mod tests {
 
     #[test]
     fn the_app_quits_at_once_on_windows_and_after_a_moment_on_macos() {
-        assert_eq!(Opened::from(app_update::install::Opened::Windows), Opened { quit: true, quit_after_ms: 0 });
-        assert_eq!(Opened::from(app_update::install::Opened::Mac), Opened { quit: false, quit_after_ms: 6000 });
+        assert_eq!(Opened::from(app_update::install::Opened::Windows), Opened { quit: true });
+        assert_eq!(Opened::from(app_update::install::Opened::Mac), Opened { quit: false });
+        // The interface waits ks-utility's MAC_QUIT_AFTER_MS, the same as Rust's MAC_QUIT_AFTER.
+        assert_eq!(app_update::install::MAC_QUIT_AFTER.as_millis(), 6000);
     }
 
     const NAMES: [&str; 4] = [
