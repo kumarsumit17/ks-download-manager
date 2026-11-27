@@ -36,7 +36,7 @@ The Windows installer (beta, phase B; built by the `windows` job, switched on in
 
 Work happens on `dev`, then `main` fast-forwards to `dev`. **The tag is made on `main`.** Tags: `vX.Y.Z` releases every platform (macOS, Windows and the Chrome extension); `mac-vX.Y.Z`, `windows-vX.Y.Z` or `chrome-vX.Y.Z` releases that one platform, so each platform has its own version. The workflow fails at its first step if the tagged commit is not on `main`, if the tag is not one of these, if it is not higher than every earlier plain tag and every earlier tag of the same platform, or if `CHANGELOG.md` has no dated section for it: `## [X.Y.Z] - YYYY-MM-DD` for a plain tag, `## [macOS X.Y.Z] - …`, `## [Windows X.Y.Z] - …` or `## [Chrome X.Y.Z] - …` for a platform tag. A plain release is marked latest; a platform release is not (the app's update check reads the release list and takes its own platform's newest). Never tag while anything is red.
 
-The checks before the build and the attesting and publishing after it are ks-utility's shared workflows (`tauri-app-release-check.yml` and `tauri-app-release-publish.yml`, pinned in `release.yml` to the same ks-utility tag as the app); the build jobs are this app's own.
+The checks before the build and the attesting and publishing after it are ks-utility's shared workflows (`tauri-app-release-check.yml` and `tauri-app-release-publish.yml`, called at `@main` in `release.yml`, which is always ks-utility's newest release; a rehearsal may call `@dev` to try a change to them before its tag); the build jobs are this app's own.
 
 ```bash
 # 1. On dev: the changelog section for the version is dated ("## [X.Y.Z] - YYYY-MM-DD"),

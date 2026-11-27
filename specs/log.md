@@ -1,5 +1,6 @@
 # 2026-11-27
 
+* **Update**: `ks-utility` pin moved to `v0.18.0` (`56dc09a`), and every call to ks-utility's shared workflows (release check and publish, bump) is at `@main`, which always equals the newest release (owner's decision, KS-Suite aa0ea92); only the code pin moves with each tag.
 * **Update**: `ks-utility-bump.yml` no longer passes `KS_WORKFLOWS_TOKEN` (owner's decision, KS-Suite aa0ea92): the shared workflows will be called at `@main`, so only the code pin moves.
 * **Update**: `ks-utility` pin and the shared-workflow refs moved to `v0.17.0` (`2579255`): its update store knows `"macos-closes"`.
 * **Update**: `ks-utility` pin and the shared-workflow refs moved to `v0.16.0` (`efe76f9`): its ks-suite-check also requires the workflow refs to be the newest tag. `ks-utility-bump.yml` passes the owner's `KS_WORKFLOWS_TOKEN`, so automatic moves rewrite those refs too.
