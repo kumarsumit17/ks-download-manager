@@ -1,5 +1,6 @@
 # 2026-11-27
 
+* **Update**: `ks-utility-bump.yml` no longer passes `KS_WORKFLOWS_TOKEN` (owner's decision, KS-Suite aa0ea92): the shared workflows will be called at `@main`, so only the code pin moves.
 * **Update**: `ks-utility` pin and the shared-workflow refs moved to `v0.17.0` (`2579255`): its update store knows `"macos-closes"`.
 * **Update**: `ks-utility` pin and the shared-workflow refs moved to `v0.16.0` (`efe76f9`): its ks-suite-check also requires the workflow refs to be the newest tag. `ks-utility-bump.yml` passes the owner's `KS_WORKFLOWS_TOKEN`, so automatic moves rewrite those refs too.
 * **Update**: `ks-utility` pin moved from `v0.14.0` (`83d81ec`) to `v0.15.0` (`c1a5eb7`); ks-suite-check passes. [UI direction](ui.md), "App updates": the installer is opened by ks-utility's `app_update::install::open`, and on macOS the app now closes 6 seconds after opening the disk image so Finder can replace it; the check reads the release list. The release workflow calls ks-utility's shared workflows at `v0.15.0` (which run ks-suite-check), and `ks-utility-bump.yml` moves the pin to each new ks-utility tag by itself.

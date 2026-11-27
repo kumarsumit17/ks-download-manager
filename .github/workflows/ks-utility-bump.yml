@@ -1,7 +1,7 @@
 # Moves the ks-utility pin to its newest tag, the same day it is released (ks-utility's
 # specs/release-workflow.md, "Moving to the newest ks-utility"). ks-utility's shared workflow
 # checks out dev, moves the git tag in shared/package.json and the two Cargo.toml files plus
-# both lock files (and, with KS_WORKFLOWS_TOKEN, the @vX refs in these workflows), runs the tests below and, only when they pass, commits
+# both lock files, runs the tests below and, only when they pass, commits
 # "chore: move ks-utility to vX.Y.Z" to dev. A failure pushes nothing and opens an issue.
 name: Move to the newest ks-utility
 
@@ -18,10 +18,6 @@ jobs:
   bump:
     permissions: { contents: write, issues: write }
     uses: kumasumit/ks-utility/.github/workflows/ks-utility-bump.yml@v0.17.0
-    # The owner's token, so a move also rewrites the @vX refs to ks-utility's shared workflows
-    # (GitHub's own token may not change workflow files). Without it only the pin moves.
-    secrets:
-      KS_WORKFLOWS_TOKEN: ${{ secrets.KS_WORKFLOWS_TOKEN }}
     with:
       kind: tauri
       # macOS: the Rust tests use the macOS code (desktop/mac) and the Unix socket.
