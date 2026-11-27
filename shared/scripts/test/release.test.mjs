@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EXTENSION_ID, extensionId } from "../extension-id.mjs";
-import { changelogSection, headingOf, macSigning, notes, FFMPEG } from "../release-notes.mjs";
+import { changelogSection, headingOf, macSigning, notes, FFMPEG, KS_UTILITY } from "../release-notes.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -49,6 +49,9 @@ test("the notes match how the files were signed", () => {
     assert.match(n, /gh attestation verify <file> -R kumasumit\/ks-download-manager --signer-workflow kumasumit\/ks-utility\/\.github\/workflows\/tauri-app-release-publish\.yml/);
     assert.ok(n.includes(`built from ffmpeg ${FFMPEG.version}. Its exact source is attached as \`ffmpeg-${FFMPEG.version}.tar.xz\` (from ${FFMPEG.source}, SHA-256 \`${FFMPEG.sha256}\`)`));
   }
+  // Every release names the ks-utility version it was built with (the suite's release cycle).
+  assert.match(KS_UTILITY, /^v\d+\.\d+\.\d+$/);
+  for (const n of [adhoc, signed]) assert.ok(n.includes(`Built with [ks-utility](https://github.com/kumasumit/ks-utility) ${KS_UTILITY}.`));
   // The real changelog has the section for the first release.
   assert.ok(changelogSection(readFileSync(join(root, "..", "CHANGELOG.md"), "utf8"), "0.1.2").length > 0);
 });

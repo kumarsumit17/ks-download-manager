@@ -109,7 +109,7 @@ New dependencies are reported as [Dependencies](dependencies.md) requires. Every
 
 ## 4. Build order and testing
 
-Each step is one or more commits on `dev`, tested before the next, pushed as it is done and released with the next tag (suite rule "Build, test, release, no waiting"; the owner's hand checks follow the release and never block it).
+Each step is one or more commits on `dev`, tested before the next and pushed as it is done; its DEV build (a rehearsal) goes to the owner, and it is released only with the owner's approval for that platform (suite rule "DEV, test, approval, production", [release cycle](https://github.com/kumasumit/ks-suite/blob/main/specs/release-cycle.md)).
 
 | Step | What | Where | Tested on |
 |---|---|---|---|

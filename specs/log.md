@@ -1,5 +1,6 @@
 # 2026-11-27
 
+* **Update**: [per-platform plan](plan-per-platform.md) and `docs/release.md`: "DEV, test, approval, production" (suite rule, KS-Suite 6170b83) replaces "build, test, release, no waiting": a production tag needs the owner's approval for that platform; DEV builds are rehearsals on `dev`. The release notes name the ks-utility version.
 * **Update**: `ks-utility` pin moved to `v0.18.4`. The v0.4.0 tag stopped at ks-suite-check (ks-utility v0.18.3 had come out after the pin), so nothing was published; the release is v0.4.1.
 * **Update**: `ks-utility` pin moved to `v0.18.0` (`56dc09a`), then `v0.18.1` (`2a8a7c2`), and every call to ks-utility's shared workflows (release check and publish, bump) is at `@main`, which always equals the newest release (owner's decision, KS-Suite aa0ea92); only the code pin moves with each tag.
 * **Update**: `ks-utility-bump.yml` no longer passes `KS_WORKFLOWS_TOKEN` (owner's decision, KS-Suite aa0ea92): the shared workflows will be called at `@main`, so only the code pin moves.

@@ -15,6 +15,8 @@ const SIGNER = "kumasumit/ks-utility/.github/workflows/tauri-app-release-publish
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 /** The pinned ffmpeg source: version, official URL and SHA-256 (src-tauri/sidecars.json). */
 export const FFMPEG = JSON.parse(readFileSync(join(ROOT, "src-tauri/sidecars.json"), "utf8")).ffmpeg;
+/** The ks-utility version this build uses: the tag its pin in package.json names. */
+export const KS_UTILITY = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).dependencies["ks-utility"].split("#").pop();
 
 /** The body of "## <version> …" in a Keep a Changelog file, or throws. */
 export function changelogSection(text, version) {
@@ -69,6 +71,7 @@ export function notes(changelog, version, platform, mac) {
   if (has("mac") || has("windows")) {
     out += `The bundled ffmpeg and ffprobe are LGPL-2.1-or-later, built from ffmpeg ${FFMPEG.version}. Its exact source is attached as \`${FFMPEG.source.split("/").pop()}\` (from ${FFMPEG.source}, SHA-256 \`${FFMPEG.sha256}\`). The build details are in the app's \`licenses\` folder (\`ffmpeg-SOURCE.txt\`).\n\n`;
   }
+  out += `Built with [ks-utility](https://github.com/kumasumit/ks-utility) ${KS_UTILITY}.\n\n`;
   out += `The app looks for a new version once a day (a switch in Settings turns this off). Every version is published at https://github.com/${REPO}/releases.\n`;
   return out;
 }
