@@ -4,7 +4,9 @@ All notable changes to KS Download Manager. The layout follows [Keep a Changelog
 
 ## [Unreleased]
 
-## [0.4.0] - 2026-11-27
+## [0.4.1] - 2026-11-27
+
+v0.4.0 was tagged but never released: its release stopped at the first check, because ks-utility had a newer version. This is the same release on ks-utility v0.18.4.
 
 ### Changed
 
