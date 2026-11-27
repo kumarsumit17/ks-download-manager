@@ -44,7 +44,7 @@ concurrency:
 
 jobs:
   check:
-    uses: kumasumit/ks-utility/.github/workflows/tauri-app-release-check.yml@v0.15.0
+    uses: kumasumit/ks-utility/.github/workflows/tauri-app-release-check.yml@v0.16.0
     permissions:
       contents: read
     with:
@@ -365,7 +365,7 @@ jobs:
   publish:
     needs: [check, plan, ffmpeg-source, mac, extension, ffmpeg-windows, windows]
     if: ${{ !cancelled() && needs.plan.result == 'success' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
-    uses: kumasumit/ks-utility/.github/workflows/tauri-app-release-publish.yml@v0.15.0
+    uses: kumasumit/ks-utility/.github/workflows/tauri-app-release-publish.yml@v0.16.0
     permissions:
       contents: write
       id-token: write
