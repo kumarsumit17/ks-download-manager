@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { EXTENSION_ID, extensionId } from "../extension-id.mjs";
+import { DEV_EXTENSION_ID, EXTENSION_ID, extensionId } from "../extension-id.mjs";
 import { changelogSection, headingOf, macSigning, notes, FFMPEG, KS_UTILITY } from "../release-notes.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -89,4 +89,36 @@ test("the macOS signing is read from both build jobs' files, and must agree", ()
   } finally {
     rmSync(dir, { recursive: true });
   }
+});
+
+test("the DEV build has its own identity everywhere, and production keeps its own", () => {
+  const prod = JSON.parse(readFileSync(join(root, "src-tauri/tauri.conf.json"), "utf8"));
+  const devConf = JSON.parse(readFileSync(join(root, "src-tauri/tauri.dev.conf.json"), "utf8"));
+  const dev = JSON.parse(readFileSync(join(root, "extension/dev.json"), "utf8"));
+  // Production never changes.
+  assert.equal(prod.identifier, "com.ks.downloadmanager");
+  assert.equal(prod.productName, "KS Download Manager");
+  assert.equal(EXTENSION_ID, "ikplfdbdfikcokpegkapjdedlgifmkbe");
+  // DEV: its own identifier, name, feature, icons, upgrade code and extension.
+  assert.equal(devConf.identifier, "com.ks.downloadmanager.dev");
+  assert.equal(devConf.productName, "KS Download Manager DEV");
+  assert.deepEqual(devConf.build.features, ["dev"]);
+  assert.ok(devConf.bundle.icon.every((i) => i.startsWith("icons-dev/")));
+  assert.match(devConf.bundle.windows.wix.upgradeCode, /^[0-9a-f-]{36}$/);
+  assert.equal(dev.host, devConf.identifier);
+  assert.equal(extensionId(dev.key), DEV_EXTENSION_ID);
+  assert.notEqual(DEV_EXTENSION_ID, EXTENSION_ID);
+  const rust = readFileSync(join(root, "src-tauri/src/handoff.rs"), "utf8");
+  assert.match(rust, new RegExp(`feature = "dev"\\)\\]\\npub const EXTENSION_ID: &str = "${DEV_EXTENSION_ID}"`));
+  assert.match(rust, new RegExp(`feature = "dev"\\)\\]\\npub const BUNDLE_ID: &str = "${devConf.identifier.replace(/\./g, "\\.")}"`));
+});
+
+test("a DEV build's notes say so and name the DEV files", () => {
+  const dev = notes(CL, "0.1.0", "all", "ad-hoc", { dev: true });
+  assert.match(dev, /^\*\*DEV build 0\.1\.0\*\*/);
+  assert.match(dev, /ks-download-manager-dev-v0\.1\.0-macos-arm64\.dmg/);
+  assert.match(dev, /ks-download-manager-dev-v0\.1\.0-windows-x64-setup-beta\.exe/);
+  assert.match(dev, /ks-download-manager-dev-extension-v0\.1\.0\.zip/);
+  assert.doesNotMatch(dev, /ks-download-manager-v0\.1\.0/);
+  assert.doesNotMatch(notes(CL, "0.1.0", "all", "ad-hoc"), /DEV build|ks-download-manager-dev/);
 });

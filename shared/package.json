@@ -14,6 +14,7 @@
     "sidecars": "node scripts/sidecars.mjs",
     "bundle:mac": "tauri build --bundles app && sh scripts/sign-macos.sh \"src-tauri/target/release/bundle/macos/KS Download Manager.app\"",
     "build:extension": "tsc -p extension/tsconfig.json && node extension/build.mjs",
+    "build:extension:dev": "tsc -p extension/tsconfig.json && node extension/build.mjs --dev",
     "test:extension": "node --test extension/test/",
     "test:ui": "node --test test/ui/",
     "bench": "cargo test --release --manifest-path src-tauri/Cargo.toml -p engine --test bench benchmark_connections -- --ignored --nocapture",

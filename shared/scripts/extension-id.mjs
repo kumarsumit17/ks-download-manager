@@ -8,6 +8,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 export const EXTENSION_ID = "ikplfdbdfikcokpegkapjdedlgifmkbe";
+/** The DEV extension's ID (extension/dev.json), allowed only by the DEV app. */
+export const DEV_EXTENSION_ID = "mhgmalnfheamcgcongjgdmepagonmmbc";
 
 export function extensionId(key) {
   const hex = createHash("sha256").update(Buffer.from(key, "base64")).digest("hex").slice(0, 32);

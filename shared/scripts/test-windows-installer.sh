@@ -8,10 +8,16 @@ set -eu
 export MSYS_NO_PATHCONV=1 # keep /S and /ve as they are, not as paths (so Windows programs get cygpath -w paths)
 
 SETUP=${1:?setup.exe}
-KEY='HKCU\Software\Google\Chrome\NativeMessagingHosts\com.ks.downloadmanager'
-EDGE_KEY='HKCU\Software\Microsoft\Edge\NativeMessagingHosts\com.ks.downloadmanager'
+# KSDM_DEV=1: the DEV build (tauri.dev.conf.json), with its own identity everywhere.
+if [ -n "${KSDM_DEV:-}" ]; then
+  ID=com.ks.downloadmanager.dev NAME="KS Download Manager DEV" EXT=mhgmalnfheamcgcongjgdmepagonmmbc
+else
+  ID=com.ks.downloadmanager NAME="KS Download Manager" EXT=ikplfdbdfikcokpegkapjdedlgifmkbe
+fi
+KEY="HKCU\Software\Google\Chrome\NativeMessagingHosts\$ID"
+EDGE_KEY="HKCU\Software\Microsoft\Edge\NativeMessagingHosts\$ID"
 LAD=$(cygpath -u "$LOCALAPPDATA")
-DIR="$LAD/KS Download Manager"
+DIR="$LAD/$NAME"
 fail() { echo "::error::$*"; exit 1; }
 
 # The app registers with a browser only once that browser's own folder exists.
@@ -35,15 +41,15 @@ done
 "$DIR/yt-dlp/yt-dlp.exe" --version
 
 # The installer's hook registered the host with Chrome and Edge for this copy.
-MANIFEST="$DIR/com.ks.downloadmanager.json"
+MANIFEST="$DIR/$ID.json"
 [ -s "$MANIFEST" ] || fail "no host manifest next to the app"
 node -e '
   const m = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
-  const want = process.argv[2];
+  const [want, id, ext] = process.argv.slice(2);
   if (m.path.toLowerCase() !== want.toLowerCase()) throw new Error(`path ${m.path}, expected ${want}`);
-  if (JSON.stringify(m.allowed_origins) !== JSON.stringify(["chrome-extension://ikplfdbdfikcokpegkapjdedlgifmkbe/"])) throw new Error("allowed_origins");
-  if (m.name !== "com.ks.downloadmanager" || m.type !== "stdio") throw new Error("name/type");
-' "$(cygpath -w "$MANIFEST")" "$(cygpath -w "$EXE")"
+  if (JSON.stringify(m.allowed_origins) !== JSON.stringify([`chrome-extension://${ext}/`])) throw new Error("allowed_origins");
+  if (m.name !== id || m.type !== "stdio") throw new Error("name/type");
+' "$(cygpath -w "$MANIFEST")" "$(cygpath -w "$EXE")" "$ID" "$EXT"
 reg query "$KEY" /ve | tr -d '\r' | grep -iF "$(cygpath -w "$MANIFEST")" || fail "registry key does not name the manifest"
 reg query "$EDGE_KEY" /ve | tr -d '\r' | grep -iF "$(cygpath -w "$MANIFEST")" || fail "Edge's registry key does not name the manifest"
 

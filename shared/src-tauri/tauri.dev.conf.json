@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "KS Download Manager DEV",
+  "identifier": "com.ks.downloadmanager.dev",
+  "build": {
+    "features": ["dev"]
+  },
+  "bundle": {
+    "icon": [
+      "icons-dev/32x32.png",
+      "icons-dev/128x128.png",
+      "icons-dev/128x128@2x.png",
+      "icons-dev/icon.icns",
+      "icons-dev/icon.ico"
+    ],
+    "windows": {
+      "wix": {
+        "upgradeCode": "834e669b-896b-444b-8c03-77d0587f6a8e"
+      }
+    }
+  }
+}

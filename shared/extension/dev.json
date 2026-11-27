@@ -1,0 +1,6 @@
+{
+  "_comment": "The DEV build of the extension (node extension/build.mjs --dev): its own key, so its own ID (mhgmalnfheamcgcongjgdmepagonmmbc), the DEV app's native messaging host, ' DEV' in its name and the DEV icons. Only the public key is here; an unpacked extension needs no private key.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoyEc/5PBSlebKN/g3m0AdG60aa5arWDHiGXGs8O12p5JCQgF6Cq7ej7WfiBPOm1XkK7fzp2/znwKaZCzgHrEl3E0H47awYLh3pKIeZru+T4+l4E8MbbZkdex8loQa9stOk7lGKvgEIe/hdrPUQIIYLLr7xxea/KIQYcOzgMMCKED06yo+DU6VCbDFeqJegUTjB83LehKgYy179oSW9jL4+21TPBmcOaDrMPgqBPT/nn9Nc2fSTs7P8o470ohcw10Y3RzTwtjiXSH8pLaVs6K/9ZKuaK4HPBuySo1uxZf7bAs5Rq9uiPGIIg2i97IJkNTsrAm4ZlWKg6fvenTdZFbSQIDAQAB",
+  "host": "com.ks.downloadmanager.dev",
+  "nameSuffix": " DEV"
+}

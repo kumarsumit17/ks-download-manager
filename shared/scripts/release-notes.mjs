@@ -1,7 +1,10 @@
 // Writes the GitHub release notes: this release's section of CHANGELOG.md, then one block
 // per platform the release has, matching how its files were actually built and signed.
 //
-//   node scripts/release-notes.mjs <version> <platform: all|mac|windows|chrome> [artifacts dir]
+//   node scripts/release-notes.mjs <version> <platform: all|mac|windows|chrome> [artifacts dir] [--dev]
+//
+// --dev: the notes of a DEV build (a rehearsal): its files are named ks-download-manager-dev-…
+// and install next to the production app.
 //
 // The macOS signing (developer-id or ad-hoc) is read from the signing-macos-<arch>.txt files
 // the mac build jobs leave in the artifacts; both builds must have been signed the same way.
@@ -37,15 +40,19 @@ export const headingOf = (version, platform) => (platform === "all" ? version : 
  * The notes for a release of `platform` (all, mac, windows or chrome). `mac` is the macOS
  * signing (developer-id or ad-hoc), needed when the release has macOS files.
  */
-export function notes(changelog, version, platform, mac) {
+export function notes(changelog, version, platform, mac, { dev = false } = {}) {
   if (platform !== "all" && !(platform in NAMES)) throw new Error(`unknown platform "${platform}"`);
   const has = (p) => platform === "all" || platform === p;
   if (has("mac") && !["developer-id", "ad-hoc"].includes(mac)) throw new Error(`unknown macOS signing "${mac}"`);
-  let out = `${changelogSection(changelog, headingOf(version, platform))}\n\n## Downloads\n\n`;
+  const name = dev ? "ks-download-manager-dev" : "ks-download-manager";
+  let out = dev
+    ? `**DEV build ${version}**, for testing by hand: it installs next to the production app (KS Download Manager DEV, with its own data, browser host and DEV extension) and never replaces it. Not a release.\n\n`
+    : "";
+  out += `${changelogSection(changelog, headingOf(version, platform))}\n\n## Downloads\n\n`;
   if (has("mac")) {
     out += `### macOS 11 or later\n\n`;
-    out += `- Apple silicon (M1 and later): \`ks-download-manager-v${version}-macos-arm64.dmg\`\n`;
-    out += `- Intel: \`ks-download-manager-v${version}-macos-x64.dmg\`\n\n`;
+    out += `- Apple silicon (M1 and later): \`${name}-v${version}-macos-arm64.dmg\`\n`;
+    out += `- Intel: \`${name}-v${version}-macos-x64.dmg\`\n\n`;
     out += `Open the disk image and drag **KS Download Manager** to **Applications**.\n\n`;
     if (mac === "developer-id") {
       out += `The app is signed with a Developer ID and notarised by Apple.\n\n`;
@@ -59,12 +66,12 @@ export function notes(changelog, version, platform, mac) {
   }
   if (has("windows")) {
     out += `### Windows 10 and 11 (beta, untested by hand)\n\n`;
-    out += `- \`ks-download-manager-v${version}-windows-x64-setup-beta.exe\` (installs for the current user, no administrator rights)\n\n`;
+    out += `- \`${name}-v${version}-windows-x64-setup-beta.exe\` (installs for the current user, no administrator rights)\n\n`;
     out += `The installer is not code-signed. Windows SmartScreen shows "Windows protected your PC": choose **More info → Run anyway**.\n\n`;
   }
   if (has("chrome")) {
     out += `### Chrome extension\n\n`;
-    out += `- \`ks-download-manager-extension-v${version}.zip\`: unzip it to a folder you keep, open \`chrome://extensions\`, turn on **Developer mode**, choose **Load unpacked** and pick that folder. See the README.\n\n`;
+    out += `- \`${name}-extension-v${version}.zip\`: unzip it to a folder you keep, open \`chrome://extensions\`, turn on **Developer mode**, choose **Load unpacked** and pick that folder. See the README.\n\n`;
   }
   out += `### Checking the files\n\n`;
   out += `Each file has a build-provenance attestation: \`gh attestation verify <file> -R ${REPO} --signer-workflow ${SIGNER}\`.\n\n`;
@@ -86,7 +93,9 @@ export function macSigning(dir) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const [version, platform, artifacts] = process.argv.slice(2);
+  const args = process.argv.slice(2);
+  const dev = args.includes("--dev");
+  const [version, platform, artifacts] = args.filter((a) => a !== "--dev");
   const mac = platform === "all" || platform === "mac" ? macSigning(artifacts ?? "artifacts") : undefined;
-  process.stdout.write(notes(readFileSync(join(ROOT, "..", "CHANGELOG.md"), "utf8"), version, platform, mac));
+  process.stdout.write(notes(readFileSync(join(ROOT, "..", "CHANGELOG.md"), "utf8"), version, platform, mac, { dev }));
 }

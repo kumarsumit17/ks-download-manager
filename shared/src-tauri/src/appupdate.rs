@@ -28,6 +28,9 @@ use serde::{Deserialize, Serialize};
 use crate::msg;
 use crate::msg::Msg;
 
+/// The DEV build (`tauri.dev.conf.json`): no update checks, no production files.
+const DEV: bool = cfg!(feature = "dev");
+
 /// The app's name, as the downloader in the update's quarantine mark (macOS).
 const APP_NAME: &str = "KS Download Manager";
 
@@ -111,8 +114,12 @@ impl Updater {
         self.extension_latest.lock().ok()?.clone()
     }
 
-    /// The daily check is due: a tagged build, and no check in the last day.
+    /// The daily check is due: a tagged production build, and no check in the last day. A
+    /// DEV build never checks: it would only find production versions.
     pub fn due(&self) -> bool {
+        if DEV {
+            return false;
+        }
         let last = std::fs::read(self.dir.join(STATE_FILE))
             .ok()
             .and_then(|b| serde_json::from_slice::<State>(&b).ok())
@@ -122,6 +129,11 @@ impl Updater {
     }
 
     pub async fn check(&self) -> Result<Check, Msg> {
+        // A DEV build installs next to the production app and is replaced by the next DEV
+        // build by hand; it never offers a production file.
+        if DEV {
+            return Err(msg!("appUpdate.devBuild"));
+        }
         let repo = repo();
         // The release list, not `releases/latest`: each platform has its own releases
         // (`mac-v…`, `windows-v…`, `chrome-v…`), and a plain `v…` is every platform's.
@@ -272,6 +284,20 @@ mod tests {
         assert_eq!(repo().releases_api_url(), format!("https://api.github.com/repos/{REPO}/releases?per_page={}", app_update::RELEASES_PER_PAGE));
     }
 
+    /// The DEV build never checks, never offers a production file.
+    #[cfg(feature = "dev")]
+    #[test]
+    fn a_dev_build_never_checks() {
+        let dir = std::env::temp_dir().join(format!("ks-appupdate-dev-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let u = Updater::new("0.4.2".into(), &dir);
+        assert!(!u.due());
+        let err = tauri::async_runtime::block_on(u.check()).err().unwrap();
+        assert_eq!(err, msg!("appUpdate.devBuild"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(not(feature = "dev"))]
     #[test]
     fn the_daily_check_waits_a_day_and_skips_development_builds() {
         let day = app_update::CHECK_INTERVAL.as_secs();

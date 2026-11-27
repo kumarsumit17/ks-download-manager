@@ -76,7 +76,7 @@ Actions tab → **Release** → the run for the tag:
 6. `extension`: builds the zip and checks the extension ID `ikplfdbdfikcokpegkapjdedlgifmkbe` and the version in the zipped manifest.
 7. `publish` (shared): takes exactly the planned files by name (nothing else is ever attached), attests each one, checks they arrived unchanged and are attested, writes the notes (`release-notes.mjs`: the changelog section plus how the files were signed), and **publishes the release**. It runs only if every job before it passed; jobs a platform release does not need are skipped.
 
-## 4. Rehearsal (before every tag)
+## 4. Rehearsal: the DEV build (before every tag)
 
 **Actions → Release → Run workflow**, pick `dev` and give the version (`X.Y.Z`, with its dated changelog section on `dev`), or
 
@@ -84,7 +84,9 @@ Actions tab → **Release** → the run for the tag:
 gh workflow run release.yml --ref dev -f version=X.Y.Z -f platform=all -R kumasumit/ks-download-manager
 ```
 
-Every job runs as for a tag, except the check that the tag is on `main`. Nothing is attested and nothing is ever published; the files (`release-files`) and the notes (`release-notes`) are kept as the run's artifacts. Check the file list: exactly the planned files (five for `all`).
+Every job runs as for a tag, except the check that the tag is on `main`, and it builds the **DEV variant**: `src-tauri/tauri.dev.conf.json` (identifier `com.ks.downloadmanager.dev`, name "KS Download Manager DEV", the orange DEV icon from `assets/app-icon-dev.svg`, its own WiX upgrade code, the Cargo feature `dev`) and the DEV extension (`node extension/build.mjs --dev`: ID `mhgmalnfheamcgcongjgdmepagonmmbc`, " DEV" in its name). Its files are named `ks-download-manager-dev-…`. Nothing is attested and nothing is ever published; the files (`release-files`) and the notes (`release-notes`) are kept as the run's artifacts. Check the file list: exactly the planned files (five for `all`).
+
+**DEV next to production** (suite rule "DEV and PROD side by side"): the DEV app has its own data folder (from its identifier), its own single-instance socket or pipe, its own native messaging host (`com.ks.downloadmanager.dev`, registered with Chrome and Edge next to the production one; its uninstaller removes only its own), its own install folder on Windows ("KS Download Manager DEV"), and download markers of its own, so it never continues or removes what the production app owns. It never checks for updates and offers no production file ("This is a DEV build…" in Settings). The DEV extension talks only to the DEV app, the production extension only to the production app. Production's identifier, upgrade code and extension ID never change. To build it locally: `npm run tauri build -- --bundles app --config src-tauri/tauri.dev.conf.json` and `npm run build:extension:dev`.
 
 ## 5. After the release: checks and hand checks
 

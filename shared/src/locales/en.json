@@ -253,6 +253,7 @@
   "update.install": "Could not install the update: {detail}.",
   "update.unpack": "Could not unpack the update.",
   "appUpdate.hash": "Could not check the download.",
+  "appUpdate.devBuild": "This is a DEV build. It does not look for production versions; install the next DEV build by hand.",
   "notice.title": "Before you start",
   "notice.rights": "Download only what you have the right to download. You are responsible for what you download and how you use it.",
   "notice.drm": "KS Download Manager does not remove or get around copy protection (DRM). Paid streaming services and videos that need a sign-in are not supported.",

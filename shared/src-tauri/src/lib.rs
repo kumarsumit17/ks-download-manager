@@ -544,6 +544,9 @@ pub fn run() {
             if let Some(window) = app.get_webview_window("main") {
                 let theme = window.theme().unwrap_or(Theme::Light);
                 window.set_background_color(Some(background(theme)))?;
+                // The DEV build says so in its title bar too (its name and icon already do).
+                #[cfg(feature = "dev")]
+                window.set_title("KS Download Manager DEV")?;
                 // Windows 11: the Mica material in the title bar, as Windows' own apps have.
                 // Windows 10 has no Mica and refuses it; the title bar then stays as it was.
                 #[cfg(windows)]

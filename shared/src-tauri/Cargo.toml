@@ -25,6 +25,12 @@ default-members = [".", "engine", "../../desktop/mac", "../../desktop/windows"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[features]
+# The DEV build (tauri.dev.conf.json turns it on): its own bundle ID, native messaging host,
+# single-instance socket and extension ID, so it installs and runs next to the production
+# app and never touches it; it offers no production updates.
+dev = []
+
 [dependencies]
 tauri = { version = "2", features = [] }
 engine = { path = "engine" }

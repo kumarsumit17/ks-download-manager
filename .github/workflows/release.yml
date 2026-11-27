@@ -11,9 +11,12 @@
 #                  is attested and the GitHub release is PUBLISHED, only after every build and
 #                  check passed. No draft. A failure anywhere publishes nothing.
 #
-#   Manual run     On any branch, e.g. dev, with the version and platform to rehearse. Every
-#   (rehearsal)    job runs as for a tag, except "the tag is on main"; nothing is attested and
-#                  nothing is ever published. The files and the notes stay as workflow artifacts.
+#   Manual run     On any branch, e.g. dev, with the version and platform to rehearse: the DEV
+#   (rehearsal,    build. Every job runs as for a tag, except "the tag is on main", but builds the
+#    DEV build)    DEV variant (tauri.dev.conf.json, the DEV extension; files named
+#                  ks-download-manager-dev-…), which installs next to the production app. Nothing
+#                  is attested and nothing is ever published; the files and the notes stay as
+#                  workflow artifacts for the owner to test by hand.
 #
 # Our own environment variables start with KSDM_: tools read some plain names by
 # themselves (zip reads $KSDM_EXT_ZIP as options, make imports every variable).
@@ -69,13 +72,14 @@ jobs:
         env:
           KSDM_VERSION: ${{ needs.check.outputs.version }}
           KSDM_PLATFORM: ${{ needs.check.outputs.platform }}
+          KSDM_NAME: ${{ needs.check.outputs.rehearsal == 'true' && 'ks-download-manager-dev' || 'ks-download-manager' }}
         run: |
-          P="ks-download-manager-v$KSDM_VERSION"
+          P="$KSDM_NAME-v$KSDM_VERSION"
           SRC=$(basename "$(jq -r .ffmpeg.source shared/src-tauri/sidecars.json)")
           f=""
           case "$KSDM_PLATFORM" in all|mac) f="$f $P-macos-arm64.dmg $P-macos-x64.dmg" ;; esac
           case "$KSDM_PLATFORM" in all|windows) f="$f $P-windows-x64-setup-beta.exe" ;; esac
-          case "$KSDM_PLATFORM" in all|chrome) f="$f ks-download-manager-extension-v$KSDM_VERSION.zip" ;; esac
+          case "$KSDM_PLATFORM" in all|chrome) f="$f $KSDM_NAME-extension-v$KSDM_VERSION.zip" ;; esac
           # The LGPL source of the bundled ffmpeg goes with every release that bundles it.
           case "$KSDM_PLATFORM" in all|mac|windows) f="$f $SRC" ;; esac
           echo "files=${f# }" >> "$GITHUB_OUTPUT"
@@ -125,8 +129,10 @@ jobs:
     env:
       KSDM_TAG: ${{ needs.check.outputs.tag }}
       KSDM_VERSION: ${{ needs.check.outputs.version }}
-      KSDM_APP: src-tauri/target/${{ matrix.triple }}/release/bundle/macos/KS Download Manager.app
-      KSDM_DMG: ks-download-manager-v${{ needs.check.outputs.version }}-macos-${{ matrix.arch }}.dmg
+      KSDM_APP: src-tauri/target/${{ matrix.triple }}/release/bundle/macos/KS Download Manager${{ needs.check.outputs.rehearsal == 'true' && ' DEV' || '' }}.app
+      KSDM_DMG: ${{ needs.check.outputs.rehearsal == 'true' && 'ks-download-manager-dev' || 'ks-download-manager' }}-v${{ needs.check.outputs.version }}-macos-${{ matrix.arch }}.dmg
+      # The DEV build (a rehearsal) adds the DEV overlay: its own identifier, name and icon.
+      KSDM_CONFIG: ${{ needs.check.outputs.rehearsal == 'true' && '--config src-tauri/tauri.dev.conf.json' || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -167,7 +173,7 @@ jobs:
       # No Apple secrets in this step's environment: Tauri would otherwise sign and notarise
       # by itself, before scripts/sign-macos.sh re-signs the bundled programs.
       - name: Build the app
-        run: npm run tauri build -- --target ${{ matrix.triple }} --bundles app
+        run: npm run tauri build -- --target ${{ matrix.triple }} --bundles app $KSDM_CONFIG
       - name: Licence files are in the app
         run: |
           L="$KSDM_APP/Contents/Resources/licenses"
@@ -253,7 +259,11 @@ jobs:
         working-directory: shared
     env:
       KSDM_TAG: ${{ needs.check.outputs.tag }}
-      KSDM_EXT_ZIP: ks-download-manager-extension-v${{ needs.check.outputs.version }}.zip
+      KSDM_EXT_ZIP: ${{ needs.check.outputs.rehearsal == 'true' && 'ks-download-manager-dev' || 'ks-download-manager' }}-extension-v${{ needs.check.outputs.version }}.zip
+      # The DEV build of the extension (extension/dev.json): its own ID, the DEV app's host.
+      KSDM_EXT_BUILD: ${{ needs.check.outputs.rehearsal == 'true' && 'build:extension:dev' || 'build:extension' }}
+      KSDM_EXT_ID: ${{ needs.check.outputs.rehearsal == 'true' && 'mhgmalnfheamcgcongjgdmepagonmmbc' || 'ikplfdbdfikcokpegkapjdedlgifmkbe' }}
+      KSDM_EXT_KEY_FROM: ${{ needs.check.outputs.rehearsal == 'true' && 'extension/dev.json' || 'extension/manifest.json' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -265,7 +275,7 @@ jobs:
           cache-dependency-path: shared/package-lock.json
       - run: node scripts/set-version.mjs "$KSDM_TAG"
       - run: npm ci
-      - run: npm run build:extension
+      - run: npm run "$KSDM_EXT_BUILD"
       - name: Zip (manifest.json at the top of the zip)
         run: |
           mkdir -p release
@@ -281,8 +291,8 @@ jobs:
         run: |
           D=$(mktemp -d)
           env -u UNZIP -u UNZIPOPT unzip -q "release/$KSDM_EXT_ZIP" manifest.json -d "$D"
-          node scripts/extension-id.mjs "$D/manifest.json" ikplfdbdfikcokpegkapjdedlgifmkbe
-          node -e 'const a=require(process.argv[1]).key,b=require(process.argv[2]).key; if(a!==b){console.error("key differs from the repository manifest");process.exit(1)}' "$D/manifest.json" "$PWD/extension/manifest.json"
+          node scripts/extension-id.mjs "$D/manifest.json" "$KSDM_EXT_ID"
+          node -e 'const a=require(process.argv[1]).key,b=require(process.argv[2]).key; if(a!==b){console.error("key differs from the repository file");process.exit(1)}' "$D/manifest.json" "$PWD/$KSDM_EXT_KEY_FROM"
           V=$(node -p 'require(process.argv[1]).version' "$D/manifest.json")
           [ "$V" = "${{ needs.check.outputs.version }}" ] || { echo "::error::zipped manifest version $V"; exit 1; }
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -326,7 +336,10 @@ jobs:
     env:
       KSDM_TAG: ${{ needs.check.outputs.tag }}
       KSDM_VERSION: ${{ needs.check.outputs.version }}
-      KSDM_SETUP: ks-download-manager-v${{ needs.check.outputs.version }}-windows-x64-setup-beta.exe
+      KSDM_SETUP: ${{ needs.check.outputs.rehearsal == 'true' && 'ks-download-manager-dev' || 'ks-download-manager' }}-v${{ needs.check.outputs.version }}-windows-x64-setup-beta.exe
+      KSDM_CONFIG: ${{ needs.check.outputs.rehearsal == 'true' && '--config src-tauri/tauri.dev.conf.json' || '' }}
+      # The installer test checks the DEV identity in a DEV build.
+      KSDM_DEV: ${{ needs.check.outputs.rehearsal == 'true' && '1' || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -345,7 +358,7 @@ jobs:
       - name: Bundled programs (hash-checked; ffmpeg from the cross build)
         run: node scripts/sidecars.mjs x86_64-pc-windows-msvc --ffmpeg-from ffmpeg-windows
       - name: Build the installer
-        run: npm run tauri build -- --bundles nsis
+        run: npm run tauri build -- --bundles nsis $KSDM_CONFIG
       - name: Name it
         run: |
           mkdir -p release
@@ -377,4 +390,4 @@ jobs:
       rehearsal: ${{ needs.check.outputs.rehearsal }}
       files: ${{ needs.plan.outputs.files }}
       title: KS Download Manager ${{ needs.check.outputs.heading }}
-      notes: node shared/scripts/release-notes.mjs "$KS_VERSION" "$KS_PLATFORM" artifacts > notes.md
+      notes: node shared/scripts/release-notes.mjs "$KS_VERSION" "$KS_PLATFORM" artifacts ${{ needs.check.outputs.rehearsal == 'true' && '--dev' || '' }} > notes.md

@@ -9,8 +9,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use ks_utility::atomic::write_atomic;
 use serde::{Deserialize, Serialize};
 
-/// The app identifier written into every marker.
-pub const APP: &str = "com.ks.downloadmanager";
+/// The app identifier written into every marker: the bundle identifier, so the DEV build
+/// never continues or removes what the production app owns, nor the other way round.
+pub const APP: &str = crate::handoff::BUNDLE_ID;
 /// The marker's name inside a video temp folder.
 pub const IN_FOLDER: &str = "ks-owner.json";
 /// Markers are tiny; anything larger is not ours.

@@ -61,6 +61,7 @@ Stage 2 added 25 third-party crates that are built (plus 11 lockfile entries for
 
 ## Assets
 - App icon (`assets/app-icon.svg`, generated sizes in `shared/src-tauri/icons/`): our own design, made for this project.
+- DEV icon (`assets/app-icon-dev.svg`, generated sizes in `shared/src-tauri/icons-dev/` and `shared/extension/icons-dev/`): the same design in orange with a striped corner, our own.
 
 ## Bundled programs (Stage 5)
 

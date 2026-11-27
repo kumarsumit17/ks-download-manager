@@ -74,6 +74,11 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml
       - name: Clippy
         run: cargo clippy --locked --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings
+      # The DEV build (tauri.dev.conf.json turns on the `dev` feature): its own identity.
+      - name: Rust tests and Clippy, DEV build
+        run: |
+          cargo test --locked --lib --features dev --manifest-path src-tauri/Cargo.toml
+          cargo clippy --locked --all-targets --features dev --manifest-path src-tauri/Cargo.toml -- -D warnings
 
   # ffmpeg/ffprobe for Windows, cross-built on Linux (docs/release-plan.md, section 4.1).
   # Cached by the ffmpeg and zlib pins plus the build script, so a change to either rebuilds.

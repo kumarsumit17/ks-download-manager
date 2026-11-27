@@ -13,7 +13,9 @@
 ; Before the files go: remove the registrations and the manifest, so no browser finds
 ; a host that is not there. Downloads and settings are left to the uninstaller's own choice.
 !macro NSIS_HOOK_PREUNINSTALL
-  DeleteRegKey HKCU "Software\Google\Chrome\NativeMessagingHosts\com.ks.downloadmanager"
-  DeleteRegKey HKCU "Software\Microsoft\Edge\NativeMessagingHosts\com.ks.downloadmanager"
-  Delete "$INSTDIR\com.ks.downloadmanager.json"
+  ; The host is named after the bundle identifier (BUNDLEID, from Tauri's installer script), so
+  ; the DEV build's uninstaller removes only the DEV host (com.ks.downloadmanager.dev).
+  DeleteRegKey HKCU "Software\Google\Chrome\NativeMessagingHosts\${BUNDLEID}"
+  DeleteRegKey HKCU "Software\Microsoft\Edge\NativeMessagingHosts\${BUNDLEID}"
+  Delete "$INSTDIR\${BUNDLEID}.json"
 !macroend

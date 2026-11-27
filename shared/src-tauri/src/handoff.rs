@@ -26,12 +26,21 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
-/// Our extension's ID, fixed by the public `key` in `extension/manifest.json`.
+/// Our extension's ID, fixed by the public `key` in `extension/manifest.json` (the DEV build:
+/// `extension/dev.json`, so the DEV app answers only the DEV extension).
+#[cfg(not(feature = "dev"))]
 pub const EXTENSION_ID: &str = "ikplfdbdfikcokpegkapjdedlgifmkbe";
-/// The native messaging host name the extension connects to.
-pub const HOST_NAME: &str = "com.ks.downloadmanager";
-/// The app's bundle identifier, for starting it through LaunchServices.
-const BUNDLE_ID: &str = "com.ks.downloadmanager";
+#[cfg(feature = "dev")]
+pub const EXTENSION_ID: &str = "mhgmalnfheamcgcongjgdmepagonmmbc";
+/// The app's bundle identifier (`tauri.conf.json`, or `tauri.dev.conf.json` for the DEV
+/// build), for starting it through LaunchServices, its data folder and its pipe name.
+#[cfg(not(feature = "dev"))]
+pub const BUNDLE_ID: &str = "com.ks.downloadmanager";
+#[cfg(feature = "dev")]
+pub const BUNDLE_ID: &str = "com.ks.downloadmanager.dev";
+/// The native messaging host name the extension connects to: the bundle identifier, so the
+/// DEV build registers its own host and never replaces the production one.
+pub const HOST_NAME: &str = BUNDLE_ID;
 /// Longest message accepted in either direction.
 pub const MAX_MESSAGE: usize = 32 * 1024;
 /// How long the host waits for the app to start and open its socket.
@@ -1086,7 +1095,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let exe = Path::new("/Applications/KS Download Manager.app/Contents/MacOS/ks-download-manager");
         let file = write_manifest_in(&dir.join("NativeMessagingHosts"), exe).unwrap();
-        assert_eq!(file, dir.join("NativeMessagingHosts/com.ks.downloadmanager.json"));
+        assert_eq!(file, dir.join(format!("NativeMessagingHosts/{HOST_NAME}.json")));
         let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
         assert_eq!(v["path"], exe.to_str().unwrap());
         assert_eq!(v["allowed_origins"], serde_json::json!([origin()]));
@@ -1247,8 +1256,12 @@ mod tests {
 
     #[test]
     fn the_bundle_id_is_the_apps_identifier() {
-        let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let prod: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let dev: serde_json::Value = serde_json::from_str(include_str!("../tauri.dev.conf.json")).unwrap();
+        let conf = if cfg!(feature = "dev") { dev } else { prod };
         assert_eq!(conf["identifier"], BUNDLE_ID);
+        assert_eq!(HOST_NAME, BUNDLE_ID);
+        assert_eq!(crate::marker::APP, BUNDLE_ID);
     }
 
     #[test]
